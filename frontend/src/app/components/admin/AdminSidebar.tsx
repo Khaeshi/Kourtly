@@ -1,0 +1,66 @@
+'use client';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+
+const NAV = [
+  { href: '/admin',         label: 'Dashboard', exact: true },
+  { href: '/admin/players', label: 'Players' },
+  { href: '/admin/queue',   label: 'Queue' },
+  { href: '/admin/billing', label: 'Billing' },
+  { href: '/admin/items',   label: 'Items' },
+  { href: '/admin/reservation', label: 'Reservation' }
+];
+
+interface Props { isOpen: boolean; onClose: () => void; }
+
+export default function AdminSidebar({ isOpen, onClose }: Props) {
+  const pathname = usePathname();
+
+  return (
+    <aside className={`admin-sidebar-aside ${isOpen ? 'open' : ''}`}>
+
+      {/* Brand */}
+      <div className="px-5 py-5 pb-4 border-b border-gray-100">
+        <Link href="/" className="no-underline flex items-center gap-2.5">
+          <div className="w-7 h-7 rounded-lg bg-green-700 flex items-center justify-center shrink-0">
+            <div className="w-2.5 h-2.5 rounded-full bg-white opacity-90" />
+          </div>
+          <span className="font-bold text-sm text-gray-900 tracking-tight">SCBC System</span>
+        </Link>
+      </div>
+
+      {/* Nav */}
+      <nav className="px-3 py-3 flex-1 flex flex-col gap-0.5">
+        <p className="text-[0.65rem] font-semibold tracking-widest uppercase text-gray-400 px-3.5 mb-1">
+          Management
+        </p>
+        {NAV.map(item => {
+          const active = item.exact
+            ? pathname === item.href
+            : pathname.startsWith(item.href);
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              onClick={onClose}
+              className={`sidebar-item ${active ? 'active' : ''}`}
+            >
+              <span className={`w-1.5 h-1.5 rounded-full shrink-0 transition-colors duration-150 ${active ? 'bg-green-700' : 'bg-gray-300'}`} />
+              {item.label}
+            </Link>
+          );
+        })}
+      </nav>
+
+      {/* Footer */}
+      <div className="px-3 py-4 border-t border-gray-100">
+        <Link
+          href="/"
+          className="flex items-center gap-2 px-3.5 py-2 rounded-lg no-underline text-gray-500 text-xs transition-colors duration-150 hover:bg-gray-100"
+        >
+          ← View Site
+        </Link>
+      </div>
+    </aside>
+  );
+}
