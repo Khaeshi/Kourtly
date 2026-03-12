@@ -1,7 +1,8 @@
 import NextAuth from 'next-auth';
 import Google from 'next-auth/providers/google';
 
-const BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+// Use private API_URL for server-side callbacks (not NEXT_PUBLIC_)
+const BASE = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   providers: [
@@ -15,7 +16,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     // Upsert user in MongoDB on every sign-in
     async signIn({ user }) {
       try {
-        await fetch(`${BASE}/api/users/upsert`, {
+        const res = await fetch(`${BASE}/api/users/upsert`, {
           method:  'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -25,9 +26,12 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             provider: 'google',
           }),
         });
+        // Never block sign-in due to backend issues
+        if (!res.ok) console.error('Upsert failed:', await res.text());
         return true;
-      } catch {
-        return false;
+      } catch (err) {
+        console.error('signIn callback error:', err);
+        return true; // ← always return true, never block auth
       }
     },
 
@@ -35,7 +39,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     async jwt({ token, trigger }) {
       if (token.email && (trigger === 'signIn' || trigger === 'update' || !token.role)) {
         try {
-          const res  = await fetch(`${BASE}/api/users/by-email/${encodeURIComponent(token.email)}`);
+          const res  = await fetch(`${BASE}/api/users/by-email/${encodeURIComponent(token.email!)}`);
           const user = await res.json();
           token.role = user.role ?? 'user';
           token.dbId = user._id;
@@ -55,9 +59,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       return session;
     },
 
-    // Post-signin redirect: admins → /admin, everyone else → /
+    // Post-signin redirect
     async redirect({ url, baseUrl }) {
-      // If it was explicitly going somewhere (e.g. callbackUrl=/admin), honour it
       if (url.startsWith(baseUrl) || url.startsWith('/')) {
         return url.startsWith(baseUrl) ? url : `${baseUrl}${url}`;
       }
