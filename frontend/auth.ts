@@ -1,7 +1,6 @@
 import NextAuth from 'next-auth';
 import Google from 'next-auth/providers/google';
 
-// Use private API_URL for server-side callbacks (not NEXT_PUBLIC_)
 const BASE = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
@@ -9,11 +8,11 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     Google({
       clientId:     process.env.AUTH_GOOGLE_ID!,
       clientSecret: process.env.AUTH_GOOGLE_SECRET!,
+      checks: ['state'], // ← disables PKCE, uses state only (works without DB adapter)
     }),
   ],
 
   callbacks: {
-    // Upsert user in MongoDB on every sign-in
     async signIn({ user }) {
       try {
         const res = await fetch(`${BASE}/api/users/upsert`, {
@@ -26,16 +25,14 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             provider: 'google',
           }),
         });
-        // Never block sign-in due to backend issues
         if (!res.ok) console.error('Upsert failed:', await res.text());
         return true;
       } catch (err) {
         console.error('signIn callback error:', err);
-        return true; // ← always return true, never block auth
+        return true;
       }
     },
 
-    // Fetch role from backend and attach to JWT
     async jwt({ token, trigger }) {
       if (token.email && (trigger === 'signIn' || trigger === 'update' || !token.role)) {
         try {
@@ -50,7 +47,6 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       return token;
     },
 
-    // Expose role + dbId to client session
     async session({ session, token }) {
       if (session.user) {
         session.user.role = token.role as string;
@@ -59,7 +55,6 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       return session;
     },
 
-    // Post-signin redirect
     async redirect({ url, baseUrl }) {
       if (url.startsWith(baseUrl) || url.startsWith('/')) {
         return url.startsWith(baseUrl) ? url : `${baseUrl}${url}`;
