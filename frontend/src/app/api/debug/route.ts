@@ -8,8 +8,3 @@ export async function GET() {
       trustHost: process.env.AUTH_TRUST_HOST,
     });
   }
-  ```
-  
-  Push it to GitHub → Vercel auto-deploys → then visit:
-  ```
-  https://badminton-scbc.vercel.app/api/debug
