@@ -1,52 +1,20 @@
-'use client';
-import { useState } from 'react';
-import { Toaster } from 'sileo';
-import AdminSidebar from '../components/admin/AdminSidebar';
+import { auth } from '../../../auth';
+import { redirect } from 'next/navigation';
+import AdminLayoutClient from '../components/admin/AdminLayoutClient';
 
-export default function AdminLayout({ children }: { children: React.ReactNode }) {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+export default async function AdminLayout({ children }: { children: React.ReactNode }) {
+  const session = await auth();
+
+  if (!session)                      redirect('/auth/signin?callbackUrl=/admin');
+  if (session.user.role !== 'admin') redirect('/?error=unauthorized');
 
   return (
-    <>
-      <Toaster
-        position="top-right"
-        options={{
-          fill: "#171717",
-          styles: {
-            title: "text-white!",
-            description: "text-white/75!",
-            badge: "bg-white/10!",
-          },
-        }}
-      />
-
-      {/* Mobile top bar */}
-      <div className="mobile-topbar">
-        <button
-          onClick={() => setSidebarOpen(o => !o)}
-          aria-label="Toggle menu"
-          className="flex flex-col gap-1 p-1.5 rounded-md border-none bg-transparent cursor-pointer"
-        >
-          <span className={`block w-[18px] h-[2px] bg-gray-700 rounded-sm transition-all duration-200 ${sidebarOpen ? 'rotate-45 translate-x-1 translate-y-1' : ''}`} />
-          <span className={`block w-[18px] h-[2px] bg-gray-700 rounded-sm transition-all duration-200 ${sidebarOpen ? 'opacity-0' : 'opacity-100'}`} />
-          <span className={`block w-[18px] h-[2px] bg-gray-700 rounded-sm transition-all duration-200 ${sidebarOpen ? '-rotate-45 translate-x-1 -translate-y-1' : ''}`} />
-        </button>
-        <span className="font-bold text-sm text-gray-900 tracking-tight">
-          South City Badminton Court
-        </span>
-      </div>
-
-      {/* Backdrop */}
-      {sidebarOpen && (
-        <div className="sidebar-backdrop" onClick={() => setSidebarOpen(false)} />
-      )}
-
-      <div className="flex min-h-screen bg-gray-100 font-sans">
-        <AdminSidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-        <main className="admin-main flex-1 p-[clamp(1rem,3vw,2rem)]">
-          {children}
-        </main>
-      </div>
-    </>
+    <AdminLayoutClient user={{
+      name:  session.user.name  ?? '',
+      email: session.user.email ?? '',
+      image: session.user.image ?? '',
+    }}>
+      {children}
+    </AdminLayoutClient>
   );
 }
