@@ -1,8 +1,8 @@
 'use client';
 import { useState, useEffect } from 'react';
+import { BASE } from '@/lib/config'
 import Image from 'next/image';
 
-const BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
 interface AppUser {
   _id: string; name: string; email: string;

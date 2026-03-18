@@ -1,7 +1,6 @@
 import NextAuth from 'next-auth';
 import Google from 'next-auth/providers/google';
-
-const BASE = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+import { BASE } from '@/lib/config'
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   providers: [

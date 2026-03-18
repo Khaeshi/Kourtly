@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 import { createReservation } from '@/lib/api';
+import { BASE } from '@/lib/config'
 
 
 /**
@@ -88,16 +89,15 @@ interface CourtAvailability {
  * @desc API
  */
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
 async function fetchAvailability(date: string, duration: number): Promise<CourtAvailability[]> {
-  const res = await fetch(`${API_BASE}/api/reservations/availability?date=${date}&duration=${duration}`);
+  const res = await fetch(`${BASE}/api/reservations/availability?date=${date}&duration=${duration}`);
   if (!res.ok) throw new Error('Failed to fetch availability');
   return res.json();
 }
 
 async function fetchSchedule(date: string): Promise<{ isFullyClosed: boolean; openTime?: string; closeTime?: string }> {
-  const res = await fetch(`${API_BASE}/api/schedule/resolve?date=${date}`);
+  const res = await fetch(`${BASE}/api/schedule/resolve?date=${date}`);
   if (!res.ok) return { isFullyClosed: false };
   return res.json();
 }
@@ -109,7 +109,7 @@ async function fetchAllDurationAvailability(
 ): Promise<Record<number, string[]>> {
   const results = await Promise.all(
     [1, 2, 3, 4].map(async d => {
-      const res = await fetch(`${API_BASE}/api/reservations/availability?date=${date}&duration=${d}`);
+      const res = await fetch(`${BASE}/api/reservations/availability?date=${date}&duration=${d}`);
       if (!res.ok) return { duration: d, available: [] };
       const data: CourtAvailability[] = await res.json();
       const courtData = data.find(a => a.court === court);

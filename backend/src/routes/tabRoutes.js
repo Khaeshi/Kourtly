@@ -41,51 +41,6 @@ router.post('/', async (req, res) => {
   }
 });
 
-
-// POST split an item across multiple player tabs
-// Body: { itemId, name, price, playerIds: [id1, id2, id3, id4] }
-// Each player gets charged price / playerIds.length
-router.post('/split', async (req, res) => {
-  try {
-    const { itemId, name, price, playerIds } = req.body;
-    if (!playerIds || playerIds.length < 2) {
-      return res.status(400).json({ error: 'Need at least 2 players to split' });
-    }
-
-    const splitPrice = Math.round((price / playerIds.length) * 100) / 100;
-    const results = [];
-
-    for (const playerId of playerIds) {
-      // Find or create open tab for this player
-      let tab = await Tab.findOne({ player: playerId, status: 'open' });
-
-      if (!tab) {
-        tab = await Tab.create({ player: playerId, items: [], total: 0 });
-      }
-
-      const newItem = {
-        item: itemId || undefined,
-        name: `${name} (split ÷${playerIds.length})`,
-        price: splitPrice,
-        quantity: 1,
-        addedAt: new Date(),
-      };
-
-      const updated = await Tab.findByIdAndUpdate(
-        tab._id,
-        { $push: { items: newItem }, $inc: { total: splitPrice } },
-        { new: true }
-      ).populate('player', 'name level');
-
-      results.push(updated);
-    }
-
-    res.json(results);
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-});
-
 // POST add item to a single tab — no .save()
 router.post('/:id/items', async (req, res) => {
   try {
@@ -101,6 +56,57 @@ router.post('/:id/items', async (req, res) => {
 
     if (!tab) return res.status(404).json({ error: 'Tab not found' });
     res.json(tab);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// POST charge/split an item across one or more player tabs
+// Body: { itemId, name, price, playerIds: [id1, ...] }
+// 1 player  → full price charged to that player, label unchanged
+// 2+ players → price divided evenly, label gets "(split ÷N)"
+router.post('/split', async (req, res) => {
+  try {
+    const { itemId, name, price, playerIds } = req.body;
+    if (!playerIds || playerIds.length < 1) {
+      return res.status(400).json({ error: 'At least 1 player is required.' });
+    }
+
+    const isSplit    = playerIds.length > 1;
+    const chargeAmt  = isSplit
+      ? Math.round((price / playerIds.length) * 100) / 100
+      : price;
+    const itemLabel  = isSplit
+      ? `${name} (split ÷${playerIds.length})`
+      : name; // full charge — keep original name
+
+    const results = [];
+
+    for (const playerId of playerIds) {
+      // Find open tab for this player (must exist — frontend only shows open tabs)
+      let tab = await Tab.findOne({ player: playerId, status: 'open' });
+      if (!tab) {
+        tab = await Tab.create({ player: playerId, items: [], total: 0 });
+      }
+
+      const newItem = {
+        item:     itemId || undefined,
+        name:     itemLabel,
+        price:    chargeAmt,
+        quantity: 1,
+        addedAt:  new Date(),
+      };
+
+      const updated = await Tab.findByIdAndUpdate(
+        tab._id,
+        { $push: { items: newItem }, $inc: { total: chargeAmt } },
+        { new: true }
+      ).populate('player', 'name level');
+
+      results.push(updated);
+    }
+
+    res.json(results);
   } catch (err) {
     res.status(400).json({ error: err.message });
   }

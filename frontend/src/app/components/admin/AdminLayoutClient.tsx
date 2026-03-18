@@ -48,7 +48,7 @@ export default function AdminLayoutClient({ children, user }: Props) {
 
       <div className="flex min-h-screen bg-gray-100 font-sans">
         <AdminSidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} user={user} />
-        <main className="admin-main flex-1 p-[clamp(1rem,3vw,2rem)]">
+        <main className="admin-main flex-1 px-[clamp(1rem,3vw,2rem)] pb-[clamp(1rem,3vw,2rem)] pt-[clamp(1rem,3vw,2rem)] md:pt-[clamp(1rem,3vw,2rem)]">
           {children}
         </main>
       </div>
