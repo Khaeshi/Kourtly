@@ -16,4 +16,7 @@ const TabSchema = new mongoose.Schema({
   sessionDate: { type: Date, default: Date.now },
 }, { timestamps: true });
 
+TabSchema.index({ player: 1, status: 1 });  // open tab lookups
+TabSchema.index({ status: 1, updatedAt: -1 }); // history queries
+
 export default mongoose.model('Tab', TabSchema);

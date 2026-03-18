@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import Providers from './components/Providers';
 import { Analytics } from "@vercel/analytics/next"
+import { APP_NAME } from "@/lib/config"
 import "./styles/globals.css";
 
 const geistSans = Geist({
@@ -15,7 +16,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "South City Badminton Court",
+  title: APP_NAME,
   description: "South City Recreation Center",
 };
 

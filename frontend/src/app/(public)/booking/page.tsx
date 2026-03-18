@@ -1,12 +1,10 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
+import { format, parseISO } from 'date-fns';
 import { createReservation } from '@/lib/api';
-import { BASE } from '@/lib/config'
+import { API_BASE } from '@/lib/config';
 
-
-/**
- * @desc Constants
- */
+// ── Constants ─────────────────────────────────────────────────────────────────
 
 const COURTS = [1, 2, 3, 4];
 
@@ -17,17 +15,14 @@ const ALL_SLOTS = [
   '21:00-22:00','22:00-23:00',
 ];
 
-/**
- * @desc Last Hour sched available
- */
+// Last valid start slot per duration (can't start so late the booking runs past 23:00)
 const LAST_START_HOUR = 23;
 
-/**
- * @desc Pure Helpers
- */
+// ── Pure helpers ──────────────────────────────────────────────────────────────
 
 function todayStr() {
-  return new Date().toISOString().slice(0, 10);
+  // format today as YYYY-MM-DD in local time (avoids UTC offset issues)
+  return format(new Date(), 'yyyy-MM-dd');
 }
 
 function toMinutes(timeStr: string) {
@@ -56,15 +51,12 @@ function fmtSlotRange(slot: string, durationHours: number) {
 }
 
 function fmtDateLong(d: string) {
-  return new Date(d + 'T00:00:00').toLocaleDateString('en-PH', {
-    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
-  });
+  // parseISO treats YYYY-MM-DD as local date, avoiding TZ shift to previous day
+  return format(parseISO(d), 'EEEE, MMMM d, yyyy');
 }
 
 function fmtDateShort(d: string) {
-  return new Date(d + 'T00:00:00').toLocaleDateString('en-PH', {
-    month: 'short', day: 'numeric', year: 'numeric',
-  });
+  return format(parseISO(d), 'MMM d, yyyy');
 }
 
 /** Slots that are valid for a given duration (don't run past 23:00) */
@@ -75,9 +67,6 @@ function validSlotsForDuration(durationHours: number) {
   });
 }
 
-/**
- * @desc Types 
- */
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface CourtAvailability {
@@ -85,19 +74,17 @@ interface CourtAvailability {
   blockedSlots: string[]; // blocked START slots for the chosen duration
 }
 
-/**
- * @desc API
- */
+// ── API ───────────────────────────────────────────────────────────────────────
 
 
 async function fetchAvailability(date: string, duration: number): Promise<CourtAvailability[]> {
-  const res = await fetch(`${BASE}/api/reservations/availability?date=${date}&duration=${duration}`);
+  const res = await fetch(`${API_BASE}/api/reservations/availability?date=${date}&duration=${duration}`);
   if (!res.ok) throw new Error('Failed to fetch availability');
   return res.json();
 }
 
 async function fetchSchedule(date: string): Promise<{ isFullyClosed: boolean; openTime?: string; closeTime?: string }> {
-  const res = await fetch(`${BASE}/api/schedule/resolve?date=${date}`);
+  const res = await fetch(`${API_BASE}/api/schedule/resolve?date=${date}`);
   if (!res.ok) return { isFullyClosed: false };
   return res.json();
 }
@@ -109,7 +96,7 @@ async function fetchAllDurationAvailability(
 ): Promise<Record<number, string[]>> {
   const results = await Promise.all(
     [1, 2, 3, 4].map(async d => {
-      const res = await fetch(`${BASE}/api/reservations/availability?date=${date}&duration=${d}`);
+      const res = await fetch(`${API_BASE}/api/reservations/availability?date=${date}&duration=${d}`);
       if (!res.ok) return { duration: d, available: [] };
       const data: CourtAvailability[] = await res.json();
       const courtData = data.find(a => a.court === court);
@@ -123,9 +110,8 @@ async function fetchAllDurationAvailability(
   return Object.fromEntries(results.map(r => [r.duration, r.available]));
 }
 
-/**
- * @desc Step Indicator
- */
+// ── Step Indicator ────────────────────────────────────────────────────────────
+
 function StepIndicator({ step }: { step: number }) {
   const steps = ['Date', 'Court', 'Duration', 'Time', 'Details'];
   return (
@@ -160,9 +146,8 @@ function StepIndicator({ step }: { step: number }) {
   );
 }
 
-/**
- * @desc Duration Picker
- */
+// ── Duration Picker ───────────────────────────────────────────────────────────
+
 function DurationStep({
   duration, setDuration, date, court, onBack, onNext,
 }: {
@@ -275,10 +260,7 @@ function DurationStep({
   );
 }
 
-
-/**
- * @desc Time Slot Step
- */
+// ── Time Slot Step ────────────────────────────────────────────────────────────
 
 function TimeStep({
   date, court, duration, timeSlot, setTimeSlot, onBack, onNext,
@@ -395,9 +377,7 @@ function TimeStep({
   );
 }
 
-/**
- * @desc Main
- */
+// ── Main ──────────────────────────────────────────────────────────────────────
 
 export default function BookingPage() {
   const [step,       setStep]       = useState(1);
@@ -452,11 +432,139 @@ export default function BookingPage() {
     setForm({ name: '', phone: '', email: '', playerCount: '2', notes: '' });
   };
 
+  // ── Styles ──────────────────────────────────────────────────────────────────
+  const css = `
+    @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@300;400;500&display=swap');
+    .booking-display { font-family: 'DM Serif Display', serif; }
+
+    .grid-bg {
+      background-image:
+        linear-gradient(rgba(200,245,106,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(200,245,106,0.03) 1px, transparent 1px);
+      background-size: 48px 48px;
+    }
+
+    @keyframes fadeIn { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
+    .anim { animation: fadeIn 0.4s ease forwards; }
+
+    /* Duration buttons */
+    .duration-btn {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.07);
+      color: rgba(255,255,255,0.5);
+      border-radius: 12px;
+      padding: 20px 12px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      font-family: 'DM Mono', monospace;
+      text-align: center;
+    }
+    .duration-btn:hover {
+      background: rgba(200,245,106,0.08);
+      border-color: rgba(200,245,106,0.25);
+      color: #c8f56a;
+    }
+    .duration-btn.selected {
+      background: rgba(200,245,106,0.12);
+      border-color: rgba(200,245,106,0.4);
+      color: #c8f56a;
+    }
+
+    /* Time range buttons — list style, not grid */
+    .time-range-btn {
+      background: rgba(255,255,255,0.02);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 10px;
+      padding: 14px 16px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      font-family: 'DM Mono', monospace;
+      text-align: left;
+    }
+    .time-range-btn:hover:not(:disabled):not(.selected) {
+      background: rgba(200,245,106,0.06);
+      border-color: rgba(200,245,106,0.2);
+    }
+    .time-range-btn.selected {
+      background: rgba(200,245,106,0.10);
+      border-color: rgba(200,245,106,0.35);
+    }
+    .time-range-btn.blocked {
+      opacity: 0.35;
+      cursor: not-allowed;
+      text-decoration: none;
+    }
+
+    .court-btn {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.07);
+      transition: all 0.2s ease;
+      border-radius: 12px;
+      padding: 16px;
+      text-align: left;
+      cursor: pointer;
+      width: 100%;
+    }
+    .court-btn:hover { background: rgba(200,245,106,0.06); border-color: rgba(200,245,106,0.2); }
+    .court-btn.selected { background: rgba(200,245,106,0.1); border-color: rgba(200,245,106,0.35); }
+
+    .field {
+      width: 100%;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 10px;
+      padding: 12px 14px;
+      color: rgba(255,255,255,0.8);
+      font-size: 0.875rem;
+      font-family: 'DM Mono', monospace;
+      outline: none;
+      transition: border-color 0.15s ease;
+      -webkit-appearance: none;
+      appearance: none;
+    }
+    .field::placeholder { color: rgba(255,255,255,0.2); }
+    .field:focus { border-color: rgba(200,245,106,0.35); }
+    .field option { background: #111; }
+
+    .proceed-btn {
+      background: rgba(200,245,106,0.12);
+      border: 1px solid rgba(200,245,106,0.3);
+      color: #c8f56a;
+      font-family: 'DM Mono', monospace;
+      font-size: 0.8rem;
+      padding: 12px 24px;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      letter-spacing: 0.05em;
+      white-space: nowrap;
+    }
+    .proceed-btn:hover:not(:disabled) {
+      background: rgba(200,245,106,0.2);
+      border-color: rgba(200,245,106,0.5);
+    }
+    .proceed-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .proceed-btn.ghost { background: transparent; color: rgba(255,255,255,0.3); border-color: transparent; }
+    .proceed-btn.submit {
+      background: #c8f56a; border-color: #c8f56a;
+      color: #0a0f05; font-weight: 600;
+    }
+    .proceed-btn.submit:hover:not(:disabled) { background: #d4f97c; }
+
+    input[type="date"].field { color-scheme: dark; }
+    .safe-bottom { padding-bottom: max(1.5rem, env(safe-area-inset-bottom)); }
+
+    @keyframes fadeUp { from { opacity:0; transform:translateY(24px); } to { opacity:1; transform:translateY(0); } }
+    .fade-up   { animation: fadeUp 0.6s ease forwards; }
+    .fade-up-2 { animation: fadeUp 0.6s 0.15s ease both; }
+    .fade-up-3 { animation: fadeUp 0.6s 0.3s ease both; }
+  `;
 
   // ── Success screen ──────────────────────────────────────────────────────────
   if (success) {
     return (
       <div className="min-h-screen bg-[#080c04] flex items-center justify-center p-4 sm:p-6">
+        <style>{css}</style>
         <div className="text-center w-full max-w-sm" style={{ fontFamily: "'DM Mono', monospace" }}>
           <div className="fade-up w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-[#c8f56a]/10 border border-[#c8f56a]/30 flex items-center justify-center mx-auto mb-6 sm:mb-8">
             <span className="text-[#c8f56a] text-2xl sm:text-3xl">✓</span>
@@ -493,6 +601,7 @@ export default function BookingPage() {
   // ── Main UI ─────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-[#080c04]" style={{ fontFamily: "'DM Mono', monospace" }}>
+      <style>{css}</style>
 
       {/* Ambient glow */}
       <div className="fixed top-0 left-1/2 -translate-x-1/2 w-[400px] sm:w-[600px] h-[200px] sm:h-[300px] rounded-full opacity-10 pointer-events-none"

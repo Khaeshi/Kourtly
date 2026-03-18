@@ -1,7 +1,9 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
-import { getPlayers, getQueue, getHistory, getSplittableItems, createMatch, updateMatch, deleteMatch } from '@/lib/api';
+import { getPlayers, getQueue, getHistory, deleteHistory, getSplittableItems, createMatch, updateMatch, deleteMatch } from '@/lib/api';
 import type { Player, Match, MatchType, Level, CatalogItem } from '@/lib/api';
+import { Button } from '@/app/components/ui/Button'
+import { sileo } from 'sileo'
 
 const LEVEL_ORDER: Record<Level, number> = { A: 0, B: 1, C: 2, D: 3 };
 const LEVEL_COLOR: Record<Level, string>  = { A: '#d97706', B: '#16a34a', C: '#0891b2', D: '#7c3aed' };
@@ -41,23 +43,6 @@ function generateFairMatch(players: Player[]): GeneratedMatch | null {
 }
 
 // ── Shared components ─────────────────────────────────────────────────────────
-const Btn = ({
-  v = 'ghost', children, ...props
-}: React.ButtonHTMLAttributes<HTMLButtonElement> & { v?: 'primary' | 'ghost' | 'danger' | 'gold' }) => {
-  const map = {
-    primary: { bg: '#f0fdf4', border: '#bbf7d0', color: '#15803d' },
-    ghost:   { bg: '#fff',    border: '#e5e7eb', color: '#6b7280' },
-    danger:  { bg: '#fef2f2', border: '#fecaca', color: '#dc2626' },
-    gold:    { bg: '#fffbeb', border: '#fde68a', color: '#92400e' },
-  };
-  const s = map[v];
-  return (
-    <button {...props} style={{ background: s.bg, border: `1px solid ${s.border}`, color: s.color, ...props.style }}
-      className={`px-3.5 py-1.5 rounded-md text-xs font-medium cursor-pointer transition-all duration-150 disabled:opacity-40 ${props.className ?? ''}`}>
-      {children}
-    </button>
-  );
-};
 
 function LevelBadge({ level }: { level: string }) {
   const color = LEVEL_COLOR[level as Level] ?? '#6b7280';
@@ -84,10 +69,10 @@ function PlayerPill({ p, side, index, editingSlot, onEdit }: {
       <LevelBadge level={p.level} />
       <span className="flex-1 text-xs font-medium text-gray-600 truncate min-w-0">{p.name}</span>
       <span className="text-[0.65rem] text-gray-400 shrink-0">{p.gender === 'Male' ? 'M' : 'F'} {p.matchCount}x</span>
-      <Btn v="ghost" style={{ padding: '0.2rem 0.45rem', fontSize: '0.68rem' }}
+      <Button v="ghost" style={{ padding: '0.2rem 0.45rem', fontSize: '0.68rem' }}
         onClick={() => onEdit({ side, index })}>
         swap
-      </Btn>
+      </Button>
     </div>
   );
 }
@@ -141,9 +126,9 @@ function MatchCard({ match, index, showActions, onUpdate }: {
       {/* Actions */}
       {showActions && (
         <div className="flex gap-1.5 mt-3 pt-3 border-t border-gray-100">
-          {match.status === 'queued'  && <Btn v="gold"   onClick={() => updateMatch(match._id, { status: 'playing' }).then(onUpdate)}>Mark Playing</Btn>}
-          {match.status === 'playing' && <Btn v="primary" onClick={() => updateMatch(match._id, { status: 'done' }).then(onUpdate)}>Mark Done</Btn>}
-          <Btn v="danger" onClick={() => { if (confirm('Remove match?')) deleteMatch(match._id).then(onUpdate); }}>Remove</Btn>
+          {match.status === 'queued'  && <Button v="warning"   onClick={() => updateMatch(match._id, { status: 'playing' }).then(onUpdate)}>Mark Playing</Button>}
+          {match.status === 'playing' && <Button v="primary" onClick={() => updateMatch(match._id, { status: 'done' }).then(onUpdate)}>Mark Done</Button>}
+          <Button v="danger" onClick={() => { if (confirm('Remove match?')) deleteMatch(match._id).then(onUpdate); }}>Remove</Button>
         </div>
       )}
     </div>
@@ -188,6 +173,14 @@ export default function QueuePage() {
     setEditingSlot(null);
   };
 
+  const handleDeleteAll = async () => {
+    if(window.confirm("Are you sure you want to clear all history?")) {
+    await deleteHistory();
+    sileo.success({title: "History Deleted"})
+    await loadAll();
+    }
+  }
+
   const handleSubmit = async () => {
     if (!edited) return;
     setSubmitting(true);
@@ -218,10 +211,10 @@ export default function QueuePage() {
           <p className="text-sm text-gray-400 leading-relaxed max-w-full">
             Generates the fairest match from {available.length} available players.
           </p>
-          <Btn v="primary" onClick={handleGenerate} disabled={available.length < 4}
+          <Button v="primary" onClick={handleGenerate} disabled={available.length < 4}
             style={{ opacity: available.length < 4 ? 0.4 : 1 }}>
             {available.length < 4 ? `Need ${4 - available.length} more` : 'Generate Match'}
-          </Btn>
+          </Button>
         </div>
       ) : edited && (
         /* Generated match card */
@@ -271,7 +264,7 @@ export default function QueuePage() {
                   </button>
                 ))}
               </div>
-              <Btn v="ghost" className="mt-1.5 text-[0.7rem]" onClick={() => setEditingSlot(null)}>Cancel</Btn>
+              <Button v="ghost" className="mt-1.5 text-[0.7rem]" onClick={() => setEditingSlot(null)}>Cancel</Button>
             </div>
           )}
 
@@ -320,13 +313,13 @@ export default function QueuePage() {
 
           {/* Submit buttons */}
           <div className="flex gap-1.5 pt-1">
-            <Btn v="ghost" className="flex-1"
+            <Button v="warning" className="flex-1"
               onClick={() => { setGenerated(null); setEdited(null); setTimeout(handleGenerate, 80); }}>
               Re-generate
-            </Btn>
-            <Btn v="gold" className="flex-1" onClick={handleSubmit} disabled={submitting}>
+            </Button>
+            <Button v="primary" className="flex-1" onClick={handleSubmit} disabled={submitting}>
               {submitting ? 'Submitting...' : 'Submit to Queue'}
-            </Btn>
+            </Button>
           </div>
         </div>
       )}
@@ -372,7 +365,11 @@ export default function QueuePage() {
     <div className="flex flex-col gap-2.5">
       <p className="text-[0.65rem] font-semibold tracking-widest uppercase text-gray-400">
         Completed · {historyList.length}
+        <Button v="danger" onClick={handleDeleteAll} className="ml-4">
+        Clear all history
+      </Button>
       </p>
+
       {loading ? (
         <p className="text-sm text-gray-400 text-center py-8">Loading...</p>
       ) : historyList.length === 0 ? (

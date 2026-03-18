@@ -23,9 +23,13 @@ const ALL_SLOTS = [
   /**
    * Get the day-of-week index (0=Sun…6=Sat) for a YYYY-MM-DD string.
    * Uses local noon to avoid DST edge cases.
+   * 
+   * updated to use date-fns on 3/18/2026, 
+   * @todo update this comment
    */
+  import { parseISO, getDay } from 'date-fns';
   export function getDayOfWeek(dateStr) {
-    return new Date(dateStr + 'T12:00:00').getDay();
+    return getDay(parseISO(dateStr)); 
   }
   
   /**

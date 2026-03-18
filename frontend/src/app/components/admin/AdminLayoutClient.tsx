@@ -1,6 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { Toaster } from 'sileo';
+import { APP_NAME } from '@/lib/config'
 import AdminSidebar from './AdminSidebar';
 
 interface Props {
@@ -37,7 +38,7 @@ export default function AdminLayoutClient({ children, user }: Props) {
           <span className={`block w-[18px] h-[2px] bg-gray-700 rounded-sm transition-all duration-200 ${sidebarOpen ? '-rotate-45 translate-x-1 -translate-y-1' : ''}`} />
         </button>
         <span className="font-bold text-sm text-gray-900 tracking-tight">
-          South City Badminton Court
+          {APP_NAME}
         </span>
       </div>
 

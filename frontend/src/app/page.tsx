@@ -3,6 +3,8 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { useState, useEffect, useRef } from 'react';
 import { useSession, signOut } from 'next-auth/react';
+import { APP_NAME } from '@/lib/config'
+
 
 export default function LandingPage() {
   const [scrolled, setScrolled] = useState(false);
@@ -61,7 +63,7 @@ export default function LandingPage() {
             <div className="w-[7px] h-[7px] bg-[#c8a84b] rounded-full" />
           </div>
           <span className="font-extrabold text-[clamp(0.82rem,3vw,1.05rem)] text-[#e8f0e4] tracking-tight whitespace-nowrap overflow-hidden text-ellipsis">
-            South City Badminton Court
+            {APP_NAME}
           </span>
         </div>
 
@@ -355,7 +357,7 @@ export default function LandingPage() {
           <div className="w-5 h-5 border border-[rgba(200,168,75,0.4)] rounded-full flex items-center justify-center shrink-0">
             <div className="w-1.5 h-1.5 bg-[#c8a84b] rounded-full" />
           </div>
-          <span className="text-[0.9rem] text-[rgba(232,240,228,0.5)]">South City Badminton Court</span>
+          <span className="text-[0.9rem] text-[rgba(232,240,228,0.5)]">{APP_NAME}</span>
         </div>
         <p className="text-[0.72rem] text-[rgba(232,240,228,0.2)] tracking-[0.05em]">
           Premium Badminton Club — All courts reserved

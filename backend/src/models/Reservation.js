@@ -18,4 +18,10 @@ const ReservationSchema = new mongoose.Schema({
   notes: { type: String, default: '' },
 }, { timestamps: true });
 
+// Add these:
+ReservationSchema.index({ date: 1, status: 1 });        // availability queries
+ReservationSchema.index({ date: 1, court: 1 });         // per-court lookups
+ReservationSchema.index({ createdAt: -1 });             // dashboard analytics sorting
+
+
 export default mongoose.models.Reservation || mongoose.model('Reservation', ReservationSchema);

@@ -31,6 +31,18 @@ router.get('/history', async (req, res) => {
   }
 });
 
+/**
+ * @desc DELETE all history (done matches)
+ */
+router.delete('/history', async (req, res) => {
+  try {
+    const result = await Match.deleteMany({ status: 'done' });
+    res.status(200).json({ message: `${result.deletedCount} done matches deleted successfully` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST create match + increment matchCount + optional shuttlecock split
 // Body: { team1, team2, matchType, court, shuttlecockId? }
 router.post('/', async (req, res) => {

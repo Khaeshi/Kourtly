@@ -1,4 +1,4 @@
-import { BASE } from '@/lib/config'
+import { API_BASE } from '@/lib/config'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -47,7 +47,7 @@ export interface Tab {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 async function req<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
+  const res = await fetch(`${API_BASE}${path}`, {
     headers: { 'Content-Type': 'application/json' }, ...options,
   });
   if (!res.ok) throw new Error(`API error ${res.status}`);
@@ -65,6 +65,7 @@ export const deletePlayer  = (id: string)                         => req<{succes
 
 export const getQueue    = () => req<Match[]>('/api/queue');
 export const getHistory  = () => req<Match[]>('/api/queue/history');
+export const deleteHistory = () => req(`/api/queue/history`, { method: 'DELETE'});
 
 export const createMatch = (body: {
   team1: string[]; team2: string[]; matchType: MatchType; court: number;
@@ -143,7 +144,7 @@ export async function getReservations(params?: {
   const q = new URLSearchParams();
   if (params?.date)   q.set('date',   params.date);
   if (params?.status) q.set('status', params.status);
-  const res = await fetch(`${BASE}/api/reservations?${q}`);
+  const res = await fetch(`${API_BASE}/api/reservations?${q}`);
   return res.json();
 }
 
@@ -153,12 +154,12 @@ export async function getAvailability(
 ): Promise<{ court: number; timeSlot: string }[]> {
   const q = new URLSearchParams({ date });
   if (court) q.set('court', String(court));
-  const res = await fetch(`${BASE}/api/reservations/availability?${q}`);
+  const res = await fetch(`${API_BASE}/api/reservations/availability?${q}`);
   return res.json();
 }
 
 export async function createReservation(data: BookingPayload): Promise<Reservation> {
-  const res = await fetch(`${BASE}/api/reservations`, {
+  const res = await fetch(`${API_BASE}/api/reservations`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -174,7 +175,7 @@ export async function updateReservation(
   id: string,
   data: Partial<Reservation>
 ): Promise<Reservation> {
-  const res = await fetch(`${BASE}/api/reservations/${id}`, {
+  const res = await fetch(`${API_BASE}/api/reservations/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -183,5 +184,5 @@ export async function updateReservation(
 }
 
 export async function deleteReservation(id: string): Promise<void> {
-  await fetch(`${BASE}/api/reservations/${id}`, { method: 'DELETE' });
+  await fetch(`${API_BASE}/api/reservations/${id}`, { method: 'DELETE' });
 }

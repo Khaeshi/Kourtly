@@ -1,6 +1,6 @@
 import NextAuth from 'next-auth';
 import Google from 'next-auth/providers/google';
-import { BASE } from '@/lib/config'
+import { API_BASE } from '@/lib/config'
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   providers: [
@@ -14,7 +14,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   callbacks: {
     async signIn({ user }) {
       try {
-        const res = await fetch(`${BASE}/api/users/upsert`, {
+        const res = await fetch(`${API_BASE}/api/users/upsert`, {
           method:  'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -35,7 +35,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     async jwt({ token, trigger }) {
       if (token.email && (trigger === 'signIn' || trigger === 'update' || !token.role)) {
         try {
-          const res  = await fetch(`${BASE}/api/users/by-email/${encodeURIComponent(token.email!)}`);
+          const res  = await fetch(`${API_BASE}/api/users/by-email/${encodeURIComponent(token.email!)}`);
           const user = await res.json();
           token.role = user.role ?? 'user';
           token.dbId = user._id;
