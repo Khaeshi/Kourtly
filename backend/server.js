@@ -9,6 +9,7 @@ import itemRoutes from './src/routes/itemRoutes.js';
 import tabRoutes from './src/routes/tabRoutes.js';
 import reservationRoutes from './src/routes/reservationRoutes.js';
 import scheduleRoutes from './src/routes/scheduleRoutes.js';
+import analyticsRoutes   from './src/routes/analyticsRoutes.js';
 
 dotenv.config();
 
@@ -37,7 +38,8 @@ app.use('/api/queue',        queueRoutes);
 app.use('/api/items',        itemRoutes);
 app.use('/api/tabs',         tabRoutes);
 app.use('/api/reservations', reservationRoutes);
-app.use('/api/schedule',     scheduleRoutes)
+app.use('/api/schedule',     scheduleRoutes);
+app.use('/api/analytics',    analyticsRoutes);
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, '0.0.0.0', () => console.log(`Server running on port ${PORT}`));
