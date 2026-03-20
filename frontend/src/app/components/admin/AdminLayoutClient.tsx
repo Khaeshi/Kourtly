@@ -11,11 +11,12 @@ interface Props {
 
 export default function AdminLayoutClient({ children, user }: Props) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
 
   return (
     <>
       <Toaster
-        position="top-right"
+        position={isMobile ? 'bottom-center' : 'top-right'}
         options={{
           fill: "#171717",
           styles: {
