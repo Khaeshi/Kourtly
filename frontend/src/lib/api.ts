@@ -186,3 +186,42 @@ export async function updateReservation(
 export async function deleteReservation(id: string): Promise<void> {
   await fetch(`${API_BASE}/api/reservations/${id}`, { method: 'DELETE' });
 }
+
+// ─── Reservation Tabs ─────────────────────────────────────────────────────────
+ 
+export interface ReservationTab {
+  _id:         string;
+  reservation: string;
+  guestName:   string;
+  court:       number;
+  date:        string;
+  timeSlot:    string;
+  duration:    number;
+  items:       TabItem[];
+  total:       number;
+  status:      'open' | 'paid';
+  createdAt:   string;
+  updatedAt:   string;
+}
+ 
+export const getTodayReservationTabs = () =>
+  req<ReservationTab[]>('/api/reservation-tabs/today');
+ 
+export const getReservationTabHistory = () =>
+  req<ReservationTab[]>('/api/reservation-tabs/history');
+ 
+export const addItemToReservationTab = (
+  tabId: string,
+  item: { itemId: string; name: string; price: number; quantity: number }
+) => req<ReservationTab>(`/api/reservation-tabs/${tabId}/items`, {
+  method: 'POST', body: JSON.stringify(item),
+});
+ 
+export const removeItemFromReservationTab = (tabId: string, itemIndex: number) =>
+  req<ReservationTab>(`/api/reservation-tabs/${tabId}/items/${itemIndex}`, { method: 'DELETE' });
+ 
+export const payReservationTab = (tabId: string) =>
+  req<ReservationTab>(`/api/reservation-tabs/${tabId}/pay`, { method: 'PUT' });
+ 
+export const clearReservationTab = (tabId: string) =>
+  req<void>(`/api/reservation-tabs/${tabId}`, { method: 'DELETE' });

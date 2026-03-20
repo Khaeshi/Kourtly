@@ -10,6 +10,7 @@ import tabRoutes from './src/routes/tabRoutes.js';
 import reservationRoutes from './src/routes/reservationRoutes.js';
 import scheduleRoutes from './src/routes/scheduleRoutes.js';
 import analyticsRoutes   from './src/routes/analyticsRoutes.js';
+import reservationTabRoutes   from './src/routes/reservationtabRoutes.js';
 
 dotenv.config();
 
@@ -40,6 +41,7 @@ app.use('/api/tabs',         tabRoutes);
 app.use('/api/reservations', reservationRoutes);
 app.use('/api/schedule',     scheduleRoutes);
 app.use('/api/analytics',    analyticsRoutes);
+app.use('/api/reservation-tabs',  reservationTabRoutes);
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, '0.0.0.0', () => console.log(`Server running on port ${PORT}`));

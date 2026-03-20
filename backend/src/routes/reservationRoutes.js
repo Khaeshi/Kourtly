@@ -75,10 +75,26 @@ router.get('/availability', async (req, res) => {
 
     const { isFullyClosed, baseSlots, perCourt } = resolveSchedule(rule, blocks);
 
-    // Filter base slots to those valid for the requested duration
+    // Current time in minutes — only relevant when date is today (use local PH time via offset)
+    const nowUtc     = new Date();
+    // PHT = UTC+8. Using getTime() + offset to get local mins without relying on server TZ
+    const phOffset   = 8 * 60; // Philippines is UTC+8, no DST
+    const phMins     = (nowUtc.getUTCHours() * 60 + nowUtc.getUTCMinutes() + phOffset) % (24 * 60);
+    const phDateStr  = (() => {
+      const phDate = new Date(nowUtc.getTime() + phOffset * 60 * 1000);
+      return phDate.toISOString().slice(0, 10);
+    })();
+    const isToday    = date === phDateStr;
+
+    // Filter base slots to those valid for the requested duration AND not fully in the past
     const validBase = baseSlots.filter(slot => {
       const startMins = toMinutes(slot.split('-')[0]);
-      return startMins + durationHours * 60 <= 23 * 60;
+      // Rule 1: slot + duration must not exceed 23:00
+      if (startMins + durationHours * 60 > 23 * 60) return false;
+      // Rule 2: for today, only block if the slot has completely ended (start + 1hr <= now)
+      // This allows booking the currently-running hour slot
+      if (isToday && startMins + 60 <= phMins) return false;
+      return true;
     });
 
     const result = [1, 2, 3, 4].map(courtNum => {

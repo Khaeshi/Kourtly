@@ -59,11 +59,24 @@ function fmtDateShort(d: string) {
   return format(parseISO(d), 'MMM d, yyyy');
 }
 
-/** Slots that are valid for a given duration (don't run past 23:00) */
-function validSlotsForDuration(durationHours: number) {
+/** Slots valid for a duration — must not overflow 23:00 AND not be fully in the past */
+function validSlotsForDuration(durationHours: number, date?: string) {
+  const todayStr = format(new Date(), 'yyyy-MM-dd');
+  const isToday  = date ? date === todayStr : false;
+  // Only block slots whose 1-hour window has completely ended
+  // e.g. at 9:30 PM, the 9PM slot (9PM–10PM) is still in progress → keep it
+  // at 10:05 PM, the 9PM slot has ended → block it
+  const nowMins  = isToday
+    ? new Date().getHours() * 60 + new Date().getMinutes()
+    : 0;
+
   return ALL_SLOTS.filter(slot => {
     const startMins = toMinutes(slot.split('-')[0]);
-    return startMins + durationHours * 60 <= LAST_START_HOUR * 60;
+    // Must not overflow past 23:00
+    if (startMins + durationHours * 60 > LAST_START_HOUR * 60) return false;
+    // For today, block only if the slot's base 1hr window has fully ended
+    if (isToday && startMins + 60 <= nowMins) return false;
+    return true;
   });
 }
 
@@ -168,7 +181,10 @@ function DurationStep({
       .finally(() => setLoading(false));
   }, [date, court]);
 
-  const selectedAvail = availMap[duration] ?? [];
+  // Re-filter available slots against current time for today
+  // (backend already does this, but double-check on frontend for display accuracy)
+  const validForDuration = validSlotsForDuration(duration, date);
+  const selectedAvail = (availMap[duration] ?? []).filter(s => validForDuration.includes(s));
   const hasSlots      = selectedAvail.length > 0;
 
   return (
@@ -294,7 +310,7 @@ function TimeStep({
 
   const courtData   = availability.find(a => a.court === court);
   const blockedSlots = courtData?.blockedSlots ?? [];
-  const slots        = validSlotsForDuration(duration);
+  const slots        = validSlotsForDuration(duration, date);
 
   return (
     <div className="anim">

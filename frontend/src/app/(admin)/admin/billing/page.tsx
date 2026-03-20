@@ -4,8 +4,10 @@ import { sileo } from 'sileo';
 import {
   getPlayers, getItems, getOpenTabs, getTabHistory,
   openTab, addItemToTab, removeItemFromTab, payTab, closeTab, splitItem,
+  getTodayReservationTabs, getReservationTabHistory, addItemToReservationTab,
+  removeItemFromReservationTab, payReservationTab, clearReservationTab,
 } from '@/lib/api';
-import type { Player, CatalogItem, Tab } from '@/lib/api';
+import type { Player, CatalogItem, Tab, ReservationTab } from '@/lib/api';
 
 // ── Constants (unchanged) ─────────────────────────────────────────────────────
 const LEVEL_COLOR: Record<string, string> = {
@@ -259,16 +261,27 @@ export default function BillingPage() {
   const [history,    setHistory]    = useState<Tab[]>([]);
   const [loading,    setLoading]    = useState(true);
   const [activeTab,  setActiveTab]  = useState<string | null>(null);
-  const [view,       setView]       = useState<'active' | 'history'>('active');
-  const [openingFor, setOpeningFor] = useState('');
-  const [search,     setSearch]     = useState('');
-  const [splitItem_, setSplitItem]  = useState<CatalogItem | null>(null);
-  const [addingItem, setAddingItem] = useState<string | null>(null);
-  const [qty,        setQty]        = useState<Record<string, number>>({});
+  const [view,          setView]          = useState<'active' | 'reservations' | 'history'>('active');
+  const [openingFor,    setOpeningFor]    = useState('');
+  const [search,        setSearch]        = useState('');
+  const [splitItem_,    setSplitItem]     = useState<CatalogItem | null>(null);
+  const [addingItem,    setAddingItem]    = useState<string | null>(null);
+  const [qty,           setQty]           = useState<Record<string, number>>({});
+  const [resTabs,       setResTabs]       = useState<ReservationTab[]>([]);
+  const [activeResTab,  setActiveResTab]  = useState<string | null>(null);
+  const [addingResItem, setAddingResItem] = useState<string | null>(null);
+  const [resQty,        setResQty]        = useState<Record<string, number>>({});
+
+  const [resHistory, setResHistory] = useState<ReservationTab[]>([]);
+  const [historyTab, setHistoryTab] = useState<'queue' | 'reservations'>('queue');
 
   const loadAll = useCallback(async () => {
-    const [p, i, t, h] = await Promise.all([getPlayers(), getItems(), getOpenTabs(), getTabHistory()]);
-    setPlayers(p); setItems(i); setOpenTabs(t); setHistory(h); setLoading(false);
+    const [p, i, t, h, rt, rh] = await Promise.all([
+      getPlayers(), getItems(), getOpenTabs(), getTabHistory(),
+      getTodayReservationTabs(), getReservationTabHistory(),
+    ]);
+    setPlayers(p); setItems(i); setOpenTabs(t); setHistory(h);
+    setResTabs(rt); setResHistory(rh); setLoading(false);
   }, []);
 
   useEffect(() => { loadAll(); }, [loadAll]);
@@ -334,15 +347,32 @@ export default function BillingPage() {
       </div>
 
       {/* View toggle */}
-      <div className="flex gap-1.5 mb-5">
-        {(['active', 'history'] as const).map(v => (
-          <button key={v} onClick={() => setView(v)}
-            className={`px-4 py-1.5 rounded-md text-xs font-medium border cursor-pointer transition-all ${
-              view === v ? 'bg-gray-900 border-gray-900 text-white' : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'
-            }`}>
-            {v === 'active' ? `Active (${openTabs.length})` : `History (${history.length})`}
-          </button>
-        ))}
+      <div className="flex gap-1.5 mb-5 flex-wrap">
+        <button onClick={() => setView('active')}
+          className={`px-4 py-1.5 rounded-md text-xs font-medium border cursor-pointer transition-all ${
+            view === 'active' ? 'bg-gray-900 border-gray-900 text-white' : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'
+          }`}>
+          Queue Tabs ({openTabs.length})
+        </button>
+        <button onClick={() => setView('reservations')}
+          className={`px-4 py-1.5 rounded-md text-xs font-medium border cursor-pointer transition-all ${
+            view === 'reservations'
+              ? 'bg-blue-600 border-blue-600 text-white'
+              : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'
+          }`}>
+          Reservations Today ({resTabs.length})
+          {resTabs.length > 0 && view !== 'reservations' && (
+            <span className="ml-1.5 inline-flex items-center justify-center w-4 h-4 rounded-full bg-blue-500 text-white text-[0.6rem] font-bold">
+              {resTabs.length}
+            </span>
+          )}
+        </button>
+        <button onClick={() => setView('history')}
+          className={`px-4 py-1.5 rounded-md text-xs font-medium border cursor-pointer transition-all ${
+            view === 'history' ? 'bg-gray-900 border-gray-900 text-white' : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'
+          }`}>
+          History ({history.length})
+        </button>
       </div>
 
       {/* ── ACTIVE VIEW ── */}
@@ -454,80 +484,356 @@ export default function BillingPage() {
         </div>
       )}
 
+      {/* ── RESERVATIONS VIEW ── */}
+      {view === 'reservations' && (
+        <div className="flex flex-col lg:grid lg:grid-cols-[1fr_280px] gap-6 items-start">
+
+          {/* LEFT: Reservation tabs */}
+          <div className="w-full min-w-0">
+            {loading ? (
+              <div className="p-12 text-center text-gray-400 text-sm">Loading...</div>
+            ) : resTabs.length === 0 ? (
+              <div className="p-12 text-center bg-white border border-dashed border-blue-100 rounded-xl">
+                <p className="text-sm text-blue-300 font-medium mb-1">No reservations today</p>
+                <p className="text-xs text-gray-400">Confirmed reservations for today will appear here automatically.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                {resTabs.map(tab => {
+                  const isActive = activeResTab === tab._id;
+                  return (
+                    <div key={tab._id}
+                      onClick={() => setActiveResTab(t => t === tab._id ? null : tab._id)}
+                      className={`bg-white rounded-xl overflow-hidden cursor-pointer transition-all ${
+                        isActive ? 'ring-2 ring-blue-500 ring-offset-1' : 'border border-gray-200'
+                      }`}>
+
+                      {/* Header — blue tinted to distinguish from queue tabs */}
+                      <div className={`px-4 py-3 flex items-center gap-2 ${tab.items.length > 0 ? 'border-b border-gray-100' : ''}`}
+                        style={{ background: isActive ? '#eff6ff' : '#f8faff' }}>
+                        {/* Court badge */}
+                        <span className="text-[0.65rem] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 shrink-0">
+                          C{tab.court}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-gray-900 truncate">{tab.guestName}</p>
+                          <p className="text-[0.65rem] text-gray-400 font-mono truncate">
+                            {tab.timeSlot} · {tab.duration}h
+                          </p>
+                        </div>
+                        <span className={`font-mono text-sm font-semibold shrink-0 ${tab.total > 0 ? 'text-yellow-900' : 'text-gray-300'}`}>
+                          {fmt(tab.total)}
+                        </span>
+                      </div>
+
+                      {/* Items */}
+                      {tab.items.length > 0 && (
+                        <div className="px-4 py-1.5">
+                          {tab.items.map((item, i) => (
+                            <div key={i} className={`flex items-center gap-2 py-1.5 ${i < tab.items.length - 1 ? 'border-b border-gray-50' : ''}`}>
+                              <span className="flex-1 text-xs text-gray-600 truncate">{item.name}</span>
+                              <span className="text-[0.7rem] text-gray-400 font-mono">×{item.quantity}</span>
+                              <span className="text-xs text-gray-600 font-mono min-w-[44px] text-right">{fmt(item.price * item.quantity)}</span>
+                              <button
+                                onClick={async e => {
+                                  e.stopPropagation();
+                                  await removeItemFromReservationTab(tab._id, i);
+                                  loadAll();
+                                }}
+                                className="text-gray-300 hover:text-red-400 transition-colors text-xs px-0.5 leading-none">
+                                ✕
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Actions */}
+                      <div className="px-4 py-2 border-t border-gray-100 bg-gray-50/60 flex gap-1.5">
+                        {tab.items.length > 0 && (
+                          <button
+                            onClick={async e => {
+                              e.stopPropagation();
+                              await sileo.promise(payReservationTab(tab._id), {
+                                loading: { title: 'Processing...' },
+                                success: { title: 'Paid!', description: `${tab.guestName} — ${fmt(tab.total)}` },
+                                error:   { title: 'Payment failed' },
+                              });
+                              loadAll();
+                            }}
+                            className="flex-1 py-1.5 rounded-md border border-yellow-200 bg-yellow-50 text-yellow-900 text-xs font-semibold cursor-pointer hover:bg-yellow-100 transition-all">
+                            Pay {fmt(tab.total)}
+                          </button>
+                        )}
+                        <button
+                          onClick={async e => {
+                            e.stopPropagation();
+                            if (!confirm(`Clear ${tab.guestName}'s tab?`)) return;
+                            await clearReservationTab(tab._id);
+                            sileo.success({ title: 'Tab cleared' });
+                            loadAll();
+                          }}
+                          className="px-2.5 py-1.5 rounded-md border border-red-100 bg-red-50/60 text-red-400 text-xs cursor-pointer hover:bg-red-100 transition-all">
+                          ✕
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* RIGHT: Same item sidebar, wired to active reservation tab */}
+          <div className="w-full lg:w-auto bg-white border border-gray-200 rounded-xl overflow-hidden lg:sticky lg:top-4">
+            <div className="px-4 py-3 border-b border-blue-100 bg-blue-50/40">
+              <p className="text-[0.65rem] font-bold tracking-widest uppercase text-blue-400">
+                {activeResTab
+                  ? `Add to ${resTabs.find(t => t._id === activeResTab)?.guestName ?? '—'}`
+                  : 'Select a reservation tab'}
+              </p>
+            </div>
+
+            <div className="max-h-[60vh] lg:max-h-[calc(100vh-280px)] overflow-y-auto">
+              {Object.entries(
+                (['court fee', 'equipment', 'drinks', 'food', 'general']).reduce((acc, cat) => {
+                  const catItems = items.filter(i => i.category === cat);
+                  if (catItems.length > 0) acc[cat] = catItems;
+                  return acc;
+                }, {} as Record<string, CatalogItem[]>)
+              ).map(([cat, catItems]) => (
+                <div key={cat}>
+                  <div className="px-4 py-1.5 bg-gray-50/60 border-b border-gray-100">
+                    <span className="text-[0.62rem] font-bold tracking-widest uppercase text-gray-300">{cat}</span>
+                  </div>
+                  {catItems.map(item => {
+                    const q = resQty[item._id] ?? 1;
+                    return (
+                      <div key={item._id}
+                        className={`flex items-center px-3 py-2 gap-1.5 border-b border-gray-50 transition-colors ${activeResTab ? 'hover:bg-gray-50' : 'opacity-45'}`}>
+                        <span className="flex-1 text-xs text-gray-600 truncate min-w-0">{item.name}</span>
+                        <span className="text-[0.7rem] font-mono text-gray-400 shrink-0 min-w-[46px] text-right">
+                          {fmt(item.price * q)}
+                        </span>
+                        {/* Qty stepper */}
+                        <div className="flex items-center gap-0.5 shrink-0">
+                          <button disabled={!activeResTab}
+                            onClick={e => { e.stopPropagation(); setResQty(q2 => ({ ...q2, [item._id]: Math.max(1, q - 1) })); }}
+                            className="w-5 h-5 rounded border border-gray-200 bg-white text-gray-500 text-sm flex items-center justify-center disabled:cursor-not-allowed hover:border-gray-300">−</button>
+                          <span className="font-mono text-xs min-w-[18px] text-center text-gray-800 font-semibold">{q}</span>
+                          <button disabled={!activeResTab}
+                            onClick={e => { e.stopPropagation(); setResQty(q2 => ({ ...q2, [item._id]: q + 1 })); }}
+                            className="w-5 h-5 rounded border border-gray-200 bg-white text-gray-500 text-sm flex items-center justify-center disabled:cursor-not-allowed hover:border-gray-300">+</button>
+                        </div>
+                        {/* Add button */}
+                        <button disabled={!activeResTab}
+                          onClick={async () => {
+                            if (!activeResTab) return;
+                            setAddingResItem(item._id);
+                            const resTab = resTabs.find(t => t._id === activeResTab);
+                            await addItemToReservationTab(activeResTab, {
+                              itemId: item._id, name: item.name, price: item.price, quantity: q,
+                            });
+                            sileo.success({ title: 'Added', description: `${item.name} ×${q} → ${resTab?.guestName}` });
+                            setResQty(q2 => ({ ...q2, [item._id]: 1 }));
+                            await loadAll();
+                            setAddingResItem(null);
+                          }}
+                          className={`px-2 py-1 rounded text-[0.7rem] font-semibold shrink-0 border transition-all ${
+                            !activeResTab
+                              ? 'bg-gray-50 border-gray-200 text-gray-300 cursor-not-allowed'
+                              : 'bg-blue-50 border-blue-200 text-blue-700 cursor-pointer hover:bg-blue-100'
+                          }`}>
+                          {addingResItem === item._id ? '...' : 'Add'}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+
+            <div className="px-4 py-2.5 border-t border-gray-100 bg-gray-50/60">
+              <p className="text-[0.65rem] text-gray-300">Reservation billing — no auto-split</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── HISTORY VIEW ── */}
       {view === 'history' && (
         <div>
-          <div className="flex gap-3 mb-4 items-center">
-            <input className="bg-white border border-gray-200 rounded-md px-3 py-1.5 text-sm text-gray-700 outline-none focus:border-green-400 w-56"
-              placeholder="Search player..." value={search} onChange={e => setSearch(e.target.value)} />
-            <span className="font-mono text-xs text-gray-400">{filteredHistory.length} records</span>
-          </div>
-
-          {/* Desktop history table */}
-          <div className="hidden sm:block bg-white border border-gray-200 rounded-xl overflow-hidden">
-            <div className="grid px-5 py-2.5 border-b border-gray-100 bg-gray-50/60"
-              style={{ gridTemplateColumns: '1fr 160px 100px 80px' }}>
-              {['Player', 'Items', 'Total', 'Time'].map(h => (
-                <span key={h} className="text-[0.65rem] font-bold tracking-widest uppercase text-gray-300">{h}</span>
-              ))}
+          {/* Sub-toggle: Queue History vs Reservation History */}
+          <div className="flex gap-2 mb-4 items-center flex-wrap">
+            <div className="flex gap-1">
+              <button onClick={() => setHistoryTab('queue')}
+                className={`px-3 py-1.5 rounded-md text-xs font-medium border transition-all ${
+                  historyTab === 'queue'
+                    ? 'bg-gray-900 border-gray-900 text-white'
+                    : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'
+                }`}>
+                Queue ({history.length})
+              </button>
+              <button onClick={() => setHistoryTab('reservations')}
+                className={`px-3 py-1.5 rounded-md text-xs font-medium border transition-all ${
+                  historyTab === 'reservations'
+                    ? 'bg-blue-600 border-blue-600 text-white'
+                    : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'
+                }`}>
+                Reservations ({resHistory.length})
+              </button>
             </div>
-            {loading ? (
-              <div className="p-12 text-center text-gray-400 text-sm">Loading...</div>
-            ) : filteredHistory.length === 0 ? (
-              <div className="p-12 text-center text-gray-400 text-sm">No paid tabs yet.</div>
-            ) : filteredHistory.map((tab, i) => (
-              <div key={tab._id} className="grid px-5 py-3.5 items-center hover:bg-gray-50/50 transition-colors"
-                style={{ gridTemplateColumns: '1fr 160px 100px 80px', borderBottom: i < filteredHistory.length - 1 ? '1px solid #f9fafb' : 'none' }}>
-                <div className="flex items-center gap-2">
-                  <LevelBadge level={tab.player.level} />
-                  <span className="text-sm font-medium text-gray-700">{tab.player.name}</span>
-                </div>
-                <div className="flex flex-wrap gap-1">
-                  {tab.items.slice(0, 2).map((item, j) => (
-                    <span key={j} className="text-[0.65rem] bg-green-50 text-green-700 border border-green-200 rounded px-1.5 py-0.5 font-mono">
-                      {item.name} ×{item.quantity}
-                    </span>
-                  ))}
-                  {tab.items.length > 2 && (
-                    <span className="text-[0.65rem] bg-gray-100 text-gray-500 rounded px-1.5 py-0.5">+{tab.items.length - 2}</span>
-                  )}
-                </div>
-                <span className="font-mono text-sm font-semibold text-yellow-900">{fmt(tab.total)}</span>
-                <span className="font-mono text-[0.65rem] text-gray-400">
-                  {new Date(tab.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </span>
-              </div>
-            ))}
+            <input className="bg-white border border-gray-200 rounded-md px-3 py-1.5 text-sm text-gray-700 outline-none focus:border-green-400 w-48"
+              placeholder={historyTab === 'queue' ? 'Search player...' : 'Search guest...'}
+              value={search} onChange={e => setSearch(e.target.value)} />
+            <span className="font-mono text-xs text-gray-400">
+              {historyTab === 'queue' ? filteredHistory.length : resHistory.filter(t => t.guestName.toLowerCase().includes(search.toLowerCase())).length} records
+            </span>
           </div>
 
-          {/* Mobile history cards */}
-          <div className="sm:hidden flex flex-col gap-3">
-            {loading ? (
-              <div className="p-12 text-center text-gray-400 text-sm">Loading...</div>
-            ) : filteredHistory.length === 0 ? (
-              <div className="p-12 text-center text-gray-400 text-sm">No paid tabs yet.</div>
-            ) : filteredHistory.map(tab => (
-              <div key={tab._id} className="bg-white border border-gray-200 rounded-xl p-4">
-                <div className="flex items-center justify-between gap-3 mb-2">
-                  <div className="flex items-center gap-2">
-                    <LevelBadge level={tab.player.level} />
-                    <span className="text-sm font-semibold text-gray-800">{tab.player.name}</span>
-                  </div>
-                  <span className="font-mono text-sm font-semibold text-yellow-900">{fmt(tab.total)}</span>
-                </div>
-                <div className="flex flex-wrap gap-1 mb-2">
-                  {tab.items.map((item, j) => (
-                    <span key={j} className="text-[0.65rem] bg-green-50 text-green-700 border border-green-200 rounded px-1.5 py-0.5 font-mono">
-                      {item.name} ×{item.quantity}
-                    </span>
+          {/* ── Queue History ── */}
+          {historyTab === 'queue' && (
+            <>
+              {/* Desktop */}
+              <div className="hidden sm:block bg-white border border-gray-200 rounded-xl overflow-hidden">
+                <div className="grid px-5 py-2.5 border-b border-gray-100 bg-gray-50/60"
+                  style={{ gridTemplateColumns: '1fr 160px 100px 80px' }}>
+                  {['Player', 'Items', 'Total', 'Time'].map(h => (
+                    <span key={h} className="text-[0.65rem] font-bold tracking-widest uppercase text-gray-300">{h}</span>
                   ))}
                 </div>
-                <p className="text-xs text-gray-400 font-mono">
-                  {new Date(tab.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </p>
+                {loading ? (
+                  <div className="p-12 text-center text-gray-400 text-sm">Loading...</div>
+                ) : filteredHistory.length === 0 ? (
+                  <div className="p-12 text-center text-gray-400 text-sm">No paid queue tabs yet.</div>
+                ) : filteredHistory.map((tab, i) => (
+                  <div key={tab._id} className="grid px-5 py-3.5 items-center hover:bg-gray-50/50 transition-colors"
+                    style={{ gridTemplateColumns: '1fr 160px 100px 80px', borderBottom: i < filteredHistory.length - 1 ? '1px solid #f9fafb' : 'none' }}>
+                    <div className="flex items-center gap-2">
+                      <LevelBadge level={tab.player.level} />
+                      <span className="text-sm font-medium text-gray-700">{tab.player.name}</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {tab.items.slice(0, 2).map((item, j) => (
+                        <span key={j} className="text-[0.65rem] bg-green-50 text-green-700 border border-green-200 rounded px-1.5 py-0.5 font-mono">
+                          {item.name} ×{item.quantity}
+                        </span>
+                      ))}
+                      {tab.items.length > 2 && (
+                        <span className="text-[0.65rem] bg-gray-100 text-gray-500 rounded px-1.5 py-0.5">+{tab.items.length - 2}</span>
+                      )}
+                    </div>
+                    <span className="font-mono text-sm font-semibold text-yellow-900">{fmt(tab.total)}</span>
+                    <span className="font-mono text-[0.65rem] text-gray-400">
+                      {new Date(tab.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+              {/* Mobile */}
+              <div className="sm:hidden flex flex-col gap-3">
+                {filteredHistory.length === 0 ? (
+                  <div className="p-12 text-center text-gray-400 text-sm">No paid queue tabs yet.</div>
+                ) : filteredHistory.map(tab => (
+                  <div key={tab._id} className="bg-white border border-gray-200 rounded-xl p-4">
+                    <div className="flex items-center justify-between gap-3 mb-2">
+                      <div className="flex items-center gap-2">
+                        <LevelBadge level={tab.player.level} />
+                        <span className="text-sm font-semibold text-gray-800">{tab.player.name}</span>
+                      </div>
+                      <span className="font-mono text-sm font-semibold text-yellow-900">{fmt(tab.total)}</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1 mb-2">
+                      {tab.items.map((item, j) => (
+                        <span key={j} className="text-[0.65rem] bg-green-50 text-green-700 border border-green-200 rounded px-1.5 py-0.5 font-mono">
+                          {item.name} ×{item.quantity}
+                        </span>
+                      ))}
+                    </div>
+                    <p className="text-xs text-gray-400 font-mono">
+                      {new Date(tab.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          {/* ── Reservation History ── */}
+          {historyTab === 'reservations' && (() => {
+            const filteredResHistory = resHistory.filter(t =>
+              t.guestName.toLowerCase().includes(search.toLowerCase())
+            );
+            return (
+              <>
+                {/* Desktop */}
+                <div className="hidden sm:block bg-white border border-blue-100 rounded-xl overflow-hidden">
+                  <div className="grid px-5 py-2.5 border-b border-blue-50 bg-blue-50/40"
+                    style={{ gridTemplateColumns: '1fr 80px 160px 100px 80px' }}>
+                    {['Guest', 'Court', 'Items', 'Total', 'Date'].map(h => (
+                      <span key={h} className="text-[0.65rem] font-bold tracking-widest uppercase text-blue-300">{h}</span>
+                    ))}
+                  </div>
+                  {loading ? (
+                    <div className="p-12 text-center text-gray-400 text-sm">Loading...</div>
+                  ) : filteredResHistory.length === 0 ? (
+                    <div className="p-12 text-center text-gray-400 text-sm">No paid reservation tabs yet.</div>
+                  ) : filteredResHistory.map((tab, i) => (
+                    <div key={tab._id} className="grid px-5 py-3.5 items-center hover:bg-blue-50/30 transition-colors"
+                      style={{ gridTemplateColumns: '1fr 80px 160px 100px 80px', borderBottom: i < filteredResHistory.length - 1 ? '1px solid #f0f4ff' : 'none' }}>
+                      <div>
+                        <p className="text-sm font-medium text-gray-700">{tab.guestName}</p>
+                        <p className="text-[0.65rem] text-gray-400 font-mono">{tab.timeSlot} · {tab.duration}h</p>
+                      </div>
+                      <span className="text-xs font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded w-fit">C{tab.court}</span>
+                      <div className="flex flex-wrap gap-1">
+                        {tab.items.slice(0, 2).map((item, j) => (
+                          <span key={j} className="text-[0.65rem] bg-blue-50 text-blue-700 border border-blue-200 rounded px-1.5 py-0.5 font-mono">
+                            {item.name} ×{item.quantity}
+                          </span>
+                        ))}
+                        {tab.items.length > 2 && (
+                          <span className="text-[0.65rem] bg-gray-100 text-gray-500 rounded px-1.5 py-0.5">+{tab.items.length - 2}</span>
+                        )}
+                        {tab.items.length === 0 && <span className="text-[0.65rem] text-gray-300">No items</span>}
+                      </div>
+                      <span className="font-mono text-sm font-semibold text-yellow-900">{fmt(tab.total)}</span>
+                      <span className="font-mono text-[0.65rem] text-gray-400">{tab.date}</span>
+                    </div>
+                  ))}
+                </div>
+                {/* Mobile */}
+                <div className="sm:hidden flex flex-col gap-3">
+                  {filteredResHistory.length === 0 ? (
+                    <div className="p-12 text-center text-gray-400 text-sm">No paid reservation tabs yet.</div>
+                  ) : filteredResHistory.map(tab => (
+                    <div key={tab._id} className="bg-white border border-blue-100 rounded-xl p-4">
+                      <div className="flex items-start justify-between gap-3 mb-2">
+                        <div>
+                          <p className="text-sm font-semibold text-gray-800">{tab.guestName}</p>
+                          <p className="text-[0.65rem] text-gray-400 font-mono">{tab.timeSlot} · {tab.duration}h</p>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-xs font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded block mb-1">Court {tab.court}</span>
+                          <span className="font-mono text-sm font-semibold text-yellow-900">{fmt(tab.total)}</span>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-1 mb-2">
+                        {tab.items.length === 0
+                          ? <span className="text-xs text-gray-300">No items charged</span>
+                          : tab.items.map((item, j) => (
+                            <span key={j} className="text-[0.65rem] bg-blue-50 text-blue-700 border border-blue-200 rounded px-1.5 py-0.5 font-mono">
+                              {item.name} ×{item.quantity}
+                            </span>
+                          ))}
+                      </div>
+                      <p className="text-xs text-gray-400 font-mono">{tab.date}</p>
+                    </div>
+                  ))}
+                </div>
+              </>
+            );
+          })()}
         </div>
       )}
     </div>
