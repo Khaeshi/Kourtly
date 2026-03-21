@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Toaster } from 'sileo';
 import { APP_NAME } from '@/lib/config'
 import AdminSidebar from './AdminSidebar';
@@ -11,7 +11,46 @@ interface Props {
 
 export default function AdminLayoutClient({ children, user }: Props) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [ fsSupported, setFsSupported ] =useState(false);
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
+
+
+  /**
+   * @desc Check if fullscreen is supported (IOS safari not suuported)
+   */
+  useEffect(() => {
+    setFsSupported(!!document.documentElement.requestFullscreen);
+  }, []);
+
+  useEffect(() => {
+    const handler = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', handler);
+    return () => document.removeEventListener('fullscreenchange', handler);
+  }, []);
+
+    // Auto-enter fullscreen when admin layout mounts
+    useEffect(() => {
+      if (!document.documentElement.requestFullscreen) return;
+      // Small delay so the browser doesn't block the autoplay-style request
+      const timer = setTimeout(() => {
+        if (!document.fullscreenElement) {
+          document.documentElement.requestFullscreen().catch(() => {
+            // Browser may block auto-fullscreen without user gesture — that's fine,
+            // the manual toggle button is still available
+          });
+        }
+      }, 300);
+      return () => clearTimeout(timer);
+    }, []);
+
+    const toggleFullscreen = useCallback(() => {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(console.warn);
+      } else {
+        document.exitFullscreen();
+      }
+    }, []);
 
   return (
     <>
@@ -41,6 +80,24 @@ export default function AdminLayoutClient({ children, user }: Props) {
         <span className="font-bold text-sm text-gray-900 tracking-tight">
           {APP_NAME}
         </span>
+
+        {/* Fullscreen toggle in mobile topbar */}
+        {fsSupported && (
+          <button
+            onClick={toggleFullscreen}
+            title={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+            className="ml-auto w-8 h-8 flex items-center justify-center rounded-md text-gray-400 hover:text-gray-600 transition-colors">
+            {isFullscreen ? (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 0 2-2h3M3 16h3a2 2 0 0 0 2 2v3"/>
+              </svg>
+            ) : (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+              </svg>
+            )}
+          </button>
+        )}
       </div>
 
       {/* Backdrop */}
