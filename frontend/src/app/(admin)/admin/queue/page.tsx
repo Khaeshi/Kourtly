@@ -13,85 +13,95 @@ interface EditingSlot    { side: 'team1'|'team2'; index: number; }
 // ── Randomizer ────────────────────────────────────────────────────────────────
 
 export type MatchMode = 'balanced' | 'solid';
+export type MatchTypePreference = 'auto' | 'MD' | 'WD' | 'XD';
+
+// ── Scoring helpers ───────────────────────────────────────────────────────────
 
 /**
- * BALANCED match — teams are as even as possible across levels AND match counts.
- * Scoring penalises level gaps heavily so B+B vs D+D never wins over B+C vs B+C.
- * Max allowed level spread per team = 1 (e.g. B+C ok, B+D not ok).
+ * Score a team pairing. Lower = better (more balanced).
+ *
+ * BALANCED scoring philosophy:
+ *   - The two teams should be as close in total level as possible → heaviest weight
+ *   - Within each team, having similar levels is preferred but NOT enforced
+ *     so A+D vs B+C is allowed — both teams are level-sum 3, perfectly balanced
+ *   - Match count fairness (who's played least) is secondary
+ *   - A small random jitter introduces variety so the same match isn't always generated
  */
-function generateBalancedMatch(players: Player[]): GeneratedMatch | null {
+function scoreCombo(t1: Player[], t2: Player[]): number {
+  const t1LevelSum  = LEVEL_ORDER[t1[0].level] + LEVEL_ORDER[t1[1].level];
+  const t2LevelSum  = LEVEL_ORDER[t2[0].level] + LEVEL_ORDER[t2[1].level];
+  const t1MatchSum  = t1[0].matchCount + t1[1].matchCount;
+  const t2MatchSum  = t2[0].matchCount + t2[1].matchCount;
+
+  // Between-team level balance (most important)
+  const levelGap    = Math.abs(t1LevelSum - t2LevelSum);
+  // Match count fairness (secondary)
+  const matchGap    = Math.abs(t1MatchSum - t2MatchSum);
+  // Small jitter so identical scores produce varied results
+  const jitter      = Math.random() * 0.5;
+
+  return levelGap * 10 + matchGap + jitter;
+}
+
+function pickMatchType(
+  males: Player[], females: Player[],
+  preference: MatchTypePreference
+): MatchType | null {
+  const possible: MatchType[] = [];
+  if (males.length >= 4)                        possible.push('MD');
+  if (females.length >= 4)                      possible.push('WD');
+  if (males.length >= 2 && females.length >= 2) possible.push('XD');
+  if (possible.length === 0) return null;
+
+  if (preference !== 'auto' && possible.includes(preference as MatchType)) {
+    return preference as MatchType;
+  }
+  return possible[Math.floor(Math.random() * possible.length)];
+}
+
+/**
+ * BALANCED match:
+ * Finds the combo where the two teams' total level sums are as close as possible.
+ * All pairings (A+D vs B+C, B+C vs B+C, A+B vs C+D, etc.) are valid candidates —
+ * the score simply picks whichever produces the most even match.
+ * Small random jitter ensures variety across repeated generates.
+ */
+function generateBalancedMatch(
+  players: Player[],
+  preference: MatchTypePreference = 'auto'
+): GeneratedMatch | null {
+  // Sort by match count first so least-played players are prioritised
   const pool    = [...players].sort((a,b) => a.matchCount - b.matchCount || LEVEL_ORDER[a.level] - LEVEL_ORDER[b.level]);
   const males   = pool.filter(p => p.gender === 'Male');
   const females = pool.filter(p => p.gender === 'Female');
-  const possible: MatchType[] = [];
-  if (males.length >= 4)                            possible.push('MD');
-  if (females.length >= 4)                          possible.push('WD');
-  if (males.length >= 2 && females.length >= 2)     possible.push('XD');
-  if (possible.length === 0) return null;
 
-  const matchType = possible[Math.floor(Math.random() * possible.length)];
+  const matchType = pickMatchType(males, females, preference);
+  if (!matchType) return null;
 
   if (matchType === 'XD') {
-    // XD: pair closest male with closest female on each team
+    // XD: interleave closest levels
     return { team1: [males[0], females[0]], team2: [males[1], females[1]], matchType: 'XD' };
   }
 
   const candidates = matchType === 'MD' ? males : females;
   if (candidates.length < 4) return null;
-  const top = candidates.slice(0, Math.min(8, candidates.length));
 
   let best: GeneratedMatch | null = null;
   let bestScore = Infinity;
 
+  const top = candidates.slice(0, Math.min(8, candidates.length));
   for (let i = 0; i < top.length - 3; i++)
   for (let j = i + 1; j < top.length - 2; j++)
   for (let k = j + 1; k < top.length - 1; k++)
   for (let l = k + 1; l < top.length; l++) {
     const [p1, p2, p3, p4] = [top[i], top[j], top[k], top[l]];
-    const combos: [Player[], Player[]][] = [
-      [[p1, p2], [p3, p4]],
-      [[p1, p3], [p2, p4]],
-      [[p1, p4], [p2, p3]],
-    ];
-    for (const [t1, t2] of combos) {
-      const t1LevelSpread = Math.abs(LEVEL_ORDER[t1[0].level] - LEVEL_ORDER[t1[1].level]);
-      const t2LevelSpread = Math.abs(LEVEL_ORDER[t2[0].level] - LEVEL_ORDER[t2[1].level]);
-
-      // Hard reject: teams with level gap > 1 (e.g. A+C, B+D) — too uneven within a team
-      if (t1LevelSpread > 1 || t2LevelSpread > 1) continue;
-
-      const t1LevelSum = LEVEL_ORDER[t1[0].level] + LEVEL_ORDER[t1[1].level];
-      const t2LevelSum = LEVEL_ORDER[t2[0].level] + LEVEL_ORDER[t2[1].level];
-      const t1MatchSum = t1[0].matchCount + t1[1].matchCount;
-      const t2MatchSum = t2[0].matchCount + t2[1].matchCount;
-
-      // Score: level difference between teams is most important, match count is secondary
-      const score = Math.abs(t1LevelSum - t2LevelSum) * 10
-                  + Math.abs(t1MatchSum - t2MatchSum);
-
+    for (const [t1, t2] of [
+      [[p1,p2],[p3,p4]] as [Player[],Player[]],
+      [[p1,p3],[p2,p4]] as [Player[],Player[]],
+      [[p1,p4],[p2,p3]] as [Player[],Player[]],
+    ]) {
+      const score = scoreCombo(t1, t2);
       if (score < bestScore) { bestScore = score; best = { team1: t1, team2: t2, matchType }; }
-    }
-  }
-
-  // Fallback: if hard constraint eliminated everything, relax to allow spread of 2
-  if (!best) {
-    for (let i = 0; i < top.length - 3; i++)
-    for (let j = i + 1; j < top.length - 2; j++)
-    for (let k = j + 1; k < top.length - 1; k++)
-    for (let l = k + 1; l < top.length; l++) {
-      const [p1, p2, p3, p4] = [top[i], top[j], top[k], top[l]];
-      const combos: [Player[], Player[]][] = [
-        [[p1, p2], [p3, p4]], [[p1, p3], [p2, p4]], [[p1, p4], [p2, p3]],
-      ];
-      for (const [t1, t2] of combos) {
-        const t1LevelSum = LEVEL_ORDER[t1[0].level] + LEVEL_ORDER[t1[1].level];
-        const t2LevelSum = LEVEL_ORDER[t2[0].level] + LEVEL_ORDER[t2[1].level];
-        const t1MatchSum = t1[0].matchCount + t1[1].matchCount;
-        const t2MatchSum = t2[0].matchCount + t2[1].matchCount;
-        const score = Math.abs(t1LevelSum - t2LevelSum) * 10 + Math.abs(t1MatchSum - t2MatchSum);
-        if (score < Infinity) { if (score < (best ? Infinity : Infinity)) { best = { team1: t1, team2: t2, matchType }; break; } }
-      }
-      if (best) break;
     }
   }
 
@@ -99,23 +109,22 @@ function generateBalancedMatch(players: Player[]): GeneratedMatch | null {
 }
 
 /**
- * SOLID match — same-level players only. A+A vs A+A, B+B vs B+B, etc.
- * Falls back to closest available levels if not enough same-level players.
+ * SOLID match — same-level players grouped together.
+ * A+A vs A+A is the ideal; falls back to adjacent levels when unavailable.
+ * Examples: all-B, all-C, A+A vs B+B, B+B vs C+C, etc.
  */
-function generateSolidMatch(players: Player[]): GeneratedMatch | null {
+function generateSolidMatch(
+  players: Player[],
+  preference: MatchTypePreference = 'auto'
+): GeneratedMatch | null {
   const pool    = [...players].sort((a,b) => LEVEL_ORDER[a.level] - LEVEL_ORDER[b.level] || a.matchCount - b.matchCount);
   const males   = pool.filter(p => p.gender === 'Male');
   const females = pool.filter(p => p.gender === 'Female');
-  const possible: MatchType[] = [];
-  if (males.length >= 4)                            possible.push('MD');
-  if (females.length >= 4)                          possible.push('WD');
-  if (males.length >= 2 && females.length >= 2)     possible.push('XD');
-  if (possible.length === 0) return null;
 
-  const matchType = possible[Math.floor(Math.random() * possible.length)];
+  const matchType = pickMatchType(males, females, preference);
+  if (!matchType) return null;
 
   if (matchType === 'XD') {
-    // XD solid: find a male+female pair of same level if possible
     const mLevel = males[0].level;
     const sameF  = females.find(f => f.level === mLevel) ?? females[0];
     const sameM2 = males.find(m => m !== males[0] && m.level === sameF.level) ?? males[1];
@@ -126,45 +135,40 @@ function generateSolidMatch(players: Player[]): GeneratedMatch | null {
   const candidates = matchType === 'MD' ? males : females;
   if (candidates.length < 4) return null;
 
-  // Group by level
   const byLevel: Record<Level, Player[]> = { A: [], B: [], C: [], D: [] };
   candidates.forEach(p => byLevel[p.level].push(p));
 
-  // Try to find a level with 4+ players first (purest solid match)
-  for (const level of ['A', 'B', 'C', 'D'] as Level[]) {
-    const grp = byLevel[level];
-    if (grp.length >= 4) {
-      // Pick the 4 with least match counts
-      const four = grp.slice(0, 4);
-      return {
-        team1: [four[0], four[1]],
-        team2: [four[2], four[3]],
-        matchType,
-      };
+  // 4+ same level → purest solid match
+  for (const level of ['A','B','C','D'] as Level[]) {
+    if (byLevel[level].length >= 4) {
+      const four = byLevel[level].slice(0, 4);
+      return { team1: [four[0], four[1]], team2: [four[2], four[3]], matchType };
     }
   }
 
-  // Try adjacent levels (e.g. A+A vs B+B)
-  const levels = (['A', 'B', 'C', 'D'] as Level[]).filter(l => byLevel[l].length >= 2);
+  // 2+ of two different levels → A+A vs B+B style
+  const levels = (['A','B','C','D'] as Level[]).filter(l => byLevel[l].length >= 2);
   if (levels.length >= 2) {
-    const t1Level = levels[0];
-    const t2Level = levels[1];
     return {
-      team1: [byLevel[t1Level][0], byLevel[t1Level][1]],
-      team2: [byLevel[t2Level][0], byLevel[t2Level][1]],
+      team1: [byLevel[levels[0]][0], byLevel[levels[0]][1]],
+      team2: [byLevel[levels[1]][0], byLevel[levels[1]][1]],
       matchType,
     };
   }
 
-  // Final fallback: same as balanced
-  return generateBalancedMatch(players);
+  // Fallback to balanced
+  return generateBalancedMatch(players, preference);
 }
 
-/** Entry point — picks algorithm based on mode */
-function generateMatch(players: Player[], mode: MatchMode): GeneratedMatch | null {
+/** Entry point */
+function generateMatch(
+  players: Player[],
+  mode: MatchMode,
+  preference: MatchTypePreference = 'auto'
+): GeneratedMatch | null {
   return mode === 'solid'
-    ? generateSolidMatch(players)
-    : generateBalancedMatch(players);
+    ? generateSolidMatch(players, preference)
+    : generateBalancedMatch(players, preference);
 }
 
 // ── Small components ──────────────────────────────────────────────────────────
@@ -191,11 +195,11 @@ function PlayerPill({ p, side, index, editingSlot, onEdit }: {
 }) {
   const active = editingSlot?.side === side && editingSlot?.index === index;
   return (
-    <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.5rem 0.75rem', background: active ? '#f0fdf4' : '#fafafa', border:`1px solid ${active ? '#bbf7d0' : '#e5e7eb'}`, borderRadius:'6px', transition:'all 0.12s' }}>
+    <div style={{ display:'flex', alignItems:'center', gap:'0.35rem', padding:'0.45rem 0.6rem', background: active ? '#f0fdf4' : '#fafafa', border:`1px solid ${active ? '#bbf7d0' : '#e5e7eb'}`, borderRadius:'6px', transition:'all 0.12s', minWidth:0 }}>
       <LevelBadge level={p.level} />
-      <span style={{ flex:1, fontSize:'0.82rem', fontWeight:500, color:'#374151', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{p.name}</span>
-      <span style={{ fontSize:'0.65rem', color:'#9ca3af' }}>{p.gender==='Male'?'M':'F'} {p.matchCount}x</span>
-      <Btn v="ghost" style={{ padding:'0.2rem 0.45rem', fontSize:'0.68rem' }} onClick={() => onEdit({ side, index })}>swap</Btn>
+      <span style={{ flex:1, fontSize:'0.78rem', fontWeight:500, color:'#374151', minWidth:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{p.name}</span>
+      <span style={{ fontSize:'0.62rem', color:'#9ca3af', flexShrink:0 }}>{p.matchCount}x</span>
+      <Btn v="ghost" style={{ padding:'0.15rem 0.4rem', fontSize:'0.65rem', flexShrink:0 }} onClick={() => onEdit({ side, index })}>swap</Btn>
     </div>
   );
 }
@@ -261,6 +265,7 @@ export default function QueuePage() {
   const [loading,      setLoading]      = useState(true);
   const [submitting,   setSubmitting]   = useState(false);
   const [matchMode,    setMatchMode]    = useState<MatchMode>('balanced');
+  const [matchTypePref,setMatchTypePref]= useState<MatchTypePreference>('auto');
 
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -275,9 +280,9 @@ export default function QueuePage() {
   const usedCourts= new Set(queueList.map(m=>m.court));
 
   const handleGenerate = useCallback(() => {
-    const m = generateMatch(available, matchMode);
+    const m = generateMatch(available, matchMode, matchTypePref);
     setGenerated(m); setEdited(m ? {...m,team1:[...m.team1],team2:[...m.team2]} : null); setEditingSlot(null);
-  }, [available, matchMode]);
+  }, [available, matchMode, matchTypePref]);
 
   const handleSwap = (p: Player) => {
     if (!editingSlot || !edited) return;
@@ -328,9 +333,27 @@ export default function QueuePage() {
 
           <p style={{ fontSize:'0.78rem', color:'#9ca3af', maxWidth:'220px', lineHeight:1.6 }}>
             {matchMode === 'balanced'
-              ? 'Teams are evenly matched. No B+B vs D+D.'
-              : 'Same-level players. A vs A, B vs B, etc.'}
+              ? 'Teams are level-balanced. Any pairing is valid if teams are even.'
+              : 'Same-level players grouped. A vs A, B vs B, etc.'}
           </p>
+
+          {/* Match type preference */}
+          <div style={{ width:'100%' }}>
+            <p style={{ fontSize:'0.62rem', fontWeight:600, letterSpacing:'0.1em', textTransform:'uppercase', color:'#d1d5db', marginBottom:'0.4rem', textAlign:'center' }}>Match Type</p>
+            <div style={{ display:'flex', gap:'4px', justifyContent:'center' }}>
+              {(['auto','MD','WD','XD'] as MatchTypePreference[]).map(t => (
+                <button key={t} onClick={() => setMatchTypePref(t)} style={{
+                  padding:'0.3rem 0.7rem', borderRadius:'5px', fontSize:'0.72rem', fontWeight:600,
+                  border:`1px solid ${matchTypePref === t ? '#bbf7d0' : '#e5e7eb'}`,
+                  background: matchTypePref === t ? '#f0fdf4' : '#fff',
+                  color: matchTypePref === t ? '#15803d' : '#9ca3af',
+                  cursor:'pointer', transition:'all 0.12s',
+                }}>
+                  {t === 'auto' ? 'Auto' : t}
+                </button>
+              ))}
+            </div>
+          </div>
 
           <Btn v="primary" onClick={handleGenerate} disabled={available.length < 4} style={{ opacity: available.length < 4 ? 0.4 : 1 }}>
             {available.length < 4 ? `Need ${4-available.length} more` : 'Generate Match'}
@@ -338,33 +361,74 @@ export default function QueuePage() {
         </div>
       ) : edited && (
         <div style={{ background:'#fff', border:'1px solid #e5e7eb', borderRadius:'8px', padding:'1rem', display:'flex', flexDirection:'column', gap:'0.85rem' }}>
-          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+          {/* Match type label + mode indicator */}
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:'0.35rem' }}>
             <span style={{ fontSize:'0.7rem', fontWeight:600, letterSpacing:'0.08em', textTransform:'uppercase', color:'#9ca3af' }}>{MATCH_LABELS[edited.matchType]}</span>
             <div style={{ display:'flex', alignItems:'center', gap:'0.5rem' }}>
               <span style={{ fontFamily:'monospace', fontSize:'0.65rem', color: matchMode === 'solid' ? '#d97706' : '#16a34a' }}>
-                {matchMode === 'solid' ? '🔥 solid match' : '⚖ balanced match'}
+                {matchMode === 'solid' ? '🔥 solid' : '⚖ balanced'}
               </span>
               <button onClick={() => {
                 const next: MatchMode = matchMode === 'balanced' ? 'solid' : 'balanced';
                 setMatchMode(next);
-                setTimeout(() => { setGenerated(null); setEdited(null); setTimeout(handleGenerate, 80); }, 50);
+                setTimeout(() => { setGenerated(null); setEdited(null); setTimeout(handleGenerate, 80); }, 80);
               }} style={{ fontSize:'0.65rem', color:'#9ca3af', background:'none', border:'none', cursor:'pointer', textDecoration:'underline', padding:0 }}>
                 switch
               </button>
             </div>
           </div>
 
-          {/* Teams */}
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 24px 1fr', gap:'0.4rem', alignItems:'start' }}>
-            <div style={{ display:'flex', flexDirection:'column', gap:'5px' }}>
+          {/* Match type + mode controls — visible after generate so next set can be adjusted */}
+          <div style={{ display:'flex', gap:'6px', alignItems:'center', flexWrap:'wrap' }}>
+            {/* Match type buttons */}
+            <div style={{ display:'flex', gap:'3px', background:'#f9fafb', padding:'2px', borderRadius:'6px' }}>
+              {(['auto','MD','WD','XD'] as MatchTypePreference[]).map(t => (
+                <button key={t} onClick={() => setMatchTypePref(t)} style={{
+                  padding:'0.2rem 0.55rem', borderRadius:'4px', fontSize:'0.68rem', fontWeight:600,
+                  border:'none', cursor:'pointer', transition:'all 0.12s',
+                  background: matchTypePref === t ? '#fff' : 'transparent',
+                  color: matchTypePref === t ? '#15803d' : '#9ca3af',
+                  boxShadow: matchTypePref === t ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
+                }}>
+                  {t === 'auto' ? 'Auto' : t}
+                </button>
+              ))}
+            </div>
+            {/* Balanced / Solid toggle */}
+            <div style={{ display:'flex', gap:'2px', background:'#f9fafb', padding:'2px', borderRadius:'6px' }}>
+              {(['balanced','solid'] as MatchMode[]).map(mode => (
+                <button key={mode} onClick={() => setMatchMode(mode)} style={{
+                  padding:'0.2rem 0.55rem', borderRadius:'4px', fontSize:'0.68rem', fontWeight:600,
+                  border:'none', cursor:'pointer', transition:'all 0.12s',
+                  background: matchMode === mode ? '#fff' : 'transparent',
+                  color: matchMode === mode ? (mode === 'solid' ? '#92400e' : '#15803d') : '#9ca3af',
+                  boxShadow: matchMode === mode ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
+                }}>
+                  {mode === 'balanced' ? '⚖' : '🔥'}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Teams — responsive: side-by-side on desktop, stacked on mobile */}
+          <style>{`
+            .teams-grid { display: grid; grid-template-columns: 1fr 20px 1fr; gap: 0.4rem; align-items: start; }
+            @media (max-width: 480px) {
+              .teams-grid { grid-template-columns: 1fr; }
+              .teams-vs    { display: none !important; }
+              .teams-b-label::before { content: 'vs  '; color: #d1d5db; }
+            }
+          `}</style>
+          <div className="teams-grid">
+            <div style={{ display:'flex', flexDirection:'column', gap:'5px', minWidth:0 }}>
               <span style={{ fontSize:'0.62rem', fontWeight:600, letterSpacing:'0.1em', textTransform:'uppercase', color:'#d1d5db', marginBottom:'1px' }}>Team A</span>
               {edited.team1.map((p,i) => <PlayerPill key={p._id} p={p} side="team1" index={i} editingSlot={editingSlot} onEdit={setEditingSlot} />)}
             </div>
-            <div style={{ display:'flex', alignItems:'center', justifyContent:'center', paddingTop:'1.4rem' }}>
+            <div className="teams-vs" style={{ display:'flex', alignItems:'center', justifyContent:'center', paddingTop:'1.4rem' }}>
               <span style={{ fontFamily:'monospace', fontSize:'0.65rem', color:'#d1d5db' }}>vs</span>
             </div>
-            <div style={{ display:'flex', flexDirection:'column', gap:'5px' }}>
-              <span style={{ fontSize:'0.62rem', fontWeight:600, letterSpacing:'0.1em', textTransform:'uppercase', color:'#d1d5db', marginBottom:'1px' }}>Team B</span>
+            <div style={{ display:'flex', flexDirection:'column', gap:'5px', minWidth:0 }}>
+              <span className="teams-b-label" style={{ fontSize:'0.62rem', fontWeight:600, letterSpacing:'0.1em', textTransform:'uppercase', color:'#d1d5db', marginBottom:'1px' }}>Team B</span>
               {edited.team2.map((p,i) => <PlayerPill key={p._id} p={p} side="team2" index={i} editingSlot={editingSlot} onEdit={setEditingSlot} />)}
             </div>
           </div>
@@ -438,13 +502,30 @@ export default function QueuePage() {
         <div style={{ display:'flex', flexDirection:'column', gap:'2px', maxHeight:'200px', overflowY:'auto' }}>
           {available.length === 0
             ? <p style={{ fontSize:'0.78rem', color:'#9ca3af', textAlign:'center', padding:'0.75rem' }}>All players in active matches</p>
-            : available.map(p => (
-                <div key={p._id} style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.3rem 0.4rem' }}>
-                  <LevelBadge level={p.level} />
-                  <span style={{ flex:1, fontSize:'0.8rem', color:'#374151' }}>{p.name}</span>
-                  <span style={{ fontSize:'0.65rem', color:'#9ca3af', fontFamily:'monospace' }}>{p.gender==='Male'?'M':'F'} {p.matchCount}x</span>
-                </div>
-              ))
+            : (() => {
+                const maxCount = Math.max(...available.map(p => p.matchCount), 1);
+                const minCount = Math.min(...available.map(p => p.matchCount));
+                return available.map(p => {
+                  // Fairness bar: green = played least, red = played most
+                  const pct = maxCount > minCount ? ((p.matchCount - minCount) / (maxCount - minCount)) * 100 : 0;
+                  const barColor = pct < 33 ? '#16a34a' : pct < 66 ? '#d97706' : '#ef4444';
+                  return (
+                    <div key={p._id} style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.3rem 0.4rem' }}>
+                      <LevelBadge level={p.level} />
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:'0.25rem' }}>
+                          <span style={{ fontSize:'0.8rem', color:'#374151', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{p.name}</span>
+                          <span style={{ fontSize:'0.62rem', color:'#9ca3af', fontFamily:'monospace', flexShrink:0 }}>{p.matchCount}x</span>
+                        </div>
+                        {/* Fairness bar */}
+                        <div style={{ height:'2px', background:'#f3f4f6', borderRadius:'2px', marginTop:'2px', overflow:'hidden' }}>
+                          <div style={{ height:'100%', width:`${Math.max(4, pct)}%`, background: barColor, borderRadius:'2px', transition:'width 0.3s' }} />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                });
+              })()
           }
         </div>
       </div>
@@ -478,7 +559,7 @@ export default function QueuePage() {
   );
 
   return (
-    <div style={{ fontFamily:"'Inter',sans-serif" }}>
+    <div className="queue-root" style={{ fontFamily:"'Inter',sans-serif" }}>
       <style>{`
         .queue-desktop { display: grid; }
         .queue-mob-tabs { display: none; }
@@ -490,6 +571,8 @@ export default function QueuePage() {
         }
         .mob-tab { flex:1; padding:0.55rem; background:transparent; border:none; border-bottom:2px solid transparent; font-size:0.78rem; font-weight:500; cursor:pointer; font-family:'Inter',sans-serif; color:#6b7280; transition:all 0.12s; }
         .mob-tab.active { color:#111827; border-bottom-color:#111827; }
+        /* Prevent horizontal swipe-back gesture in fullscreen */
+        .queue-root { touch-action: pan-y; overscroll-behavior-x: none; }
       `}</style>
 
       <div style={{ marginBottom:'1.5rem', paddingBottom:'1.25rem', borderBottom:'1px solid #f3f4f6' }}>
@@ -498,7 +581,7 @@ export default function QueuePage() {
       </div>
 
       {/* Desktop 3-col */}
-      <div className="queue-desktop" style={{ gridTemplateColumns: '2fr 1.2fr 1.2fr', gap: '1.25rem', alignItems: 'start' }}>
+      <div className="queue-desktop" style={{ gridTemplateColumns:'300px 1fr 1fr', gap:'1.25rem', alignItems:'start' }}>
         <RandomizerPanel />
         <QueuePanel />
         <HistoryPanel />
