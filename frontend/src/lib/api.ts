@@ -40,7 +40,7 @@ export interface Tab {
   _id: string;
   player: { _id: string; name: string; level: string };
   items: TabItem[]; total: number;
-  status: 'open' | 'paid'; sessionDate: string;
+  status: 'open' | 'paid' | 'unpaid'; sessionDate: string;
   createdAt: string; updatedAt: string;
 }
 
@@ -56,10 +56,10 @@ async function req<T>(path: string, options?: RequestInit): Promise<T> {
 
 // ─── Players ──────────────────────────────────────────────────────────────────
 
-export const getPlayers    = ()                                    => req<Player[]>('/api/players');
+export const getPlayers    = () => req<Player[]>('/api/players');
 export const createPlayer  = (body: Omit<Player, '_id'|'matchCount'|'isActive'|'createdAt'>) => req<Player>('/api/players', { method:'POST', body: JSON.stringify(body) });
-export const updatePlayer  = (id: string, body: Partial<Player>)  => req<Player>(`/api/players/${id}`, { method:'PATCH', body: JSON.stringify(body) });
-export const deletePlayer  = (id: string)                         => req<{success:boolean}>(`/api/players/${id}`, { method:'DELETE' });
+export const updatePlayer  = (id: string, body: Partial<Player>) => req<Player>(`/api/players/${id}`, { method:'PATCH', body: JSON.stringify(body) });
+export const deletePlayer  = (id: string) => req<{success:boolean}>(`/api/players/${id}`, { method:'DELETE' });
 
 // ─── Queue ────────────────────────────────────────────────────────────────────
 
@@ -80,24 +80,27 @@ export const deleteMatch = (id: string) =>
 
 // ─── Billing (legacy) ─────────────────────────────────────────────────────────
 
-export const getBills    = ()                                          => req<Bill[]>('/api/billing');
-export const createBill  = (body: {player:string; items:BillingItem[]}) => req<Bill>('/api/billing', { method:'POST', body: JSON.stringify(body) });
-export const updateBill  = (id: string, body:{items:BillingItem[]})   => req<Bill>(`/api/billing/${id}`, { method:'PATCH', body: JSON.stringify(body) });
-export const deleteBill  = (id: string)                               => req<{success:boolean}>(`/api/billing/${id}`, { method:'DELETE' });
+export const getBills = () => req<Bill[]>('/api/billing');
+export const createBill = (body: {player:string; items:BillingItem[]}) => req<Bill>('/api/billing', { method:'POST', body: JSON.stringify(body) });
+export const updateBill = (id: string, body:{items:BillingItem[]}) => req<Bill>(`/api/billing/${id}`, { method:'PATCH', body: JSON.stringify(body) });
+export const deleteBill = (id: string) => req<{success:boolean}>(`/api/billing/${id}`, { method:'DELETE' });
 
-// ─── Items ────────────────────────────────────────────────────────────────────
 
-export const getItems          = ()                                     => req<CatalogItem[]>('/api/items');
-export const getAllItems        = ()                                     => req<CatalogItem[]>('/api/items/all');
-export const getSplittableItems = ()                                    => req<CatalogItem[]>('/api/items/splittable');
-export const createItem        = (data: Omit<CatalogItem,'_id'>)        => req<CatalogItem>('/api/items', { method:'POST', body: JSON.stringify(data) });
-export const updateItem        = (id: string, data: Partial<CatalogItem>) => req<CatalogItem>(`/api/items/${id}`, { method:'PUT', body: JSON.stringify(data) });
-export const deleteItem        = (id: string)                           => req<void>(`/api/items/${id}`, { method:'DELETE' });
+/**
+ * @desc Item Routes
+ * @returns route
+ */
+export const getItems = () => req<CatalogItem[]>('/api/items');
+export const getAllItems = () => req<CatalogItem[]>('/api/items/all');
+export const getSplittableItems = () => req<CatalogItem[]>('/api/items/splittable');
+export const createItem = (data: Omit<CatalogItem,'_id'>) => req<CatalogItem>('/api/items', { method:'POST', body: JSON.stringify(data) });
+export const updateItem = (id: string, data: Partial<CatalogItem>) => req<CatalogItem>(`/api/items/${id}`, { method:'PUT', body: JSON.stringify(data) });
+export const deleteItem = (id: string) => req<void>(`/api/items/${id}`, { method:'DELETE' });
 
 // ─── Tabs ─────────────────────────────────────────────────────────────────────
 
-export const getOpenTabs   = ()                => req<Tab[]>('/api/tabs/open');
-export const getTabHistory = ()                => req<Tab[]>('/api/tabs/history');
+export const getOpenTabs   = () => req<Tab[]>('/api/tabs/open');
+export const getTabHistory = () => req<Tab[]>('/api/tabs/history');
 
 export const openTab = (playerId: string) =>
   req<Tab>('/api/tabs', { method:'POST', body: JSON.stringify({ player: playerId }) });
@@ -111,8 +114,29 @@ export const splitItem = (body: { itemId: string; name: string; price: number; p
 export const removeItemFromTab = (tabId: string, itemIndex: number) =>
   req<Tab>(`/api/tabs/${tabId}/items/${itemIndex}`, { method:'DELETE' });
 
-export const payTab   = (tabId: string) => req<Tab>(`/api/tabs/${tabId}/pay`, { method:'PUT' });
-export const closeTab = (tabId: string) => req<void>(`/api/tabs/${tabId}`, { method:'DELETE' });
+export const payTab = (tabId: string) => req<Tab>(`/api/tabs/${tabId}/pay`, { method: 'PUT' });
+export const markUnpaid = (tabId: string) => req<Tab>(`/api/tabs/${tabId}/unpaid`, { method: 'PUT'});
+export const payUnpaid = (tabId: string) => req<Tab>(`/api/tabs/${tabId}/pay-unpaid`, { method: 'PUT'})
+export const closeTab = (tabId: string) => req<void>(`/api/tabs/${tabId}`, { method: 'DELETE' });
+
+export interface TabHistoryParams {
+  status?: 'paid' | 'unpaid' | 'all';
+  date?:   string;
+  page?:   number;
+  limit?:  number;
+}
+export interface PaginatedTabs {
+  tabs:       Tab[];
+  pagination: { page:number; limit:number; total:number; totalPages:number; hasNext:boolean; hasPrev:boolean };
+}
+export async function getTabHistoryPaged(params: TabHistoryParams = {}): Promise<PaginatedTabs> {
+  const q = new URLSearchParams();
+  if (params.status) q.set('status', params.status);
+  if (params.date)   q.set('date',   params.date);
+  if (params.page)   q.set('page',   String(params.page));
+  if (params.limit)  q.set('limit',  String(params.limit));
+  return req<PaginatedTabs>(`/api/tabs/history?${q}`);
+}
 
 
 // ── Reservation Types ──────────────────────────────────────────────────────────
@@ -199,7 +223,7 @@ export interface ReservationTab {
   duration:    number;
   items:       TabItem[];
   total:       number;
-  status:      'open' | 'paid';
+  status:      'open' | 'paid' | 'unpaid';
   createdAt:   string;
   updatedAt:   string;
 }
@@ -220,8 +244,31 @@ export const addItemToReservationTab = (
 export const removeItemFromReservationTab = (tabId: string, itemIndex: number) =>
   req<ReservationTab>(`/api/reservation-tabs/${tabId}/items/${itemIndex}`, { method: 'DELETE' });
  
-export const payReservationTab = (tabId: string) =>
-  req<ReservationTab>(`/api/reservation-tabs/${tabId}/pay`, { method: 'PUT' });
- 
-export const clearReservationTab = (tabId: string) =>
+export const payReservationTab     = (tabId: string) =>
+  req<ReservationTab>(`/api/reservation-tabs/${tabId}/pay`,        { method: 'PUT' });
+export const markReservationUnpaid = (tabId: string) =>
+  req<ReservationTab>(`/api/reservation-tabs/${tabId}/unpaid`,     { method: 'PUT' });
+export const payReservationUnpaid  = (tabId: string) =>
+  req<ReservationTab>(`/api/reservation-tabs/${tabId}/pay-unpaid`, { method: 'PUT' });
+export const clearReservationTab   = (tabId: string) =>
   req<void>(`/api/reservation-tabs/${tabId}`, { method: 'DELETE' });
+ 
+export interface ResTabHistoryParams {
+  status?: 'paid' | 'unpaid' | 'all';
+  date?:   string;
+  page?:   number;
+  limit?:  number;
+}
+export interface PaginatedResTabs {
+  tabs:       ReservationTab[];
+  pagination: { page:number; limit:number; total:number; totalPages:number; hasNext:boolean; hasPrev:boolean };
+}
+export async function getReservationTabHistoryPaged(params: ResTabHistoryParams = {}): Promise<PaginatedResTabs> {
+  const q = new URLSearchParams();
+  if (params.status) q.set('status', params.status);
+  if (params.date)   q.set('date',   params.date);
+  if (params.page)   q.set('page',   String(params.page));
+  if (params.limit)  q.set('limit',  String(params.limit));
+  return req<PaginatedResTabs>(`/api/reservation-tabs/history?${q}`);
+}
+ 

@@ -15,14 +15,49 @@ router.get('/open', async (req, res) => {
   }
 });
 
-// GET paid tabs (history)
+
+/**
+ * @desc GET tab history (paid + unpaid) with pagination + date filter
+ * @summary ?status=paid|unpaid|all  &date=YYYY-MM-DD &page=1  &limit=20
+ */
 router.get('/history', async (req, res) => {
   try {
-    const tabs = await Tab.find({ status: 'paid' })
-      .populate('player', 'name level')
-      .sort({ updatedAt: -1 })
-      .limit(50);
-    res.json(tabs);
+    const { status = 'all', date, page = '1', limit = '20' } = req.query;
+    const pageNum  = Math.max(1, parseInt(page));
+    const limitNum = Math.min(100, parseInt(limit));
+    const skip     = (pageNum - 1) * limitNum;
+
+    const query = {};
+    if (status === 'paid')   query.status = 'paid';
+    else if (status === 'unpaid') query.status = 'unpaid';
+    else query.status = { $in: ['paid', 'unpaid'] };
+
+    if (date) {
+      const start = new Date(date + 'T00:00:00.000Z');
+      const end   = new Date(date + 'T23:59:59.999Z');
+      query.updatedAt = { $gte: start, $lte: end };
+    }
+
+    const [tabs, total] = await Promise.all([
+      Tab.find(query)
+        .populate('player', 'name level')
+        .sort({ updatedAt: -1 })
+        .skip(skip)
+        .limit(limitNum),
+      Tab.countDocuments(query),
+    ]);
+
+    res.json({
+      tabs,
+      pagination: {
+        page:       pageNum,
+        limit:      limitNum,
+        total,
+        totalPages: Math.ceil(total / limitNum),
+        hasNext:    pageNum < Math.ceil(total / limitNum),
+        hasPrev:    pageNum > 1,
+      },
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -132,6 +167,38 @@ router.delete('/:id/items/:itemIndex', async (req, res) => {
     res.json(updated);
   } catch (err) {
     res.status(400).json({ error: err.message });
+  }
+});
+
+/**
+ * @desc PUT mark tab as unpaid (soft close - keeps record, marks as debt)
+ */
+router.put('/:id/unpaid', async (req, res) => {
+  try {
+    const tab = await Tab.findByIdAndUpdate(
+      req.params.id,
+      { status: 'unpaid' },
+      { new: true }
+    ).populate('player', 'name level');
+    if (!tab) return res.status(404).json({ error: 'Tab not found' });
+    res.json(tab);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT mark unpaid tab as paid
+router.put('/:id/pay-unpaid', async (req, res) => {
+  try {
+    const tab = await Tab.findByIdAndUpdate(
+      req.params.id,
+      { status: 'paid' },
+      { new: true }
+    ).populate('player', 'name level');
+    if (!tab) return res.status(404).json({ error: 'Tab not found' });
+    res.json(tab);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 

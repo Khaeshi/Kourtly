@@ -32,7 +32,7 @@ const ReservationTabSchema = new mongoose.Schema({
 
   items:  [ReservationTabItemSchema],
   total:  { type: Number, default: 0 },
-  status: { type: String, enum: ['open', 'paid'], default: 'open' },
+  status: { type: String, enum: ['open', 'paid', 'unpaid'], default: 'open' },
 }, { timestamps: true });
 
 // Fast lookup by date (used by billing page to surface today's tabs)

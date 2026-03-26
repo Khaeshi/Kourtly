@@ -12,11 +12,11 @@ const TabSchema = new mongoose.Schema({
   player:      { type: mongoose.Schema.Types.ObjectId, ref: 'Player', required: true },
   items:       [TabItemSchema],
   total:       { type: Number, default: 0 },
-  status:      { type: String, enum: ['open', 'paid'], default: 'open' },
+  status:      { type: String, enum: ['open', 'paid', 'unpaid'], default: 'open' },
   sessionDate: { type: Date, default: Date.now },
 }, { timestamps: true });
 
-TabSchema.index({ player: 1, status: 1 });  // open tab lookups
-TabSchema.index({ status: 1, updatedAt: -1 }); // history queries
+TabSchema.index({ player: 1, status: 1 });  
+TabSchema.index({ status: 1, updatedAt: -1 }); 
 
 export default mongoose.model('Tab', TabSchema);
