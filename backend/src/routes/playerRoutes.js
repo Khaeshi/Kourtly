@@ -6,7 +6,7 @@ const router = express.Router();
 // GET all active players (sorted by matchCount asc)
 router.get('/', async (req, res) => {
   try {
-    const players = await Player.find({ isActive: true }).sort({ matchCount: 1, createdAt: 1 });
+    const players = await Player.find({ courtId: req.courtId, isActive: true }).sort({ matchCount: 1, createdAt: 1 });
     res.json(players);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -16,7 +16,7 @@ router.get('/', async (req, res) => {
 // POST create player
 router.post('/', async (req, res) => {
   try {
-    const player = await Player.create(req.body);
+    const player = await Player.create({ ...req.body, courtId: req.courtId });
     res.status(201).json(player);
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -26,7 +26,7 @@ router.post('/', async (req, res) => {
 // PATCH update player
 router.patch('/:id', async (req, res) => {
   try {
-    const player = await Player.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    const player = await Player.findOneAndUpdate({ _id: req.params.id, courtId: req.courtId }, req.body, { new: true });
     res.json(player);
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -36,7 +36,7 @@ router.patch('/:id', async (req, res) => {
 // DELETE soft-delete player
 router.delete('/:id', async (req, res) => {
   try {
-    await Player.findByIdAndUpdate(req.params.id, { isActive: false });
+    await Player.findOneAndUpdate({ _id: req.params.id, courtId: req.courtId }, { isActive: false });
     res.json({ success: true });
   } catch (err) {
     res.status(400).json({ error: err.message });

@@ -5,8 +5,12 @@ import AdminLayoutClient from '../components/admin/AdminLayoutClient';
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
 
-  if (!session)                      redirect('/auth/signin?callbackUrl=/admin');
-  if (session.user.role !== 'admin') redirect('/?error=unauthorized');
+  if (!session) redirect('/auth/signin?callbackUrl=/admin');
+  
+  // Allow both admin and superadmin
+  if (session.user.role !== 'admin' && session.user.role !== 'superadmin') {
+    redirect('/?error=unauthorized');
+  }
 
   return (
     <AdminLayoutClient user={{

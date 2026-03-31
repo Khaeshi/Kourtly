@@ -36,8 +36,8 @@ async function seedDefaultRules() {
  */
 router.get('/rules', async (req, res) => {
   try {
-    await seedDefaultRules();
-    const rules = await ScheduleRule.find().sort({ dayOfWeek: 1 }).lean();
+    await seedDefaultRules(req.courtId);
+    const rules = await ScheduleRule.find({ courtId: req.courtId }).sort({ dayOfWeek: 1 }).lean();
     // Attach day name for frontend convenience
     const enriched = rules.map(r => ({ ...r, dayName: DAY_NAMES[r.dayOfWeek] }));
     res.json(enriched);
@@ -64,7 +64,7 @@ router.put('/rules/:dayOfWeek', async (req, res) => {
     if (closeTime !== undefined) update.closeTime = closeTime;
 
     const rule = await ScheduleRule.findOneAndUpdate(
-      { dayOfWeek },
+      { courtId: req.courtId, dayOfWeek },
       update,
       { new: true, upsert: true, runValidators: true }
     );
@@ -83,7 +83,7 @@ router.put('/rules/:dayOfWeek', async (req, res) => {
  */
 router.get('/blocks', async (req, res) => {
   try {
-    const filter = {};
+    const filter = { courtId: req.courtId };
     if (req.query.date) filter.date = req.query.date;
     const blocks = await ScheduleBlock.find(filter).sort({ date: 1, startTime: 1 }).lean();
     res.json(blocks);
@@ -104,7 +104,7 @@ router.post('/blocks', async (req, res) => {
       return res.status(400).json({ error: 'startTime and endTime required for range blocks.' });
     }
 
-    const block = await ScheduleBlock.create({ date, courts, blockType, startTime, endTime, reason });
+    const block = await ScheduleBlock.create({ courtId: req.courtId, date, courts, blockType, startTime, endTime, reason });
     res.status(201).json(block);
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -117,7 +117,7 @@ router.post('/blocks', async (req, res) => {
  */
 router.delete('/blocks/:id', async (req, res) => {
   try {
-    const deleted = await ScheduleBlock.findByIdAndDelete(req.params.id);
+    const deleted = await ScheduleBlock.findByIdAndDelete({ _id: req.params.id, courtId: req.courtId });
     if (!deleted) return res.status(404).json({ error: 'Block not found.' });
     res.json({ success: true });
   } catch (err) {
@@ -135,12 +135,12 @@ router.get('/resolve', async (req, res) => {
     const { date } = req.query;
     if (!date) return res.status(400).json({ error: 'date is required.' });
 
-    await seedDefaultRules();
+    await seedDefaultRules(req.courtId);
 
     const dayOfWeek = getDayOfWeek(date);
     const [rule, blocks] = await Promise.all([
-      ScheduleRule.findOne({ dayOfWeek }).lean(),
-      ScheduleBlock.find({ date }).lean(),
+      ScheduleRule.findOne({ courtId: req.courtId, dayOfWeek }).lean(),  
+      ScheduleBlock.find({ courtId: req.courtId, date }).lean(),       
     ]);
 
     const { isFullyClosed, baseSlots, perCourt } = resolveSchedule(rule, blocks);

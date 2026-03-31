@@ -113,7 +113,7 @@ export default function AdminDashboard() {
     setAnalyticsLoading(true);
     setAnalyticsError('');
     try {
-      const res = await fetch(`${API_BASE}/api/analytics/summary?period=${period}`);
+      const res = await fetch(`${API_BASE}/analytics/summary?period=${period}`);
       if (!res.ok) throw new Error('Failed to load analytics');
       setAnalytics(await res.json());
     } catch (e: any) {

@@ -6,7 +6,7 @@ const router = express.Router();
 // GET open tabs
 router.get('/open', async (req, res) => {
   try {
-    const tabs = await Tab.find({ status: 'open' })
+    const tabs = await Tab.find({ courtId: req.courtId, status: 'open' })
       .populate('player', 'name level')
       .sort({ createdAt: -1 });
     res.json(tabs.filter(t => t.player != null));
@@ -27,7 +27,7 @@ router.get('/history', async (req, res) => {
     const limitNum = Math.min(100, parseInt(limit));
     const skip     = (pageNum - 1) * limitNum;
 
-    const query = {};
+    const query = { courtId: req.courtId };
     if (status === 'paid')   query.status = 'paid';
     else if (status === 'unpaid') query.status = 'unpaid';
     else query.status = { $in: ['paid', 'unpaid'] };
@@ -63,12 +63,20 @@ router.get('/history', async (req, res) => {
   }
 });
 
+/**
+ * POST 
+ * @desc open a new tab for a player
+ */
 // POST open a new tab for a player
 router.post('/', async (req, res) => {
   try {
-    const existing = await Tab.findOne({ player: req.body.player, status: 'open' });
+    const existing = await Tab.findOne({
+      courtId: req.courtId,
+      player: req.body.player,
+       status: 'open' 
+      });
     if (existing) return res.status(400).json({ error: 'Player already has an open tab' });
-    const tab = await Tab.create({ player: req.body.player, items: [], total: 0 });
+    const tab = await Tab.create({ courtId: req.courtId, player: req.body.player, items: [], total: 0 });
     await tab.populate('player', 'name level');
     res.status(201).json(tab);
   } catch (err) {
@@ -83,8 +91,8 @@ router.post('/:id/items', async (req, res) => {
     const newItem = { item: itemId, name, price, quantity, addedAt: new Date() };
     const lineTotal = price * quantity;
 
-    const tab = await Tab.findByIdAndUpdate(
-      req.params.id,
+    const tab = await Tab.findOneAndUpdate(
+      { _id: req.params.id, courtId: req.courtId },
       { $push: { items: newItem }, $inc: { total: lineTotal } },
       { new: true }
     ).populate('player', 'name level');
@@ -119,9 +127,9 @@ router.post('/split', async (req, res) => {
 
     for (const playerId of playerIds) {
       // Find open tab for this player (must exist — frontend only shows open tabs)
-      let tab = await Tab.findOne({ player: playerId, status: 'open' });
+      let tab = await Tab.findOne({ courtId: req.courtId, player: playerId, status: 'open' });
       if (!tab) {
-        tab = await Tab.create({ player: playerId, items: [], total: 0 });
+        tab = await Tab.create({ courtId: req.courtId, player: playerId, items: [], total: 0 });
       }
 
       const newItem = {
@@ -132,7 +140,7 @@ router.post('/split', async (req, res) => {
         addedAt:  new Date(),
       };
 
-      const updated = await Tab.findByIdAndUpdate(
+      const updated = await Tab.findOneAndUpdate(
         tab._id,
         { $push: { items: newItem }, $inc: { total: chargeAmt } },
         { new: true }
@@ -150,15 +158,15 @@ router.post('/split', async (req, res) => {
 // DELETE remove item from tab by index
 router.delete('/:id/items/:itemIndex', async (req, res) => {
   try {
-    const tab = await Tab.findById(req.params.id);
+    const tab = await Tab.findById({ _id: req.params.id, courtId: req.courtId });
     if (!tab) return res.status(404).json({ error: 'Tab not found' });
 
     const idx = Number(req.params.itemIndex);
     const removed = tab.items[idx];
     if (!removed) return res.status(404).json({ error: 'Item not found' });
 
-    await Tab.findByIdAndUpdate(req.params.id, { $unset: { [`items.${idx}`]: 1 } });
-    const updated = await Tab.findByIdAndUpdate(
+    await Tab.findOneAndUpdate(req.params.id, { $unset: { [`items.${idx}`]: 1 } });
+    const updated = await Tab.findOneAndUpdate(
       req.params.id,
       { $pull: { items: null }, $inc: { total: -(removed.price * removed.quantity) } },
       { new: true }
@@ -175,8 +183,8 @@ router.delete('/:id/items/:itemIndex', async (req, res) => {
  */
 router.put('/:id/unpaid', async (req, res) => {
   try {
-    const tab = await Tab.findByIdAndUpdate(
-      req.params.id,
+    const tab = await Tab.findOneAndUpdate(
+      { _id: req.params.id, courtId: req.courtId },
       { status: 'unpaid' },
       { new: true }
     ).populate('player', 'name level');
@@ -190,8 +198,8 @@ router.put('/:id/unpaid', async (req, res) => {
 // PUT mark unpaid tab as paid
 router.put('/:id/pay-unpaid', async (req, res) => {
   try {
-    const tab = await Tab.findByIdAndUpdate(
-      req.params.id,
+    const tab = await Tab.findOneAndUpdate(
+      { _id: req.params.id, courtId: req.courtId },
       { status: 'paid' },
       { new: true }
     ).populate('player', 'name level');
@@ -205,8 +213,8 @@ router.put('/:id/pay-unpaid', async (req, res) => {
 // PUT mark tab as paid
 router.put('/:id/pay', async (req, res) => {
   try {
-    const tab = await Tab.findByIdAndUpdate(
-      req.params.id,
+    const tab = await Tab.findOneAndUpdate(
+      { _id: req.params.id, courtId: req.courtId },
       { status: 'paid' },
       { new: true }
     ).populate('player', 'name level');
@@ -220,7 +228,7 @@ router.put('/:id/pay', async (req, res) => {
 // DELETE close/discard tab
 router.delete('/:id', async (req, res) => {
   try {
-    await Tab.findByIdAndDelete(req.params.id);
+    await Tab.findByIdAndDelete({ _id: req.params.id, courtId: req.courtId });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });

@@ -21,7 +21,7 @@ export default function UsersPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API_BASE}/api/users`);
+      const res = await fetch(`${API_BASE}/users`);
       if (!res.ok) throw new Error(`Server returned ${res.status}`);
       const data = await res.json();
       setUsers(Array.isArray(data) ? data : []);
@@ -39,7 +39,7 @@ export default function UsersPage() {
     if (!confirm(`Set ${user.name || user.email} as ${newRole}?`)) return;
     setToggling(user._id);
     try {
-      await fetch(`${API_BASE}/api/users/${user._id}/role`, {
+      await fetch(`${API_BASE}/users/${user._id}/role`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ role: newRole }),
@@ -53,7 +53,7 @@ export default function UsersPage() {
   const handleDelete = async (user: AppUser) => {
     if (!confirm(`Remove ${user.name || user.email} from the system?`)) return;
     try {
-      await fetch(`${API_BASE}/api/users/${user._id}`, { method: 'DELETE' });
+      await fetch(`${API_BASE}/users/${user._id}`, { method: 'DELETE' });
       await load();
     } catch {
       alert('Failed to delete user');

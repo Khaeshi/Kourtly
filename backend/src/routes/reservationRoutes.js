@@ -40,7 +40,7 @@ async function sendConfirmationEmail(reservation) {
 router.get('/', async (req, res) => {
   try {
     const { date, status } = req.query;
-    const filter = {};
+    const filter = { courtId: req.courtId };
     if (date)                       filter.date   = date;
     if (status && status !== 'all') filter.status = status;
     const reservations = await Reservation.find(filter).sort({ date: 1, timeSlot: 1 }).lean();
@@ -67,9 +67,9 @@ router.get('/availability', async (req, res) => {
 
     // Fetch schedule data and reservations in parallel
     const [rule, blocks, activeReservations] = await Promise.all([
-      ScheduleRule.findOne({ dayOfWeek }).lean(),
-      ScheduleBlock.find({ date }).lean(),
-      Reservation.find({ date, status: { $in: ['pending', 'confirmed'] } })
+      ScheduleRule.findOne({ courtId: req.courtId ,dayOfWeek }).lean(),
+      ScheduleBlock.find({ courtId: req.courtId ,date }).lean(),
+      Reservation.find({ courtId: req.courtId , date, status: { $in: ['pending', 'confirmed'] } })
         .select('court timeSlot duration').lean(),
     ]);
 
@@ -153,8 +153,8 @@ router.post('/', async (req, res) => {
 
     // Validate against schedule
     const [rule, blocks] = await Promise.all([
-      ScheduleRule.findOne({ dayOfWeek }).lean(),
-      ScheduleBlock.find({ date }).lean(),
+      ScheduleRule.findOne({ courtId: req.courtId , dayOfWeek }).lean(),
+      ScheduleBlock.find({ courtId: req.courtId , date }).lean(),
     ]);
 
     const { isFullyClosed, baseSlots, perCourt } = resolveSchedule(rule, blocks);
@@ -180,7 +180,7 @@ router.post('/', async (req, res) => {
 
     // Check reservation overlaps
     const active = await Reservation
-      .find({ court, date, status: { $in: ['pending', 'confirmed'] } })
+      .find({ courtId: req.courtId, court, date, status: { $in: ['pending', 'confirmed'] } })
       .select('timeSlot duration').lean();
 
     const hasConflict = active.some(existing => {
@@ -223,8 +223,10 @@ router.put('/:id', async (req, res) => {
     if (Object.keys(update).length === 0) {
       return res.status(400).json({ error: 'Provide status or notes to update.' });
     }
-    const reservation = await Reservation.findByIdAndUpdate(
-      req.params.id, update, { new: true, runValidators: true }
+    const reservation = await Reservation.findOneAndUpdate(
+      { _id: req.params.id, courtId: req.courtId }, 
+      update,
+      { new: true, runValidators: true }
     );
     if (!reservation) return res.status(404).json({ error: 'Reservation not found.' });
     if (status === 'confirmed' && reservation.email) {
@@ -243,7 +245,8 @@ router.put('/:id', async (req, res) => {
  */
 router.delete('/:id', async (req, res) => {
   try {
-    const deleted = await Reservation.findByIdAndDelete(req.params.id);
+    const deleted = await Reservation.findByIdAndDelete(
+      {_id: req.params.id, courtId: req.courtId });
     if (!deleted) return res.status(404).json({ error: 'Reservation not found.' });
     res.json({ success: true });
   } catch (err) {

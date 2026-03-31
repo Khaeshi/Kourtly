@@ -20,6 +20,7 @@ async function ensureTab(reservation) {
   if (existing) return existing;
 
   return ReservationTab.create({
+    courtId: reservation.courtId, 
     reservation: reservation._id,
     guestName:   reservation.name,
     court:       reservation.court,
@@ -45,6 +46,7 @@ router.get('/today', async (req, res) => {
 
     // Find all confirmed reservations for today
     const confirmed = await Reservation.find({
+      courtId: req.courtId,
       date:   today,
       status: 'confirmed',
     }).lean();
@@ -72,7 +74,7 @@ router.get('/history', async (req, res) => {
     const limitNum = Math.min(100, parseInt(limit));
     const skip     = (pageNum - 1) * limitNum;
 
-    const query = {};
+    const query = { courtId: req.courtId };
     if (status === 'paid')        query.status = 'paid';
     else if (status === 'unpaid') query.status = 'unpaid';
     else                          query.status = { $in: ['paid', 'unpaid'] };
@@ -107,8 +109,8 @@ router.post('/:id/items', async (req, res) => {
     const { itemId, name, price, quantity = 1 } = req.body;
     const lineTotal = price * quantity;
 
-    const tab = await ReservationTab.findByIdAndUpdate(
-      req.params.id,
+    const tab = await ReservationTab.findOneAndUpdate(
+      {_id: req.params.id, courtId: req.courtId },
       {
         $push: { items: { item: itemId, name, price, quantity, addedAt: new Date() } },
         $inc:  { total: lineTotal },
@@ -129,15 +131,15 @@ router.post('/:id/items', async (req, res) => {
  */
 router.delete('/:id/items/:itemIndex', async (req, res) => {
   try {
-    const tab = await ReservationTab.findById(req.params.id);
+    const tab = await ReservationTab.findById({_id: req.params.id, courtId: req.courtId});
     if (!tab) return res.status(404).json({ error: 'Tab not found' });
 
     const idx     = Number(req.params.itemIndex);
     const removed = tab.items[idx];
     if (!removed) return res.status(404).json({ error: 'Item not found' });
 
-    await ReservationTab.findByIdAndUpdate(req.params.id, { $unset: { [`items.${idx}`]: 1 } });
-    const updated = await ReservationTab.findByIdAndUpdate(
+    await ReservationTab.findOneAndUpdate(req.params.id, { $unset: { [`items.${idx}`]: 1 } });
+    const updated = await ReservationTab.findOneAndUpdate(
       req.params.id,
       { $pull: { items: null }, $inc: { total: -(removed.price * removed.quantity) } },
       { new: true }
@@ -155,8 +157,9 @@ router.delete('/:id/items/:itemIndex', async (req, res) => {
  */
 router.put('/:id/unpaid', async (req, res) => {
   try {
-    const tab = await ReservationTab.findByIdAndUpdate(
-      req.params.id, { status: 'unpaid' }, { new: true }
+    const tab = await ReservationTab.findOneAndUpdate(
+      {_id: req.params.id, courtId: req.courtId}, 
+      { status: 'unpaid' }, { new: true }
     );
     if (!tab) return res.status(404).json({ error: 'Tab not found' });
     res.json(tab);
@@ -171,8 +174,9 @@ router.put('/:id/unpaid', async (req, res) => {
  */
 router.put('/:id/pay-unpaid', async (req, res) => {
   try {
-    const tab = await ReservationTab.findByIdAndUpdate(
-      req.params.id, { status: 'paid' }, { new: true }
+    const tab = await ReservationTab.findOneAndUpdate(
+      {_id: req.params.id, courtId: req.courtId}, 
+      { status: 'paid' }, { new: true }
     );
     if (!tab) return res.status(404).json({ error: 'Tab not found' });
     res.json(tab);
@@ -190,8 +194,8 @@ router.put('/:id/pay-unpaid', async (req, res) => {
  */
 router.put('/:id/pay', async (req, res) => {
   try {
-    const tab = await ReservationTab.findByIdAndUpdate(
-      req.params.id,
+    const tab = await ReservationTab.findOneAndUpdate(
+      {_id: req.params.id, courtId: req.courtId},
       { status: 'paid' },
       { new: true }
     );
@@ -199,7 +203,7 @@ router.put('/:id/pay', async (req, res) => {
 
     // Auto-complete the reservation — payment means the session is done
     if (tab.reservation) {
-      await Reservation.findByIdAndUpdate(
+      await Reservation.findOneAndUpdate(
         tab.reservation,
         { status: 'completed' },
         { new: true }
@@ -218,8 +222,8 @@ router.put('/:id/pay', async (req, res) => {
  */
 router.delete('/:id', async (req, res) => {
   try {
-    const tab = await ReservationTab.findByIdAndUpdate(
-      req.params.id,
+    const tab = await ReservationTab.findOneAndUpdate(
+      {_id: req.params.id, courtId: req.courtId},
       { items: [], total: 0 },
       { new: true }
     );

@@ -81,7 +81,7 @@ function WeeklyRulesPanel({ rules, onUpdate }: {
   const updateRule = async (dayOfWeek: number, patch: Partial<ScheduleRule>) => {
     setSaving(dayOfWeek);
     try {
-      await fetch(`${API_BASE}/api/schedule/rules/${dayOfWeek}`, {
+      await fetch(`${API_BASE}/schedule/rules/${dayOfWeek}`, {
         method:  'PUT',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify(patch),
@@ -196,7 +196,7 @@ function AddBlockForm({ onAdded }: { onAdded: () => void }) {
   const submit = async () => {
     setSaving(true);
     try {
-      const res = await fetch(`${API_BASE}/api/schedule/blocks`, {
+      const res = await fetch(`${API_BASE}/schedule/blocks`, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify(form),
@@ -428,8 +428,8 @@ export default function SchedulePage() {
     setLoading(true);
     try {
       const [rulesRes, blocksRes] = await Promise.all([
-        fetch(`${API_BASE}/api/schedule/rules`),
-        fetch(`${API_BASE}/api/schedule/blocks`),
+        fetch(`${API_BASE}/schedule/rules`),
+        fetch(`${API_BASE}/schedule/blocks`),
       ]);
       setRules(await rulesRes.json());
       setBlocks(await blocksRes.json());
@@ -442,7 +442,7 @@ export default function SchedulePage() {
 
   const deleteBlock = async (id: string) => {
     if (!confirm('Remove this block?')) return;
-    await fetch(`${API_BASE}/api/schedule/blocks/${id}`, { method: 'DELETE' });
+    await fetch(`${API_BASE}/schedule/blocks/${id}`, { method: 'DELETE' });
     sileo.success({ title: 'Block removed' });
     load();
   };

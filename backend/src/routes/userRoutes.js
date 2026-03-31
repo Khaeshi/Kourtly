@@ -6,7 +6,9 @@ const router = express.Router();
 // GET all users (admin panel - user management page)
 router.get('/', async (req, res) => {
   try {
-    const users = await User.find().sort({ createdAt: -1 });
+    const { courtId } = req.query;
+    const filter = courtId ? { courtId } : {};
+    const users = await User.find(filter).sort({ createdAt: -1 });
     res.json(users);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -34,8 +36,8 @@ router.post('/upsert', async (req, res) => {
     const user = await User.findOneAndUpdate(
       { email: email.toLowerCase() },
       {
-        $set:         { name, image, provider },   
-        $setOnInsert: { role: 'user' },            
+        $set:         { name, image, provider },
+        $setOnInsert: { role: 'user', courtId: null }, 
       },
       { upsert: true, new: true }
     );
@@ -49,14 +51,11 @@ router.post('/upsert', async (req, res) => {
 router.patch('/:id/role', async (req, res) => {
   try {
     const { role } = req.body;
-    if (!['user', 'admin'].includes(role)) {
-      return res.status(400).json({ error: 'Role must be user or admin' });
+    // Now support all roles including staff
+    if (!['user', 'admin', 'staff'].includes(role)) {
+      return res.status(400).json({ error: 'Invalid role.' });
     }
-    const user = await User.findByIdAndUpdate(
-      req.params.id,
-      { role },
-      { new: true }
-    );
+    const user = await User.findByIdAndUpdate(req.params.id, { role }, { new: true });
     if (!user) return res.status(404).json({ error: 'User not found' });
     res.json(user);
   } catch (err) {

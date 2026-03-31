@@ -1,7 +1,7 @@
 'use client';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { signOut } from 'next-auth/react';
+import { signOut, useSession } from 'next-auth/react';
 import { useState } from 'react';
 import Image from 'next/image';
 
@@ -13,7 +13,10 @@ const NAV = [
   { href: '/admin/items',       label: 'Items' },
   { href: '/admin/reservation', label: 'Reservation' },
   { href: '/admin/schedule',    label: 'Scheduling'},
-  { href: '/admin/users',       label: 'Users' },
+];
+
+const SUPERADMIN_NAV = [
+  { href: '/admin/superadmin', label: 'Super Admin' },
 ];
 
 interface Props {
@@ -23,12 +26,31 @@ interface Props {
 }
 
 export default function AdminSidebar({ isOpen, onClose, user }: Props) {
-  const pathname    = usePathname();
+  const pathname             = usePathname();
+  const { data: session }    = useSession();
+  const isSuperAdmin         = session?.user?.role === 'superadmin';
   const [signingOut, setSigningOut] = useState(false);
 
   const handleSignOut = async () => {
     setSigningOut(true);
     await signOut({ callbackUrl: '/' });
+  };
+
+  const renderNavItem = (item: { href: string; label: string; exact?: boolean }) => {
+    const active = item.exact
+      ? pathname === item.href
+      : pathname.startsWith(item.href);
+    return (
+      <Link
+        key={item.href}
+        href={item.href}
+        onClick={onClose}
+        className={`sidebar-item ${active ? 'active' : ''}`}
+      >
+        <span className={`w-1.5 h-1.5 rounded-full shrink-0 transition-colors duration-150 ${active ? 'bg-green-700' : 'bg-gray-300'}`} />
+        {item.label}
+      </Link>
+    );
   };
 
   return (
@@ -49,22 +71,7 @@ export default function AdminSidebar({ isOpen, onClose, user }: Props) {
         <p className="text-[0.65rem] font-semibold tracking-widest uppercase text-gray-400 px-3.5 mb-1">
           Management
         </p>
-        {NAV.map(item => {
-          const active = item.exact
-            ? pathname === item.href
-            : pathname.startsWith(item.href);
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={onClose}
-              className={`sidebar-item ${active ? 'active' : ''}`}
-            >
-              <span className={`w-1.5 h-1.5 rounded-full shrink-0 transition-colors duration-150 ${active ? 'bg-green-700' : 'bg-gray-300'}`} />
-              {item.label}
-            </Link>
-          );
-        })}
+        {NAV.map(renderNavItem)}
       </nav>
 
       {/* User + sign out footer */}
@@ -73,11 +80,7 @@ export default function AdminSidebar({ isOpen, onClose, user }: Props) {
         {/* User info */}
         <div className="flex items-center gap-2.5 px-3.5 py-2">
           {user.image ? (
-            <Image
-              src={user.image} alt={user.name}
-              width={26} height={26}
-              className="rounded-full shrink-0"
-            />
+            <Image src={user.image} alt={user.name} width={26} height={26} className="rounded-full shrink-0" />
           ) : (
             <div className="w-[26px] h-[26px] rounded-full bg-green-50 border border-green-200 flex items-center justify-center shrink-0">
               <span className="text-[0.65rem] font-semibold text-green-700">
@@ -88,6 +91,11 @@ export default function AdminSidebar({ isOpen, onClose, user }: Props) {
           <div className="min-w-0">
             <p className="text-xs font-semibold text-gray-800 truncate leading-tight">{user.name || 'Admin'}</p>
             <p className="text-[0.62rem] text-gray-400 truncate leading-tight">{user.email}</p>
+            {isSuperAdmin && (
+              <p className="text-[0.58rem] font-semibold text-purple-500 uppercase tracking-wide leading-tight">
+                Super Admin
+              </p>
+            )}
           </div>
         </div>
 
@@ -102,11 +110,7 @@ export default function AdminSidebar({ isOpen, onClose, user }: Props) {
           {signingOut ? 'Signing out...' : 'Sign Out'}
         </button>
 
-        {/* View site */}
-        <Link
-          href="/"
-          className="flex items-center gap-2 px-3.5 py-2 rounded-lg no-underline text-gray-500 text-xs transition-colors duration-150 hover:bg-gray-100"
-        >
+        <Link href="/" className="flex items-center gap-2 px-3.5 py-2 rounded-lg no-underline text-gray-500 text-xs transition-colors duration-150 hover:bg-gray-100">
           ← View Site
         </Link>
       </div>

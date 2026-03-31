@@ -1,38 +1,20 @@
 import mongoose from 'mongoose';
 
-/**
- * ScheduleBlock — one-off blocks on a specific date.
- * Can close the entire venue, a time range across all courts,
- * or a time range on specific courts only.
- */
 const ScheduleBlockSchema = new mongoose.Schema({
-  date: {
-    type:     String,   // "YYYY-MM-DD"
-    required: true,
-  },
-
-  // Which courts are affected. Empty array = ALL courts.
-  courts: {
-    type:    [Number],
-    default: [],        // [] means all courts
-  },
-
-  // 'day'   = entire day closed (startTime/endTime ignored)
-  // 'range' = specific time window blocked
+  courtId: { type: mongoose.Schema.Types.ObjectId, ref: 'Court', required: true, index: true },
+  date:    { type: String, required: true }, // "YYYY-MM-DD"
+  courts:  { type: [Number], default: [] },  // [] = all courts
   blockType: {
     type:    String,
     enum:    ['day', 'range'],
     default: 'day',
   },
-
-  startTime: { type: String, default: '' }, // "HH:MM" — only for blockType:'range'
-  endTime:   { type: String, default: '' }, // "HH:MM" — only for blockType:'range'
-
-  reason: { type: String, default: '' },    // admin note e.g. "Queue session"
+  startTime: { type: String, default: '' },
+  endTime:   { type: String, default: '' },
+  reason:    { type: String, default: '' },
 }, { timestamps: true });
 
-// Compound index: fast lookups by date
-ScheduleBlockSchema.index({ date: 1 });
+ScheduleBlockSchema.index({ courtId: 1, date: 1 });
 
 export default mongoose.models.ScheduleBlock ||
   mongoose.model('ScheduleBlock', ScheduleBlockSchema);

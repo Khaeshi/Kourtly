@@ -84,29 +84,24 @@ router.get('/summary', async (req, res) => {
     const period = req.query.period ?? 'week';
     const { start, end } = getPeriodRange(period);
     const { Reservation, Tab, Player, Match } = getModels();
-
-    // Reservation fee per confirmed booking (flat rate — adjust as needed)
     const RESERVATION_FEE = 210;
 
-    // ── Parallel queries ──────────────────────────────────────────────────────
-    const [
-      allReservations,
-      paidTabs,
-      totalPlayers,
-      matches,
-    ] = await Promise.all([
+    const [allReservations, paidTabs, totalPlayers, matches] = await Promise.all([
       Reservation.find({
+        courtId:   req.courtId,                    
         createdAt: { $gte: start, $lte: end },
       }).lean(),
 
       Tab.find({
+        courtId:   req.courtId,                  
         status:    'paid',
         updatedAt: { $gte: start, $lte: end },
       }).lean(),
 
-      Player.countDocuments(),
+      Player.countDocuments({ courtId: req.courtId }), 
 
       Match.find({
+        courtId:   req.courtId,                    
         status:    'done',
         updatedAt: { $gte: start, $lte: end },
       }).lean(),
