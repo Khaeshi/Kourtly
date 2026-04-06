@@ -1,5 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
+import { useSession } from 'next-auth/react'
+import { useRouter } from 'next/navigation'
 import { Toaster } from 'sileo';
 import { APP_NAME } from '@/lib/config'
 import AdminSidebar from './AdminSidebar';
@@ -14,6 +16,8 @@ export default function AdminLayoutClient({ children, user }: Props) {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [ fsSupported, setFsSupported ] =useState(false);
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
+  const { data: session } = useSession();
+  const  router = useRouter();
 
 
   /**
@@ -43,6 +47,19 @@ export default function AdminLayoutClient({ children, user }: Props) {
       }, 300);
       return () => clearTimeout(timer);
     }, []);
+
+    // Add after existing useEffects in AdminLayoutClient
+    useEffect(() => {
+      if (!session?.user?.courtId) return;
+      fetch('/api/proxy/court/me')
+        .then(r => r.json())
+        .then(court => {
+          if (!court.onboardingComplete && window.location.pathname !== '/admin/onboarding') {
+            router.push('/admin/onboarding');
+          }
+        })
+        .catch(() => {});
+    }, [session]);
 
     const toggleFullscreen = useCallback(() => {
       if (!document.fullscreenElement) {

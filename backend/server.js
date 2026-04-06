@@ -14,6 +14,7 @@ import reservationTabRoutes   from './src/routes/reservationtabRoutes.js';
 import { notFound, errorHandler } from './src/middleware/errorMiddleware.js'
 import { tenantMiddleware } from './src/middleware/tenantMiddleware.js';
 import superadminRoutes from './src/routes/superadminRoutes.js';
+import publicRoutes from './src/routes/publicRoutes.js';
 
 dotenv.config();
 
@@ -53,9 +54,12 @@ app.get('/api/public/courts', async (req, res) => {
 });
 
 
-// Routes
+// Super-Admin Routes
 app.use('/api/superadmin', superadminRoutes);
+app.use('/api/court', tenantMiddleware, publicRoutes);
 app.use('/api/users', userRoutes);
+
+// Admin Routes
 app.use('/api/players', tenantMiddleware, playerRoutes);
 app.use('/api/queue', tenantMiddleware, queueRoutes);
 app.use('/api/items', tenantMiddleware, itemRoutes);

@@ -9,6 +9,7 @@ const CourtSchema = new mongoose.Schema({
   // ── Identity ────────────────────────────────────────────────────────────────
   name:   { type: String, required: true, trim: true },
   slug:   { type: String, required: true, unique: true, lowercase: true, trim: true },
+  onboarding: { type: Boolean, default: false },
   // URL-safe identifier e.g. "south-city-bc" → /book/south-city-bc
 
   // ── Sport ───────────────────────────────────────────────────────────────────
