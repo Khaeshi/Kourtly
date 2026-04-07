@@ -1,20 +1,22 @@
-import express from 'express';
-import mongoose from 'mongoose';
-import cors from 'cors';
-import dotenv from 'dotenv';
-import userRoutes from './src/routes/userRoutes.js';
-import playerRoutes from './src/routes/playerRoutes.js';
-import queueRoutes from './src/routes/queueRoutes.js';
-import itemRoutes from './src/routes/itemRoutes.js';
-import tabRoutes from './src/routes/tabRoutes.js';
-import reservationRoutes from './src/routes/reservationRoutes.js';
-import scheduleRoutes from './src/routes/scheduleRoutes.js';
-import analyticsRoutes   from './src/routes/analyticsRoutes.js';
-import reservationTabRoutes   from './src/routes/reservationtabRoutes.js';
-import { notFound, errorHandler } from './src/middleware/errorMiddleware.js'
+import express    from 'express';
+import mongoose   from 'mongoose';
+import cors       from 'cors';
+import dotenv     from 'dotenv';
+
+import userRoutes           from './src/routes/userRoutes.js';
+import playerRoutes         from './src/routes/playerRoutes.js';
+import queueRoutes          from './src/routes/queueRoutes.js';
+import itemRoutes           from './src/routes/itemRoutes.js';
+import tabRoutes            from './src/routes/tabRoutes.js';
+import reservationRoutes    from './src/routes/reservationRoutes.js';
+import scheduleRoutes       from './src/routes/scheduleRoutes.js';
+import analyticsRoutes      from './src/routes/analyticsRoutes.js';
+import reservationTabRoutes from './src/routes/reservationTabRoutes.js';
+import courtRoutes          from './src/routes/courtRoutes.js';
+import superadminRoutes     from './src/routes/superadminRoutes.js';
+import publicRoutes         from './src/routes/publicRoutes.js';
 import { tenantMiddleware } from './src/middleware/tenantMiddleware.js';
-import superadminRoutes from './src/routes/superadminRoutes.js';
-import publicRoutes from './src/routes/publicRoutes.js';
+import { notFound, errorHandler } from './src/middleware/errorMiddleware.js';
 
 dotenv.config();
 
@@ -24,56 +26,37 @@ app.use(cors({
   origin: [
     'http://localhost:3000',
     'https://badminton-scbc.vercel.app',
-    ],
-credentials: true
+  ],
+  credentials: true,
 }));
 
 app.use(express.json());
 
-// MongoDB connection
-mongoose.set('returnDocument', 'after')
 mongoose.connect(process.env.MONGODB_URI)
-  .then(() => console.log('MongoDB connected'))
-  .catch(err => console.error(err));
+  .then(() => console.log('MongoDB connected ✅'))
+  .catch(err => console.error('MongoDB connection failed:', err));
 
-// Public endpoint — no auth needed
-app.get('/api/public/courts', async (req, res) => {
-  try {
-    const Court = mongoose.model('Court');
-    const courts = await Court.find({ 
-      isPublic: true, 
-      isActive: true,
-      'subscription.status': { $in: ['active', 'trial'] }
-    })
-    .select('name slug sports courtCount location contact')
-    .lean();
-    res.json(courts);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+// ── Public routes — no auth required ─────────────────────────────────────────
+app.use('/api/public',     publicRoutes);   
+app.use('/api/users',      userRoutes);     
 
-
-// Super-Admin Routes
+// ── Super admin — role checked inside route ───────────────────────────────────
 app.use('/api/superadmin', superadminRoutes);
-app.use('/api/court', tenantMiddleware, publicRoutes);
-app.use('/api/users', userRoutes);
 
-// Admin Routes
-app.use('/api/players', tenantMiddleware, playerRoutes);
-app.use('/api/queue', tenantMiddleware, queueRoutes);
-app.use('/api/items', tenantMiddleware, itemRoutes);
-app.use('/api/tabs', tenantMiddleware, tabRoutes);
-app.use('/api/reservations', tenantMiddleware, reservationRoutes);
-app.use('/api/schedule', tenantMiddleware, scheduleRoutes);
-app.use('/api/analytics', tenantMiddleware, analyticsRoutes);
+// ── Court self-management (admin of a specific court) ─────────────────────────
+app.use('/api/court', tenantMiddleware, courtRoutes);
+
+// ── Tenant-scoped admin routes ────────────────────────────────────────────────
+app.use('/api/players',          tenantMiddleware, playerRoutes);
+app.use('/api/queue',            tenantMiddleware, queueRoutes);
+app.use('/api/items',            tenantMiddleware, itemRoutes);
+app.use('/api/tabs',             tenantMiddleware, tabRoutes);
+app.use('/api/reservations',     tenantMiddleware, reservationRoutes);
+app.use('/api/schedule',         tenantMiddleware, scheduleRoutes);
+app.use('/api/analytics',        tenantMiddleware, analyticsRoutes);
 app.use('/api/reservation-tabs', tenantMiddleware, reservationTabRoutes);
 
-
-/**
- * --- Error Handling Middleware ---
- * @desc Handles requests to routes that do not exist.
- */
+// ── Error handlers ─────────────────────────────────────────────────────────────
 app.use(notFound);
 app.use(errorHandler);
 

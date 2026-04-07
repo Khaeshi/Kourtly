@@ -5,30 +5,31 @@ import { signOut, useSession } from 'next-auth/react';
 import { useState } from 'react';
 import Image from 'next/image';
 
+interface Props {
+  isOpen:  boolean;
+  onClose: () => void;
+  user:    { name: string; email: string; image: string };
+}
+
 const NAV = [
-  { href: '/admin',             label: 'Dashboard',   exact: true },
+  { href: '/admin',             label: 'Dashboard',  exact: true },
   { href: '/admin/players',     label: 'Players' },
   { href: '/admin/queue',       label: 'Queue' },
   { href: '/admin/billing',     label: 'Billing' },
   { href: '/admin/items',       label: 'Items' },
   { href: '/admin/reservation', label: 'Reservation' },
-  { href: '/admin/schedule',    label: 'Scheduling'},
+  { href: '/admin/schedule',    label: 'Scheduling' },
+  { href: '/admin/settings',    label: 'Settings' },
 ];
 
 const SUPERADMIN_NAV = [
   { href: '/admin/superadmin', label: 'Super Admin' },
 ];
 
-interface Props {
-  isOpen: boolean;
-  onClose: () => void;
-  user: { name: string; email: string; image: string };
-}
-
 export default function AdminSidebar({ isOpen, onClose, user }: Props) {
-  const pathname             = usePathname();
-  const { data: session }    = useSession();
-  const isSuperAdmin         = session?.user?.role === 'superadmin';
+  const pathname   = usePathname();
+  const { data: session } = useSession();
+  const isSuperAdmin = session?.user?.role === 'superadmin';
   const [signingOut, setSigningOut] = useState(false);
 
   const handleSignOut = async () => {
@@ -37,16 +38,10 @@ export default function AdminSidebar({ isOpen, onClose, user }: Props) {
   };
 
   const renderNavItem = (item: { href: string; label: string; exact?: boolean }) => {
-    const active = item.exact
-      ? pathname === item.href
-      : pathname.startsWith(item.href);
+    const active = item.exact ? pathname === item.href : pathname.startsWith(item.href);
     return (
-      <Link
-        key={item.href}
-        href={item.href}
-        onClick={onClose}
-        className={`sidebar-item ${active ? 'active' : ''}`}
-      >
+      <Link key={item.href} href={item.href} onClick={onClose}
+        className={`sidebar-item ${active ? 'active' : ''}`}>
         <span className={`w-1.5 h-1.5 rounded-full shrink-0 transition-colors duration-150 ${active ? 'bg-green-700' : 'bg-gray-300'}`} />
         {item.label}
       </Link>
@@ -72,12 +67,19 @@ export default function AdminSidebar({ isOpen, onClose, user }: Props) {
           Management
         </p>
         {NAV.map(renderNavItem)}
+
+        {isSuperAdmin && (
+          <>
+            <p className="text-[0.65rem] font-semibold tracking-widest uppercase text-gray-400 px-3.5 mt-4 mb-1">
+              Platform
+            </p>
+            {SUPERADMIN_NAV.map(renderNavItem)}
+          </>
+        )}
       </nav>
 
-      {/* User + sign out footer */}
+      {/* Footer */}
       <div className="px-3 py-4 border-t border-gray-100 flex flex-col gap-2">
-
-        {/* User info */}
         <div className="flex items-center gap-2.5 px-3.5 py-2">
           {user.image ? (
             <Image src={user.image} alt={user.name} width={26} height={26} className="rounded-full shrink-0" />
@@ -99,18 +101,14 @@ export default function AdminSidebar({ isOpen, onClose, user }: Props) {
           </div>
         </div>
 
-        {/* Sign out */}
-        <button
-          onClick={handleSignOut}
-          disabled={signingOut}
-          className="flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs text-red-500 border border-red-100 bg-transparent cursor-pointer transition-colors duration-150 hover:bg-red-50 disabled:opacity-50 w-full font-medium"
-          style={{ fontFamily: 'inherit' }}
-        >
+        <button onClick={handleSignOut} disabled={signingOut}
+          className="flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs text-red-500 border border-red-100 bg-transparent cursor-pointer transition-colors hover:bg-red-50 disabled:opacity-50 w-full font-medium"
+          style={{ fontFamily: 'inherit' }}>
           <span>↪</span>
           {signingOut ? 'Signing out...' : 'Sign Out'}
         </button>
 
-        <Link href="/" className="flex items-center gap-2 px-3.5 py-2 rounded-lg no-underline text-gray-500 text-xs transition-colors duration-150 hover:bg-gray-100">
+        <Link href="/" className="flex items-center gap-2 px-3.5 py-2 rounded-lg no-underline text-gray-500 text-xs hover:bg-gray-100 transition-colors">
           ← View Site
         </Link>
       </div>

@@ -1,9 +1,9 @@
 import express from 'express';
-import Court       from '../models/Court.js';
-import Reservation from '../models/Reservation.js';
+import Court        from '../models/Court.js';
+import Reservation  from '../models/Reservation.js';
 import ScheduleRule  from '../models/ScheduleRule.js';
 import ScheduleBlock from '../models/ScheduleBlock.js';
-import User from '../models/User.js';
+import User         from '../models/User.js';
 import {
   ALL_SLOTS, toMinutes, getDayOfWeek,
   resolveSchedule, getBlockedSlots,
@@ -11,20 +11,33 @@ import {
 
 const router = express.Router();
 
-// GET /api/public/courts — landing page directory
+// ── Court Directory ───────────────────────────────────────────────────────────
+
+// GET /api/public/courts — landing page listing
 router.get('/courts', async (req, res) => {
   try {
     const courts = await Court.find({
       isActive: true,
       'subscription.status': { $in: ['active', 'trial'] },
-    }).select('name slug sports courtCount location contact description').lean();
+    }).select('name slug sports courtCount location contact description logoUrl amenities').lean();
     res.json(courts);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// GET /api/public/courts/:slug — single court info for booking page
+// GET /api/public/courts/id/:id — fetch by ObjectId (used by auth.ts JWT callback)
+router.get('/courts/id/:id', async (req, res) => {
+  try {
+    const court = await Court.findById(req.params.id).select('name slug').lean();
+    if (!court) return res.status(404).json({ error: 'Court not found.' });
+    res.json(court);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/public/courts/:slug — single court for booking page
 router.get('/courts/:slug', async (req, res) => {
   try {
     const court = await Court.findOne({ slug: req.params.slug, isActive: true })
@@ -99,7 +112,7 @@ router.get('/courts/:slug/availability', async (req, res) => {
   }
 });
 
-// GET /api/public/courts/:slug/schedule — operating hours
+// GET /api/public/courts/:slug/schedule
 router.get('/courts/:slug/schedule', async (req, res) => {
   try {
     const court = await Court.findOne({ slug: req.params.slug }).lean();
@@ -117,7 +130,7 @@ router.post('/courts/:slug/reserve', async (req, res) => {
   try {
     const court = await Court.findOne({ slug: req.params.slug, isActive: true }).lean();
     if (!court) return res.status(404).json({ error: 'Court not found.' });
-    if (court.subscription.status === 'expired' || court.subscription.status === 'suspended') {
+    if (['expired', 'suspended'].includes(court.subscription.status)) {
       return res.status(403).json({ error: 'This court is not accepting bookings.' });
     }
 
@@ -139,15 +152,17 @@ router.post('/courts/:slug/reserve', async (req, res) => {
     const { isFullyClosed, baseSlots, perCourt } = resolveSchedule(rule, blocks);
     if (isFullyClosed) return res.status(403).json({ error: 'The venue is closed on this date.' });
 
-    const startHour  = Math.floor(startMins / 60);
+    const startHour   = Math.floor(startMins / 60);
     const baseSlotKey = `${String(startHour).padStart(2,'0')}:00-${String(startHour+1).padStart(2,'0')}:00`;
     if (!baseSlots.includes(baseSlotKey)) return res.status(403).json({ error: 'Outside open hours.' });
     if (perCourt[courtNum]?.adminBlockedSlots?.includes(baseSlotKey)) {
       return res.status(403).json({ error: 'This slot has been blocked.' });
     }
 
-    const active = await Reservation.find({ courtId, court: courtNum, date, status: { $in: ['pending','confirmed'] } })
-      .select('timeSlot duration').lean();
+    const active = await Reservation.find({
+      courtId, court: courtNum, date, status: { $in: ['pending','confirmed'] }
+    }).select('timeSlot duration').lean();
+
     const hasConflict = active.some(e => {
       const exStart = toMinutes(e.timeSlot.split('-')[0]);
       const exEnd   = exStart + e.duration * 60;
@@ -172,13 +187,21 @@ router.post('/courts/:slug/reserve', async (req, res) => {
   }
 });
 
-// POST /api/public/register-court
+// ── Court Registration (self-service onboarding) ──────────────────────────────
+
+// POST /api/public/register-court — called from onboarding page
 router.post('/register-court', async (req, res) => {
   try {
-    const { name, slug, adminEmail, sports = ['badminton'], courtCount = 4, location = {}, contact = {} } = req.body;
+    const {
+      name, slug, adminEmail,
+      sports = ['badminton'], courtCount = 4,
+      location = {}, contact = {},
+    } = req.body;
+
     if (!name || !slug || !adminEmail) {
       return res.status(400).json({ error: 'name, slug, and adminEmail are required.' });
     }
+
     const existing = await Court.findOne({ slug: slug.toLowerCase() });
     if (existing) return res.status(409).json({ error: 'This slug is already taken.' });
 
@@ -186,9 +209,11 @@ router.post('/register-court', async (req, res) => {
       name, slug, adminEmail, sports, courtCount,
       location, contact,
       subscription: { status: 'trial' },
-      isPublic: false, isActive: true,
+      isPublic:     false,
+      isActive:     true,
     });
 
+    // Link or create the admin user
     await User.findOneAndUpdate(
       { email: adminEmail.toLowerCase() },
       {

@@ -1,7 +1,6 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 import { sileo } from 'sileo';
-import { API_BASE } from '@/lib/config'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -78,10 +77,11 @@ function WeeklyRulesPanel({ rules, onUpdate }: {
 }) {
   const [saving, setSaving] = useState<number | null>(null);
 
+  // In WeeklyRulesPanel — updateRule
   const updateRule = async (dayOfWeek: number, patch: Partial<ScheduleRule>) => {
     setSaving(dayOfWeek);
     try {
-      await fetch(`${API_BASE}/schedule/rules/${dayOfWeek}`, {
+      await fetch(`/api/proxy/schedule/rules/${dayOfWeek}`, {
         method:  'PUT',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify(patch),
@@ -195,8 +195,9 @@ function AddBlockForm({ onAdded }: { onAdded: () => void }) {
 
   const submit = async () => {
     setSaving(true);
-    try {
-      const res = await fetch(`${API_BASE}/schedule/blocks`, {
+    // In AddBlockForm — submit
+    try{
+      const res = await fetch('/api/proxy/schedule/blocks', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify(form),
@@ -428,11 +429,13 @@ export default function SchedulePage() {
     setLoading(true);
     try {
       const [rulesRes, blocksRes] = await Promise.all([
-        fetch(`${API_BASE}/schedule/rules`),
-        fetch(`${API_BASE}/schedule/blocks`),
+        fetch('/api/proxy/schedule/rules'),
+        fetch('/api/proxy/schedule/blocks'),
       ]);
-      setRules(await rulesRes.json());
-      setBlocks(await blocksRes.json());
+      const rulesData  = await rulesRes.json();
+      const blocksData = await blocksRes.json();
+      setRules(Array.isArray(rulesData)   ? rulesData  : []);
+      setBlocks(Array.isArray(blocksData) ? blocksData : []);
     } finally {
       setLoading(false);
     }
@@ -440,9 +443,10 @@ export default function SchedulePage() {
 
   useEffect(() => { load(); }, [load]);
 
+  // deleteBlock
   const deleteBlock = async (id: string) => {
     if (!confirm('Remove this block?')) return;
-    await fetch(`${API_BASE}/schedule/blocks/${id}`, { method: 'DELETE' });
+    await fetch(`/api/proxy/schedule/blocks/${id}`, { method: 'DELETE' });
     sileo.success({ title: 'Block removed' });
     load();
   };

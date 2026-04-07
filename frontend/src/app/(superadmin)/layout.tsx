@@ -1,4 +1,4 @@
-import { auth } from '../../../auth';
+import { auth } from '@/auth';
 import { redirect } from 'next/navigation';
 import SuperAdminLayoutClient from '@/app/components/superadmin/SuperAdminLayoutClient';
 

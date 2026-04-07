@@ -1,0 +1,350 @@
+'use client';
+import { useState, useEffect, useRef } from 'react';
+import { sileo } from 'sileo';
+import { Upload, X } from 'lucide-react';
+
+const SPORTS    = ['badminton', 'pickleball', 'tennis'];
+const AMENITIES = ['parking', 'shower', 'locker', 'cafeteria', 'wifi', 'aircon'];
+const INPUT     = "w-full bg-white border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-900 outline-none focus:border-green-400 transition-colors";
+
+interface Court {
+  _id: string; name: string; slug: string; description: string;
+  sports: string[]; courtCount: number; logoUrl: string; photos: string[];
+  amenities: string[];
+  location: { address: string; city: string; province: string; };
+  contact:  { phone: string; email: string; facebook: string; instagram: string; website: string; };
+  subscription: { status: string; plan: string; amount: number; trialEnds: string; nextBilling: string | null; };
+  settings: { timezone: string; currency: string; reservationFee: number; };
+}
+
+function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <label className="text-[0.72rem] font-semibold uppercase tracking-[0.06em] text-gray-500">{label}</label>
+      {children}
+      {hint && <p className="text-[0.68rem] text-gray-400">{hint}</p>}
+    </div>
+  );
+}
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+      <div className="px-6 py-4 border-b border-gray-100 bg-gray-50">
+        <h2 className="text-sm font-semibold text-gray-800">{title}</h2>
+      </div>
+      <div className="px-6 py-5 flex flex-col gap-4">{children}</div>
+    </div>
+  );
+}
+
+export default function SettingsPage() {
+  const [court,   setCourt]   = useState<Court | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving,  setSaving]  = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const logoInputRef  = useRef<HTMLInputElement>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
+
+  const [form, setForm] = useState({
+    name: '', description: '', sports: [] as string[],
+    courtCount: '4', amenities: [] as string[],
+    address: '', city: '', province: '',
+    phone: '', email: '', facebook: '', instagram: '', website: '',
+    reservationFee: '210',
+  });
+
+  useEffect(() => {
+    fetch('/api/proxy/court/me')
+      .then(r => r.json())
+      .then(c => {
+        setCourt(c);
+        setForm({
+          name:           c.name           ?? '',
+          description:    c.description    ?? '',
+          sports:         c.sports         ?? [],
+          courtCount:     String(c.courtCount ?? 4),
+          amenities:      c.amenities      ?? [],
+          address:        c.location?.address  ?? '',
+          city:           c.location?.city     ?? '',
+          province:       c.location?.province ?? '',
+          phone:          c.contact?.phone     ?? '',
+          email:          c.contact?.email     ?? '',
+          facebook:       c.contact?.facebook  ?? '',
+          instagram:      c.contact?.instagram ?? '',
+          website:        c.contact?.website   ?? '',
+          reservationFee: String(c.settings?.reservationFee ?? 210),
+        });
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
+  const set = (k: keyof typeof form, v: any) => setForm(p => ({ ...p, [k]: v }));
+  const toggleSport   = (s: string) => set('sports',    form.sports.includes(s)    ? form.sports.filter(x => x !== s)    : [...form.sports, s]);
+  const toggleAmenity = (a: string) => set('amenities', form.amenities.includes(a) ? form.amenities.filter(x => x !== a) : [...form.amenities, a]);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const res = await fetch('/api/proxy/court/me', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name:        form.name,
+          description: form.description,
+          sports:      form.sports,
+          courtCount:  Number(form.courtCount),
+          amenities:   form.amenities,
+          location:    { address: form.address, city: form.city, province: form.province, country: 'Philippines' },
+          contact:     { phone: form.phone, email: form.email, facebook: form.facebook, instagram: form.instagram, website: form.website },
+          settings:    { reservationFee: Number(form.reservationFee) },
+        }),
+      });
+      if (!res.ok) throw new Error('Failed to save');
+      sileo.success({ title: 'Settings saved' });
+      const updated = await res.json();
+      setCourt(updated);
+    } catch {
+      sileo.error({ title: 'Failed to save settings' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const uploadToCloudinary = async (file: File): Promise<string> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('upload_preset', process.env.NEXT_PUBLIC_CLOUDINARY_PRESET!);
+    const res = await fetch(
+      `https://api.cloudinary.com/v1_1/${process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME}/image/upload`,
+      { method: 'POST', body: formData }
+    );
+    const data = await res.json();
+    return data.secure_url;
+  };
+
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const url = await uploadToCloudinary(file);
+      await fetch('/api/proxy/court/me/logo', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ logoUrl: url }),
+      });
+      setCourt(c => c ? { ...c, logoUrl: url } : c);
+      sileo.success({ title: 'Logo updated' });
+    } catch {
+      sileo.error({ title: 'Upload failed' });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    if (!files.length) return;
+    setUploading(true);
+    try {
+      for (const file of files) {
+        const url = await uploadToCloudinary(file);
+        await fetch('/api/proxy/court/me/photos', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'add', url }),
+        });
+        setCourt(c => c ? { ...c, photos: [...(c.photos ?? []), url] } : c);
+      }
+      sileo.success({ title: 'Photos uploaded' });
+    } catch {
+      sileo.error({ title: 'Upload failed' });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const removePhoto = async (url: string) => {
+    await fetch('/api/proxy/court/me/photos', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'remove', url }),
+    });
+    setCourt(c => c ? { ...c, photos: c.photos.filter(p => p !== url) } : c);
+  };
+
+  if (loading) return <div className="py-16 text-center text-gray-400 text-sm">Loading...</div>;
+
+  return (
+    <div className="max-w-[760px] font-sans space-y-6">
+      {/* Header */}
+      <div className="flex items-end justify-between flex-wrap gap-4 pb-5 border-b border-gray-100">
+        <div>
+          <p className="text-[0.72rem] font-medium tracking-[0.05em] uppercase text-gray-400 mb-1">Management</p>
+          <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Court Settings</h1>
+        </div>
+        <button onClick={save} disabled={saving}
+          className="text-[0.82rem] font-medium bg-gray-900 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors cursor-pointer disabled:opacity-50 border-none">
+          {saving ? 'Saving...' : 'Save Changes'}
+        </button>
+      </div>
+
+      {/* Branding */}
+      <Section title="Branding">
+        {/* Logo */}
+        <div className="flex items-center gap-4">
+          <div className="w-16 h-16 rounded-xl border border-gray-200 flex items-center justify-center overflow-hidden bg-gray-50 shrink-0">
+            {court?.logoUrl ? (
+              <img src={court.logoUrl} alt="Logo" className="w-full h-full object-cover" />
+            ) : (
+              <div className="w-8 h-8 bg-gray-200 rounded-lg" />
+            )}
+          </div>
+          <div>
+            <p className="text-sm font-medium text-gray-700 mb-1">Court Logo</p>
+            <button onClick={() => logoInputRef.current?.click()} disabled={uploading}
+              className="text-[0.72rem] border border-gray-200 rounded-md px-3 py-1.5 text-gray-600 hover:bg-gray-50 cursor-pointer transition-colors bg-white disabled:opacity-50 flex items-center gap-1.5">
+              <Upload size={11} /> {uploading ? 'Uploading...' : 'Upload Logo'}
+            </button>
+            <input ref={logoInputRef} type="file" accept="image/*" className="hidden" onChange={handleLogoUpload} />
+          </div>
+        </div>
+
+        <Field label="Court Name *">
+          <input value={form.name} onChange={e => set('name', e.target.value)} className={INPUT} />
+        </Field>
+        <Field label="Description" hint="Shown on the public listing page">
+          <textarea value={form.description} onChange={e => set('description', e.target.value)}
+            rows={3} className={`${INPUT} resize-none`} />
+        </Field>
+
+        {/* Photos */}
+        <div>
+          <label className="text-[0.72rem] font-semibold uppercase tracking-[0.06em] text-gray-500 block mb-2">Court Photos</label>
+          <div className="grid grid-cols-4 gap-2">
+            {(court?.photos ?? []).map(url => (
+              <div key={url} className="relative aspect-square rounded-lg overflow-hidden group">
+                <img src={url} alt="" className="w-full h-full object-cover" />
+                <button onClick={() => removePhoto(url)}
+                  className="absolute top-1 right-1 w-5 h-5 bg-black/60 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer border-none">
+                  <X size={10} className="text-white" />
+                </button>
+              </div>
+            ))}
+            <button onClick={() => photoInputRef.current?.click()} disabled={uploading}
+              className="aspect-square rounded-lg border-2 border-dashed border-gray-200 flex flex-col items-center justify-center gap-1 cursor-pointer hover:border-gray-300 transition-colors bg-transparent disabled:opacity-50">
+              <Upload size={16} className="text-gray-400" />
+              <span className="text-[0.62rem] text-gray-400">Add Photo</span>
+            </button>
+            <input ref={photoInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handlePhotoUpload} />
+          </div>
+        </div>
+      </Section>
+
+      {/* Sports & Courts */}
+      <Section title="Sports & Courts">
+        <Field label="Sports Offered">
+          <div className="flex gap-2 flex-wrap">
+            {SPORTS.map(s => (
+              <button key={s} type="button" onClick={() => toggleSport(s)}
+                className={`px-4 py-2 rounded-lg text-sm font-medium border transition-all cursor-pointer capitalize ${
+                  form.sports.includes(s) ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'
+                }`}>{s}</button>
+            ))}
+          </div>
+        </Field>
+        <Field label="Number of Physical Courts">
+          <div className="flex gap-2 flex-wrap">
+            {['1','2','3','4','5','6','8','10'].map(n => (
+              <button key={n} type="button" onClick={() => set('courtCount', n)}
+                className={`w-11 h-11 rounded-lg text-sm font-semibold border transition-all cursor-pointer ${
+                  form.courtCount === n ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'
+                }`}>{n}</button>
+            ))}
+          </div>
+        </Field>
+        <Field label="Amenities">
+          <div className="flex gap-2 flex-wrap">
+            {AMENITIES.map(a => (
+              <button key={a} type="button" onClick={() => toggleAmenity(a)}
+                className={`px-3 py-1.5 rounded-lg text-sm border transition-all cursor-pointer capitalize ${
+                  form.amenities.includes(a) ? 'bg-green-50 text-green-700 border-green-200' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'
+                }`}>{a}</button>
+            ))}
+          </div>
+        </Field>
+        <Field label="Reservation Fee (₱)" hint="Charged per booking">
+          <input type="number" value={form.reservationFee} onChange={e => set('reservationFee', e.target.value)}
+            className={`${INPUT} max-w-[160px]`} />
+        </Field>
+      </Section>
+
+      {/* Location */}
+      <Section title="Location">
+        <Field label="Street Address">
+          <input value={form.address} onChange={e => set('address', e.target.value)}
+            placeholder="123 Court St." className={INPUT} />
+        </Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="City">
+            <input value={form.city} onChange={e => set('city', e.target.value)} className={INPUT} />
+          </Field>
+          <Field label="Province">
+            <input value={form.province} onChange={e => set('province', e.target.value)} className={INPUT} />
+          </Field>
+        </div>
+      </Section>
+
+      {/* Contact */}
+      <Section title="Contact Info">
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Phone">
+            <input value={form.phone} onChange={e => set('phone', e.target.value)} className={INPUT} />
+          </Field>
+          <Field label="Email">
+            <input type="email" value={form.email} onChange={e => set('email', e.target.value)} className={INPUT} />
+          </Field>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Facebook">
+            <input value={form.facebook} onChange={e => set('facebook', e.target.value)} className={INPUT} />
+          </Field>
+          <Field label="Instagram">
+            <input value={form.instagram} onChange={e => set('instagram', e.target.value)} className={INPUT} />
+          </Field>
+        </div>
+        <Field label="Website">
+          <input value={form.website} onChange={e => set('website', e.target.value)}
+            placeholder="https://yourcourtname.com" className={INPUT} />
+        </Field>
+      </Section>
+
+      {/* Subscription — read only */}
+      {court && (
+        <Section title="Subscription">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            {[
+              { label: 'Status',      value: court.subscription?.status ?? '—' },
+              { label: 'Plan',        value: court.subscription?.plan ?? '—' },
+              { label: 'Amount',      value: court.subscription?.amount ? `₱${court.subscription.amount.toLocaleString()}` : '—' },
+              { label: 'Trial ends',  value: court.subscription?.trialEnds ? new Date(court.subscription.trialEnds).toLocaleDateString() : '—' },
+            ].map(s => (
+              <div key={s.label}>
+                <p className="text-[0.65rem] font-semibold uppercase tracking-[0.08em] text-gray-400 mb-1">{s.label}</p>
+                <p className="text-sm font-medium text-gray-700 capitalize">{s.value}</p>
+              </div>
+            ))}
+          </div>
+          <p className="text-[0.72rem] text-gray-400">Contact support to change your subscription plan.</p>
+        </Section>
+      )}
+      <div className="flex justify-end pb-8">
+        <button onClick={save} disabled={saving}
+          className="text-[0.82rem] font-medium bg-gray-900 text-white px-6 py-2.5 rounded-lg hover:bg-gray-700 transition-colors cursor-pointer disabled:opacity-50 border-none">
+          {saving ? 'Saving...' : 'Save All Changes'}
+        </button>
+      </div>
+    </div>
+  );
+}

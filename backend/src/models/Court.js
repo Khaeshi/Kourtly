@@ -51,7 +51,7 @@ const CourtSchema = new mongoose.Schema({
 
   // ── Admin ───────────────────────────────────────────────────────────────────
   // The primary admin email for this court (used during onboarding)
-  adminEmail: { type: String, required: true, lowercase: true, trim: true },
+  adminEmail: { type: String, required: [true, 'Admin email required'], lowercase: true, trim: true },
 
   // ── Subscription ────────────────────────────────────────────────────────────
   subscription: {

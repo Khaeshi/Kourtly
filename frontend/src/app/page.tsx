@@ -47,12 +47,23 @@ export default function LandingPage() {
   const isSuperAdmin = user?.role === 'superadmin';
 
   // Load public courts
-  useEffect(() => {
-    fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/public/courts`)
-      .then(r => r.json())
-      .then(data => setCourts(Array.isArray(data) ? data : []))
-      .catch(() => setCourts([]));
-  }, []);
+// Load public courts - DEBUG VERSION
+useEffect(() => {
+  console.log('🔄 Fetching courts...');
+  fetch('/api/public/courts')
+    .then(async (r) => {
+      console.log('📡 Response status:', r.status);
+      const data = await r.json();
+      console.log('📊 Raw data:', data);
+      console.log('📊 Is array?', Array.isArray(data));
+      console.log('📊 Data length:', data.length || 0);
+      setCourts(Array.isArray(data) ? data : []);
+    })
+    .catch((err) => {
+      console.error('❌ Fetch error:', err);
+      setCourts([]);
+    });
+}, []);
 
   useEffect(() => {
     const onScroll = () => { setScrolled(window.scrollY > 40); setScrollY(window.scrollY); };
