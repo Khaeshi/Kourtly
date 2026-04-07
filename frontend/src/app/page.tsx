@@ -65,6 +65,19 @@ useEffect(() => {
     });
 }, []);
 
+
+useEffect(() => {
+  const els = document.querySelectorAll('.reveal');
+  const observer = new IntersectionObserver(
+    entries => entries.forEach(e => {
+      if (e.isIntersecting) e.target.classList.add('visible');
+    }),
+    { threshold: 0.05 }
+  );
+  els.forEach(el => observer.observe(el));
+  return () => observer.disconnect();
+}, [courts]); // re-run after courts load
+
   useEffect(() => {
     const onScroll = () => { setScrolled(window.scrollY > 40); setScrollY(window.scrollY); };
     window.addEventListener('scroll', onScroll, { passive: true });
