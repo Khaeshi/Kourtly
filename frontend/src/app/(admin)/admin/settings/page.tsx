@@ -14,7 +14,7 @@ interface Court {
   location: { address: string; city: string; province: string; };
   contact:  { phone: string; email: string; facebook: string; instagram: string; website: string; };
   subscription: { status: string; plan: string; amount: number; trialEnds: string; nextBilling: string | null; };
-  settings: { timezone: string; currency: string; reservationFee: number; };
+  settings: { timezone: string; currency: string; reservationFee?: number; hourlyRate?: number; };
 }
 
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
@@ -51,7 +51,7 @@ export default function SettingsPage() {
     courtCount: '4', amenities: [] as string[],
     address: '', city: '', province: '',
     phone: '', email: '', facebook: '', instagram: '', website: '',
-    reservationFee: '210',
+    hourlyRate: '210',
   });
 
   useEffect(() => {
@@ -73,7 +73,7 @@ export default function SettingsPage() {
           facebook:       c.contact?.facebook  ?? '',
           instagram:      c.contact?.instagram ?? '',
           website:        c.contact?.website   ?? '',
-          reservationFee: String(c.settings?.reservationFee ?? 210),
+          hourlyRate:     String(c.settings?.hourlyRate ?? c.settings?.reservationFee ?? 210),
         });
       })
       .finally(() => setLoading(false));
@@ -97,7 +97,10 @@ export default function SettingsPage() {
           amenities:   form.amenities,
           location:    { address: form.address, city: form.city, province: form.province, country: 'Philippines' },
           contact:     { phone: form.phone, email: form.email, facebook: form.facebook, instagram: form.instagram, website: form.website },
-          settings:    { reservationFee: Number(form.reservationFee) },
+          settings:    {
+            hourlyRate: Number(form.hourlyRate),
+            reservationFee: Number(form.hourlyRate), // keep legacy consumers aligned
+          },
         }),
       });
       if (!res.ok) throw new Error('Failed to save');
@@ -274,8 +277,8 @@ export default function SettingsPage() {
             ))}
           </div>
         </Field>
-        <Field label="Reservation Fee (₱)" hint="Charged per booking">
-          <input type="number" value={form.reservationFee} onChange={e => set('reservationFee', e.target.value)}
+        <Field label="Court Rate Per Hour (₱)" hint="Used in public booking computation">
+          <input type="number" value={form.hourlyRate} onChange={e => set('hourlyRate', e.target.value)}
             className={`${INPUT} max-w-[160px]`} />
         </Field>
       </Section>

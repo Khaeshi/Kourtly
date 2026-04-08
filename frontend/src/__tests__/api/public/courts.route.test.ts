@@ -1,7 +1,7 @@
 /**
  * @jest-environment node
  */
-import { GET } from '@/app/api/public/courts/route';
+import { GET } from '@/app/api/public/courts/[...path]/route';
 
 describe('GET /api/public/courts route', () => {
   test('returns backend response payload when fetch succeeds', async () => {

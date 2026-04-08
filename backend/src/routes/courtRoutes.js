@@ -148,4 +148,37 @@ router.patch('/me/subscription', async (req, res) => {
   }
 });
 
+
+// GET /api/court/me
+router.get('/me', async (req, res) => {
+  if (!req.courtId) return res.status(401).json({ error: 'Missing court context.' });
+  const court = await Court.findById(req.courtId).lean();
+  if (!court) return res.status(404).json({ error: 'Court not found.' });
+  res.json(court);
+});
+
+// PATCH /api/court/me
+router.patch('/me', async (req, res) => {
+  if (!req.courtId) return res.status(401).json({ error: 'Missing court context.' });
+
+  const { name, description, sports, courtCount, amenities, location, contact, settings } = req.body;
+  const update = {};
+  if (name        !== undefined) update.name        = name;
+  if (description !== undefined) update.description = description;
+  if (sports      !== undefined) update.sports      = sports;
+  if (courtCount  !== undefined) update.courtCount  = courtCount;
+  if (amenities   !== undefined) update.amenities   = amenities;
+  if (location    !== undefined) update.location    = location;
+  if (contact     !== undefined) update.contact     = contact;
+  if (settings    !== undefined) update.settings    = settings;
+
+  const court = await Court.findByIdAndUpdate(
+    req.courtId,
+    { $set: update },
+    { new: true, runValidators: true },
+  );
+  if (!court) return res.status(404).json({ error: 'Court not found.' });
+  res.json(court);
+});
+
 export default router;

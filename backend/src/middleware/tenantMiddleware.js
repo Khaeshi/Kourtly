@@ -9,11 +9,10 @@ export async function tenantMiddleware(req, res, next) {
     return next();
   }
 
-  // ✅ FIXED: Add court creation + public routes
+  // Add court creation + public routes
   const skipTenantCheck = [
     '/api/public/court',     
-    '/api/public/courts',   
-    '/api/court',            
+    '/api/public/courts',             
     '/api/users/me'          
   ];
 

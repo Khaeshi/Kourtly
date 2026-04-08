@@ -46,7 +46,7 @@ interface Court {
   description: string; logoUrl: string; amenities: string[];
   location: { city: string; province: string; };
   contact:  { phone: string; email: string; facebook: string; };
-  settings: { reservationFee: number; };
+  settings: { reservationFee?: number; hourlyRate?: number; };
 }
 
 interface ScheduleRule {
@@ -355,6 +355,8 @@ export default function BookingPage({ params }: { params: Promise<{ slug: string
   useEffect(() => { setTimeSlot(''); }, [duration]);
 
   const courtList = court ? Array.from({ length: court.courtCount }, (_, i) => i+1) : [];
+  const hourlyRate = court?.settings?.hourlyRate ?? court?.settings?.reservationFee ?? 210;
+  const totalFee = hourlyRate * duration;
 
   const handleSubmit = async () => {
     if (!date || !courtNum || !timeSlot || !form.name || !form.phone) return;
@@ -470,6 +472,22 @@ export default function BookingPage({ params }: { params: Promise<{ slug: string
 
           {/* Header */}
           <div className="mb-10 sm:mb-16 anim">
+            <div className="inline-flex items-center gap-2.5 mb-5 px-3 py-2 rounded-full border border-white/10 bg-white/5">
+              {court?.logoUrl ? (
+                <img
+                  src={court.logoUrl}
+                  alt={court.name}
+                  className="w-6 h-6 rounded object-cover"
+                />
+              ) : (
+                <div className="w-6 h-6 rounded bg-[#c8f56a]/20 flex items-center justify-center">
+                  <div className="w-2.5 h-2.5 bg-[#c8f56a] rounded-sm" />
+                </div>
+              )}
+              <span className="text-sm sm:text-base text-[#c8f56a] font-medium tracking-wide">
+                {court?.name ?? 'Court'}
+              </span>
+            </div>
             <div className="flex items-center gap-3 mb-6 sm:mb-8">
               <span className="text-white/40 text-xs tracking-widest uppercase">Court Booking</span>
               {court?.sports?.map(s => (
@@ -477,7 +495,7 @@ export default function BookingPage({ params }: { params: Promise<{ slug: string
               ))}
             </div>
             <h1 className="booking-display text-4xl sm:text-5xl text-white leading-tight mb-3">
-              Reserve Your<br /><em className="text-[#c8f56a]">Court</em>
+              Reserve Your<br /><em className="text-[#c8f56a]">{court?.name ?? 'Court'}</em>
             </h1>
             <p className="text-white/30 text-sm">
               {court?.location?.city && `${court.location.city} · `}
@@ -603,7 +621,8 @@ export default function BookingPage({ params }: { params: Promise<{ slug: string
                     ['Date',     fmtDateShort(date)],
                     ['Time',     fmtSlotRange(timeSlot, duration)],
                     ['Duration', `${duration}h`],
-                    ['Fee',      `₱${court?.settings?.reservationFee ?? 210}`],
+                    ['Rate/hr',  `₱${hourlyRate}`],
+                    ['Total',    `₱${totalFee}`],
                   ] as [string,string][]).map(([label, value]) => (
                     <div key={label} className="flex justify-between items-center gap-4">
                       <span className="text-[0.6rem] tracking-widest uppercase text-white/25 shrink-0">{label}</span>
@@ -617,7 +636,7 @@ export default function BookingPage({ params }: { params: Promise<{ slug: string
                 <button className="proceed-btn ghost order-2 sm:order-1" onClick={() => setStep(4)}>← Back</button>
                 <button className="proceed-btn submit order-1 sm:order-2 w-full sm:w-auto"
                   disabled={!form.name || !form.phone || submitting} onClick={handleSubmit}>
-                  {submitting ? 'Submitting...' : `Confirm Booking · ₱${court?.settings?.reservationFee ?? 210}`}
+                  {submitting ? 'Submitting...' : `Confirm Booking · ₱${totalFee}`}
                 </button>
               </div>
               <p className="text-[0.65rem] text-white/15 mt-4">Your booking will be reviewed by admin before confirmation.</p>

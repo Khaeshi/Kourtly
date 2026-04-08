@@ -72,7 +72,8 @@ const CourtSchema = new mongoose.Schema({
   settings: {
     timezone:     { type: String, default: 'Asia/Manila' },
     currency:     { type: String, default: 'PHP' },
-    reservationFee: { type: Number, default: 210 },        // per booking
+    hourlyRate:   { type: Number, default: 210 },          // per hour
+    reservationFee: { type: Number, default: 210 },        // legacy fallback
   },
 
   // ── Visibility ──────────────────────────────────────────────────────────────

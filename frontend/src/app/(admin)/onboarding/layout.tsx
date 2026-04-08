@@ -6,19 +6,9 @@ export default async function OnboardingLayout({ children }: { children: React.R
   if (!session) redirect('/auth/signin');
   if (session.user.role !== 'admin') redirect('/admin');
 
-  // Check if already onboarded — skip wizard
+  // If admin already has a courtId, skip the wizard and go to dashboard.
   if (session.user.courtId) {
-    const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
-    try {
-      const res   = await fetch(`${BACKEND_URL}/api/court/me`, {
-        headers: {
-          'x-court-id':  session.user.courtId,
-          'x-user-role': session.user.role,
-        },
-      });
-      const court = await res.json();
-      if (court.onboardingComplete) redirect('/admin');
-    } catch {}
+    redirect('/admin');
   }
 
   return <>{children}</>;
