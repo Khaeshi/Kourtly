@@ -3,6 +3,16 @@ import { useState, useEffect, useCallback, use } from 'react';
 import { format, parseISO } from 'date-fns';
 import Link from 'next/link';
 import { ChevronLeft } from 'lucide-react';
+import {
+  InlineNotice,
+  KeyValueSummary,
+  PublicButton,
+  PublicField,
+  PublicInput,
+  PublicSelect,
+  PublicStepper,
+  PublicTextarea,
+} from '@/app/components/public/ui';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -19,7 +29,6 @@ function fmtMins(m: number) {
   const h = Math.floor(m/60), min = m%60, ampm = h>=12?'PM':'AM';
   return `${h>12?h-12:h===0?12:h}:${String(min).padStart(2,'0')} ${ampm}`;
 }
-function fmtSlotStart(slot: string) { return fmtMins(toMinutes(slot.split('-')[0])); }
 function fmtSlotRange(slot: string, dur: number) {
   const s = toMinutes(slot.split('-')[0]);
   return `${fmtMins(s)} – ${fmtMins(s + dur*60)}`;
@@ -68,9 +77,11 @@ const CSS = `
   .booking-display { font-family: 'DM Serif Display', serif; }
   .grid-bg {
     background-image:
-      linear-gradient(rgba(200,245,106,0.03) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(200,245,106,0.03) 1px, transparent 1px);
-    background-size: 48px 48px;
+      radial-gradient(ellipse 65% 45% at 50% -10%, rgba(255,159,67,0.2) 0%, transparent 65%),
+      radial-gradient(ellipse 50% 40% at 82% 22%, rgba(255,96,52,0.1) 0%, transparent 70%),
+      linear-gradient(rgba(255,159,67,0.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,159,67,0.05) 1px, transparent 1px);
+    background-size: auto, auto, 48px 48px, 48px 48px;
   }
   @keyframes fadeIn { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
   .anim { animation: fadeIn 0.4s ease forwards; }
@@ -80,8 +91,8 @@ const CSS = `
     color: rgba(255,255,255,0.5); border-radius: 12px; padding: 20px 12px;
     cursor: pointer; transition: all 0.15s ease; font-family: 'DM Mono', monospace; text-align: center;
   }
-  .duration-btn:hover { background: rgba(200,245,106,0.08); border-color: rgba(200,245,106,0.25); color: #c8f56a; }
-  .duration-btn.selected { background: rgba(200,245,106,0.12); border-color: rgba(200,245,106,0.4); color: #c8f56a; }
+  .duration-btn:hover { background: rgba(255,159,67,0.1); border-color: rgba(255,159,67,0.28); color: #ff9f43; }
+  .duration-btn.selected { background: rgba(255,159,67,0.14); border-color: rgba(255,159,67,0.42); color: #ff9f43; }
   .duration-btn.unavailable { opacity: 0.3; cursor: not-allowed; }
 
   .time-range-btn {
@@ -89,17 +100,18 @@ const CSS = `
     border-radius: 10px; padding: 14px 16px; cursor: pointer;
     transition: all 0.15s ease; font-family: 'DM Mono', monospace; text-align: left; width: 100%;
   }
-  .time-range-btn:hover:not(:disabled):not(.selected) { background: rgba(200,245,106,0.06); border-color: rgba(200,245,106,0.2); }
-  .time-range-btn.selected { background: rgba(200,245,106,0.10); border-color: rgba(200,245,106,0.35); }
+  .time-range-btn:hover:not(:disabled):not(.selected) { background: rgba(255,159,67,0.08); border-color: rgba(255,159,67,0.22); }
+  .time-range-btn.selected { background: rgba(255,159,67,0.12); border-color: rgba(255,159,67,0.36); }
   .time-range-btn.blocked { opacity: 0.35; cursor: not-allowed; }
 
   .court-btn {
-    background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07);
+    background: linear-gradient(160deg, rgba(255,159,67,0.08) 0%, rgba(255,255,255,0.03) 55%, rgba(255,255,255,0.02) 100%);
+    border: 1px solid rgba(255,159,67,0.22);
     transition: all 0.2s ease; border-radius: 12px; padding: 16px;
     text-align: left; cursor: pointer; width: 100%;
   }
-  .court-btn:hover { background: rgba(200,245,106,0.06); border-color: rgba(200,245,106,0.2); }
-  .court-btn.selected { background: rgba(200,245,106,0.1); border-color: rgba(200,245,106,0.35); }
+  .court-btn:hover { background: rgba(255,159,67,0.08); border-color: rgba(255,159,67,0.22); }
+  .court-btn.selected { background: rgba(255,159,67,0.12); border-color: rgba(255,159,67,0.36); }
 
   .field {
     width: 100%; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
@@ -108,20 +120,20 @@ const CSS = `
     transition: border-color 0.15s ease; -webkit-appearance: none; appearance: none;
   }
   .field::placeholder { color: rgba(255,255,255,0.2); }
-  .field:focus { border-color: rgba(200,245,106,0.35); }
+  .field:focus { border-color: rgba(255,159,67,0.4); }
   .field option { background: #111; }
 
   .proceed-btn {
-    background: rgba(200,245,106,0.12); border: 1px solid rgba(200,245,106,0.3);
-    color: #c8f56a; font-family: 'DM Mono', monospace; font-size: 0.8rem;
+    background: rgba(255,159,67,0.14); border: 1px solid rgba(255,159,67,0.34);
+    color: #ff9f43; font-family: 'DM Mono', monospace; font-size: 0.8rem;
     padding: 12px 24px; border-radius: 10px; cursor: pointer;
     transition: all 0.2s ease; letter-spacing: 0.05em; white-space: nowrap;
   }
-  .proceed-btn:hover:not(:disabled) { background: rgba(200,245,106,0.2); border-color: rgba(200,245,106,0.5); }
+  .proceed-btn:hover:not(:disabled) { background: rgba(255,159,67,0.24); border-color: rgba(255,159,67,0.52); }
   .proceed-btn:disabled { opacity: 0.4; cursor: not-allowed; }
   .proceed-btn.ghost { background: transparent; color: rgba(255,255,255,0.3); border-color: transparent; }
-  .proceed-btn.submit { background: #c8f56a; border-color: #c8f56a; color: #0a0f05; font-weight: 600; }
-  .proceed-btn.submit:hover:not(:disabled) { background: #d4f97c; }
+  .proceed-btn.submit { background: #ff9f43; border-color: #ff9f43; color: #0a0f05; font-weight: 600; }
+  .proceed-btn.submit:hover:not(:disabled) { background: #ffb86b; }
 
   input[type="date"].field { color-scheme: dark; }
   .safe-bottom { padding-bottom: max(1.5rem, env(safe-area-inset-bottom)); }
@@ -131,32 +143,6 @@ const CSS = `
   .fade-up-2 { animation: fadeUp 0.6s 0.15s ease both; }
   .fade-up-3 { animation: fadeUp 0.6s 0.3s ease both; }
 `;
-
-// ── Step Indicator ────────────────────────────────────────────────────────────
-
-function StepIndicator({ step }: { step: number }) {
-  const steps = ['Date', 'Court', 'Duration', 'Time', 'Details'];
-  return (
-    <div className="flex items-center gap-0 mb-10">
-      {steps.map((label, i) => {
-        const idx = i+1, active = idx===step, done = idx<step;
-        return (
-          <div key={label} className="flex items-center">
-            <div className={`flex items-center gap-1.5 px-2 py-1 sm:px-3 sm:py-1.5 rounded-full transition-all duration-300 ${active ? 'bg-[#c8f56a]/15 border border-[#c8f56a]/30' : 'border border-transparent'}`}>
-              <div className={`w-4 h-4 sm:w-5 sm:h-5 rounded-full flex items-center justify-center text-[0.55rem] font-bold transition-all duration-300 ${
-                done   ? 'bg-[#c8f56a] text-[#0a0f05]' :
-                active ? 'bg-[#c8f56a]/20 border border-[#c8f56a]/50 text-[#c8f56a]' :
-                         'bg-white/5 border border-white/10 text-white/30'
-              }`}>{done ? '✓' : idx}</div>
-              <span className={`text-[0.6rem] sm:text-xs font-medium transition-colors duration-300 ${active ? 'text-[#c8f56a]' : done ? 'text-white/50' : 'text-white/20'} ${!active && !done ? 'hidden sm:inline' : ''}`}>{label}</span>
-            </div>
-            {i < steps.length-1 && <div className={`w-3 sm:w-6 h-px transition-colors duration-300 ${done ? 'bg-[#c8f56a]/30' : 'bg-white/10'}`} />}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
 
 // ── Duration Step ─────────────────────────────────────────────────────────────
 
@@ -169,7 +155,6 @@ function DurationStep({ duration, setDuration, date, courtNum, slug, onBack, onN
   const [loading,  setLoading]  = useState(true);
 
   useEffect(() => {
-    setLoading(true);
     Promise.all([1,2,3,4].map(async d => {
       const res = await fetch(`/api/public/courts/${slug}/availability?date=${date}&duration=${d}`);
       const data = await res.json();
@@ -199,7 +184,7 @@ function DurationStep({ duration, setDuration, date, courtNum, slug, onBack, onN
               <span className="text-[0.65rem] tracking-widest uppercase opacity-60 block mb-2">{h===1?'hour':'hours'}</span>
               {loading ? <span className="block w-12 h-3 mx-auto rounded bg-white/10 animate-pulse"/> :
                noSlots ? <span className="text-[0.6rem] tracking-widest uppercase text-red-400/60">No slots</span> :
-               <span className={`text-[0.6rem] tracking-widest uppercase ${duration===h?'text-[#c8f56a]/70':'text-white/25'}`}>{avail.length} slot{avail.length!==1?'s':''}</span>}
+               <span className={`text-[0.6rem] tracking-widest uppercase ${duration===h?'text-[#ff9f43]/75':'text-white/25'}`}>{avail.length} slot{avail.length!==1?'s':''}</span>}
             </button>
           );
         })}
@@ -209,7 +194,7 @@ function DurationStep({ duration, setDuration, date, courtNum, slug, onBack, onN
           <p className="text-[0.6rem] tracking-widest uppercase text-white/20 mb-3">Available times for {duration}h</p>
           <div className="flex flex-wrap gap-2">
             {selectedAvail.map(slot => (
-              <span key={slot} className="text-[0.7rem] text-[#c8f56a]/70 bg-[#c8f56a]/8 border border-[#c8f56a]/15 px-2.5 py-1 rounded-full font-mono">
+              <span key={slot} className="text-[0.7rem] text-[#ff9f43]/75 bg-[#ff9f43]/10 border border-[#ff9f43]/20 px-2.5 py-1 rounded-full font-mono">
                 {fmtSlotRange(slot, duration)}
               </span>
             ))}
@@ -223,8 +208,8 @@ function DurationStep({ duration, setDuration, date, courtNum, slug, onBack, onN
         </div>
       )}
       <div className="flex gap-3">
-        <button className="proceed-btn ghost" onClick={onBack}>← Back</button>
-        <button className="proceed-btn" disabled={!hasSlots && !loading} onClick={onNext}>Continue →</button>
+        <PublicButton variant="ghost" className="proceed-btn ghost" onClick={onBack}>← Back</PublicButton>
+        <PublicButton className="proceed-btn" disabled={!hasSlots && !loading} onClick={onNext}>Continue →</PublicButton>
       </div>
     </div>
   );
@@ -263,15 +248,15 @@ function TimeStep({ date, courtNum, duration, slug, timeSlot, setTimeSlot, onBac
       <p className="text-white/20 text-xs mb-2">{fmtDateShort(date)} · Court {courtNum} · {duration}h session</p>
       <div className="mb-5 flex items-center gap-2">
         <span className="text-[0.6rem] tracking-widest uppercase text-white/20">Your session is</span>
-        <span className="text-xs text-[#c8f56a]/70 bg-[#c8f56a]/8 border border-[#c8f56a]/15 px-2 py-0.5 rounded-full">{duration} hour{duration>1?'s':''}</span>
+        <span className="text-xs text-[#ff9f43]/75 bg-[#ff9f43]/10 border border-[#ff9f43]/20 px-2 py-0.5 rounded-full">{duration} hour{duration>1?'s':''}</span>
       </div>
       {loading ? (
         <div className="space-y-2 mb-6">{[...Array(6)].map((_,i) => <div key={i} className="h-14 rounded-lg bg-white/3 animate-pulse"/>)}</div>
       ) : error ? (
-        <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-xl">
+        <InlineNotice variant="error" className="mb-6">
           <p className="text-red-400 text-sm">{error}</p>
           <button onClick={load} className="text-[0.7rem] text-red-400/70 hover:text-red-400 mt-2 transition-colors">Try again →</button>
-        </div>
+        </InlineNotice>
       ) : (
         <div className="space-y-2 mb-6">
           {slots.map(slot => {
@@ -283,14 +268,14 @@ function TimeStep({ date, courtNum, duration, slug, timeSlot, setTimeSlot, onBac
                 onClick={() => setTimeSlot(slot)}>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <span className={`text-sm font-medium ${sel?'text-[#c8f56a]':blocked?'text-white/20':'text-white/70'}`}>
+                    <span className={`text-sm font-medium ${sel?'text-[#ff9f43]':blocked?'text-white/20':'text-white/70'}`}>
                       {fmtSlotRange(slot, duration)}
                     </span>
-                    <span className={`text-[0.6rem] tracking-widest uppercase ${sel?'text-[#c8f56a]/50':blocked?'text-white/15':'text-white/20'}`}>{duration}h</span>
+                    <span className={`text-[0.6rem] tracking-widest uppercase ${sel?'text-[#ff9f43]/60':blocked?'text-white/15':'text-white/20'}`}>{duration}h</span>
                   </div>
                   <div className="flex items-center gap-2">
                     {blocked && <span className="text-[0.6rem] tracking-widest uppercase text-white/20 bg-white/5 px-2 py-0.5 rounded-full">Booked</span>}
-                    {sel && <span className="text-[0.6rem] tracking-widest uppercase text-[#c8f56a] bg-[#c8f56a]/10 px-2 py-0.5 rounded-full">Selected ✓</span>}
+                    {sel && <span className="text-[0.6rem] tracking-widest uppercase text-[#ff9f43] bg-[#ff9f43]/12 px-2 py-0.5 rounded-full">Selected ✓</span>}
                   </div>
                 </div>
               </button>
@@ -299,8 +284,8 @@ function TimeStep({ date, courtNum, duration, slug, timeSlot, setTimeSlot, onBac
         </div>
       )}
       <div className="flex gap-3 mb-3">
-        <button className="proceed-btn ghost" onClick={onBack}>← Back</button>
-        <button className="proceed-btn flex-1 sm:flex-none" disabled={!timeSlot} onClick={onNext}>Continue →</button>
+        <PublicButton variant="ghost" className="proceed-btn ghost" onClick={onBack}>← Back</PublicButton>
+        <PublicButton className="proceed-btn flex-1 sm:flex-none" disabled={!timeSlot} onClick={onNext}>Continue →</PublicButton>
       </div>
       <p className="text-[0.65rem] text-white/15">Greyed slots are unavailable for your chosen duration.</p>
     </div>
@@ -377,8 +362,9 @@ export default function BookingPage({ params }: { params: Promise<{ slug: string
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Booking failed');
       setSuccess(true);
-    } catch (err: any) {
-      alert(err.message || 'Booking failed. Please try again.');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Booking failed. Please try again.';
+      alert(message);
     } finally {
       setSubmitting(false);
     }
@@ -403,7 +389,7 @@ export default function BookingPage({ params }: { params: Promise<{ slug: string
     <div className="min-h-screen bg-[#080c04] flex flex-col items-center justify-center gap-4">
       <style>{CSS}</style>
       <p className="text-white/40 text-sm font-mono">Court not found.</p>
-      <Link href="/" className="text-[#c8f56a]/60 text-sm no-underline hover:text-[#c8f56a]">← Back to home</Link>
+      <Link href="/" className="text-[#ff9f43]/70 text-sm no-underline hover:text-[#ff9f43]">← Back to home</Link>
     </div>
   );
 
@@ -412,13 +398,13 @@ export default function BookingPage({ params }: { params: Promise<{ slug: string
     <div className="min-h-screen bg-[#080c04] flex items-center justify-center p-4 sm:p-6">
       <style>{CSS}</style>
       <div className="text-center w-full max-w-sm" style={{ fontFamily:"'DM Mono',monospace" }}>
-        <div className="fade-up w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-[#c8f56a]/10 border border-[#c8f56a]/30 flex items-center justify-center mx-auto mb-6 sm:mb-8">
-          <span className="text-[#c8f56a] text-2xl sm:text-3xl">✓</span>
+        <div className="fade-up w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-[#ff9f43]/12 border border-[#ff9f43]/30 flex items-center justify-center mx-auto mb-6 sm:mb-8">
+          <span className="text-[#ff9f43] text-2xl sm:text-3xl">✓</span>
         </div>
         <h2 className="fade-up-2 booking-display text-3xl sm:text-4xl text-white mb-3">Booking Received</h2>
         <p className="fade-up-2 text-white/40 text-sm mb-2">at <span className="text-white/60">{court?.name}</span></p>
         <p className="fade-up-2 text-white/30 text-sm mb-6 sm:mb-8 px-2">
-          We'll confirm your reservation shortly.{form.email ? ' A confirmation email will be sent once approved.' : ''}
+          We&apos;ll confirm your reservation shortly.{form.email ? ' A confirmation email will be sent once approved.' : ''}
         </p>
         <div className="fade-up-3 bg-white/5 border border-white/10 rounded-2xl p-5 text-left mb-6 sm:mb-8">
           {([
@@ -435,7 +421,7 @@ export default function BookingPage({ params }: { params: Promise<{ slug: string
             </div>
           ))}
         </div>
-        <button onClick={resetAll} className="fade-up-3 text-[#c8f56a]/60 hover:text-[#c8f56a] text-sm transition-colors">
+        <button onClick={resetAll} className="fade-up-3 text-[#ff9f43]/70 hover:text-[#ff9f43] text-sm transition-colors">
           ← Book another slot
         </button>
       </div>
@@ -448,8 +434,8 @@ export default function BookingPage({ params }: { params: Promise<{ slug: string
       <style>{CSS}</style>
 
       {/* Ambient glow */}
-      <div className="fixed top-0 left-1/2 -translate-x-1/2 w-[400px] sm:w-[600px] h-[200px] sm:h-[300px] rounded-full opacity-10 pointer-events-none"
-        style={{ background:'radial-gradient(ellipse, #c8f56a 0%, transparent 70%)', filter:'blur(60px)' }}/>
+      <div className="fixed top-0 left-1/2 -translate-x-1/2 w-[420px] sm:w-[680px] h-[220px] sm:h-[340px] rounded-full opacity-20 pointer-events-none"
+        style={{ background:'radial-gradient(ellipse, rgba(255,159,67,0.95) 0%, rgba(255,96,52,0.55) 38%, transparent 72%)', filter:'blur(70px)' }}/>
 
       {/* Navbar */}
       <nav className="relative z-10 flex items-center gap-4 px-6 py-4 border-b border-white/[0.06]">
@@ -460,8 +446,8 @@ export default function BookingPage({ params }: { params: Promise<{ slug: string
         {court?.logoUrl ? (
           <img src={court.logoUrl} alt={court.name} className="w-6 h-6 rounded object-cover"/>
         ) : (
-          <div className="w-6 h-6 rounded bg-[#c8f56a]/20 flex items-center justify-center">
-            <div className="w-2.5 h-2.5 bg-[#c8f56a] rounded-sm"/>
+          <div className="w-6 h-6 rounded bg-[#ff9f43]/20 flex items-center justify-center">
+            <div className="w-2.5 h-2.5 bg-[#ff9f43] rounded-sm"/>
           </div>
         )}
         <span className="text-white/60 text-sm">{court?.name}</span>
@@ -480,22 +466,22 @@ export default function BookingPage({ params }: { params: Promise<{ slug: string
                   className="w-6 h-6 rounded object-cover"
                 />
               ) : (
-                <div className="w-6 h-6 rounded bg-[#c8f56a]/20 flex items-center justify-center">
-                  <div className="w-2.5 h-2.5 bg-[#c8f56a] rounded-sm" />
+                <div className="w-6 h-6 rounded bg-[#ff9f43]/20 flex items-center justify-center">
+                  <div className="w-2.5 h-2.5 bg-[#ff9f43] rounded-sm" />
                 </div>
               )}
-              <span className="text-sm sm:text-base text-[#c8f56a] font-medium tracking-wide">
+              <span className="text-sm sm:text-base text-[#ff9f43] font-medium tracking-wide">
                 {court?.name ?? 'Court'}
               </span>
             </div>
             <div className="flex items-center gap-3 mb-6 sm:mb-8">
               <span className="text-white/40 text-xs tracking-widest uppercase">Court Booking</span>
               {court?.sports?.map(s => (
-                <span key={s} className="text-[0.6rem] text-[#c8f56a]/50 bg-[#c8f56a]/8 border border-[#c8f56a]/15 px-2 py-0.5 rounded-full capitalize">{s}</span>
+                <span key={s} className="text-[0.6rem] text-[#ff9f43]/60 bg-[#ff9f43]/10 border border-[#ff9f43]/20 px-2 py-0.5 rounded-full capitalize">{s}</span>
               ))}
             </div>
             <h1 className="booking-display text-4xl sm:text-5xl text-white leading-tight mb-3">
-              Reserve Your<br /><em className="text-[#c8f56a]">{court?.name ?? 'Court'}</em>
+              Reserve Your<br /><em className="text-[#ff9f43]">{court?.name ?? 'Court'}</em>
             </h1>
             <p className="text-white/30 text-sm">
               {court?.location?.city && `${court.location.city} · `}
@@ -503,7 +489,7 @@ export default function BookingPage({ params }: { params: Promise<{ slug: string
             </p>
           </div>
 
-          <StepIndicator step={step}/>
+          <PublicStepper labels={['Date', 'Court', 'Duration', 'Time', 'Details']} step={step} />
 
           {/* Step 1 — Date */}
           {step === 1 && (
@@ -512,23 +498,23 @@ export default function BookingPage({ params }: { params: Promise<{ slug: string
               <input type="date" min={todayStr()} className="field mb-4" value={date}
                 onChange={e => setDate(e.target.value)}/>
               {date && checkingSched && (
-                <div className="mb-4 p-3 bg-white/3 border border-white/6 rounded-xl">
+                <InlineNotice className="mb-4">
                   <p className="text-white/30 text-xs">Checking schedule...</p>
-                </div>
+                </InlineNotice>
               )}
               {date && !checkingSched && closedDay && (
-                <div className="mb-4 p-4 bg-red-500/10 border border-red-500/20 rounded-xl">
+                <InlineNotice variant="error" className="mb-4">
                   <p className="text-red-400 text-sm font-medium">Venue closed on this date</p>
                   <p className="text-red-400/60 text-xs mt-1">Please choose a different date.</p>
-                </div>
+                </InlineNotice>
               )}
               {date && !checkingSched && !closedDay && (
-                <div className="mb-6 p-4 bg-white/3 border border-white/6 rounded-xl">
-                  <p className="text-[#c8f56a]/70 text-sm">{fmtDateLong(date)}</p>
-                </div>
+                <InlineNotice className="mb-6">
+                  <p className="text-[#ff9f43]/75 text-sm">{fmtDateLong(date)}</p>
+                </InlineNotice>
               )}
-              <button className="proceed-btn w-full sm:w-auto" disabled={!date || checkingSched || closedDay}
-                onClick={() => setStep(2)}>Continue →</button>
+              <PublicButton className="proceed-btn w-full sm:w-auto" disabled={!date || checkingSched || closedDay}
+                onClick={() => setStep(2)}>Continue →</PublicButton>
             </div>
           )}
 
@@ -543,13 +529,13 @@ export default function BookingPage({ params }: { params: Promise<{ slug: string
                     onClick={() => { setCourtNum(c); setTimeSlot(''); }}>
                     <div className="text-[0.55rem] tracking-widest uppercase text-white/30 mb-1">Court</div>
                     <div className="booking-display text-3xl sm:text-4xl text-white/80 mb-2">{c}</div>
-                    {courtNum===c && <div className="text-[0.55rem] text-[#c8f56a] tracking-widest uppercase">Selected ✓</div>}
+                    {courtNum===c && <div className="text-[0.55rem] text-[#ff9f43] tracking-widest uppercase">Selected ✓</div>}
                   </button>
                 ))}
               </div>
               <div className="flex gap-3">
-                <button className="proceed-btn ghost" onClick={() => setStep(1)}>← Back</button>
-                <button className="proceed-btn flex-1 sm:flex-none" disabled={!courtNum} onClick={() => setStep(3)}>Continue →</button>
+                <PublicButton variant="ghost" className="proceed-btn ghost" onClick={() => setStep(1)}>← Back</PublicButton>
+                <PublicButton className="proceed-btn flex-1 sm:flex-none" disabled={!courtNum} onClick={() => setStep(3)}>Continue →</PublicButton>
               </div>
             </div>
           )}
@@ -579,65 +565,52 @@ export default function BookingPage({ params }: { params: Promise<{ slug: string
               <p className="text-white/20 text-xs mb-6">Court {courtNum} · {fmtDateShort(date)} · {fmtSlotRange(timeSlot, duration)}</p>
               <div className="space-y-4 mb-6">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-[0.6rem] tracking-widest uppercase text-white/25 mb-2">Full Name *</label>
-                    <input className="field" placeholder="Juan dela Cruz" value={form.name}
+                  <PublicField label="Full Name *">
+                    <PublicInput className="field" placeholder="Juan dela Cruz" value={form.name}
                       onChange={e => setForm({...form, name: e.target.value})}/>
-                  </div>
-                  <div>
-                    <label className="block text-[0.6rem] tracking-widest uppercase text-white/25 mb-2">Phone *</label>
-                    <input className="field" placeholder="09XX XXX XXXX" type="tel" value={form.phone}
+                  </PublicField>
+                  <PublicField label="Phone *">
+                    <PublicInput className="field" placeholder="09XX XXX XXXX" type="tel" value={form.phone}
                       onChange={e => setForm({...form, phone: e.target.value})}/>
-                  </div>
+                  </PublicField>
                 </div>
-                <div>
-                  <label className="block text-[0.6rem] tracking-widest uppercase text-white/25 mb-2">
-                    Email <span className="text-white/15">(optional)</span>
-                  </label>
-                  <input className="field" type="email" placeholder="juan@email.com" value={form.email}
+                <PublicField label="Email (optional)">
+                  <PublicInput className="field" type="email" placeholder="juan@email.com" value={form.email}
                     onChange={e => setForm({...form, email: e.target.value})}/>
-                </div>
-                <div>
-                  <label className="block text-[0.6rem] tracking-widest uppercase text-white/25 mb-2">Players</label>
-                  <select className="field" value={form.playerCount}
+                </PublicField>
+                <PublicField label="Players">
+                  <PublicSelect className="field" value={form.playerCount}
                     onChange={e => setForm({...form, playerCount: e.target.value})}>
                     {[1,2,3,4,5,6].map(n => <option key={n} value={n}>{n} player{n>1?'s':''}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[0.6rem] tracking-widest uppercase text-white/25 mb-2">Notes (optional)</label>
-                  <textarea className="field resize-none" rows={3} placeholder="Any special requests..."
+                  </PublicSelect>
+                </PublicField>
+                <PublicField label="Notes (optional)">
+                  <PublicTextarea className="field" rows={3} placeholder="Any special requests..."
                     value={form.notes} onChange={e => setForm({...form, notes: e.target.value})}/>
-                </div>
+                </PublicField>
               </div>
 
               {/* Summary */}
-              <div className="bg-white/3 border border-white/6 rounded-xl p-4 sm:p-5 mb-6">
-                <p className="text-[0.6rem] tracking-widest uppercase text-white/20 mb-3">Booking Summary</p>
-                <div className="space-y-2">
-                  {([
-                    ['Venue',    court?.name ?? ''],
-                    ['Court',    `Court ${courtNum}`],
-                    ['Date',     fmtDateShort(date)],
-                    ['Time',     fmtSlotRange(timeSlot, duration)],
-                    ['Duration', `${duration}h`],
-                    ['Rate/hr',  `₱${hourlyRate}`],
-                    ['Total',    `₱${totalFee}`],
-                  ] as [string,string][]).map(([label, value]) => (
-                    <div key={label} className="flex justify-between items-center gap-4">
-                      <span className="text-[0.6rem] tracking-widest uppercase text-white/25 shrink-0">{label}</span>
-                      <span className="text-sm text-white/60 text-right">{value}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
+              <KeyValueSummary
+                className="mb-6"
+                title="Booking Summary"
+                rows={[
+                  ['Venue', court?.name ?? ''],
+                  ['Court', `Court ${courtNum}`],
+                  ['Date', fmtDateShort(date)],
+                  ['Time', fmtSlotRange(timeSlot, duration)],
+                  ['Duration', `${duration}h`],
+                  ['Rate/hr', `₱${hourlyRate}`],
+                  ['Total', `₱${totalFee}`],
+                ]}
+              />
 
               <div className="flex flex-col sm:flex-row gap-3">
-                <button className="proceed-btn ghost order-2 sm:order-1" onClick={() => setStep(4)}>← Back</button>
-                <button className="proceed-btn submit order-1 sm:order-2 w-full sm:w-auto"
+                <PublicButton variant="ghost" className="proceed-btn ghost order-2 sm:order-1" onClick={() => setStep(4)}>← Back</PublicButton>
+                <PublicButton variant="primary" className="proceed-btn submit order-1 sm:order-2 w-full sm:w-auto"
                   disabled={!form.name || !form.phone || submitting} onClick={handleSubmit}>
                   {submitting ? 'Submitting...' : `Confirm Booking · ₱${totalFee}`}
-                </button>
+                </PublicButton>
               </div>
               <p className="text-[0.65rem] text-white/15 mt-4">Your booking will be reviewed by admin before confirmation.</p>
             </div>

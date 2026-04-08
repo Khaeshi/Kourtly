@@ -5,6 +5,7 @@ import { User2, Search, MapPin, ChevronDown, ArrowRight } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { useSession, signOut } from 'next-auth/react';
 import { APP_NAME } from '@/lib/config';
+import { PublicBadge, PublicButton, PublicCard, PublicInput } from '@/app/components/public/ui';
 
 interface Court {
   _id:        string;
@@ -112,7 +113,7 @@ useEffect(() => {
   const scrollToMap = () => mapRef.current?.scrollIntoView({ behavior: 'smooth' });
 
   return (
-    <div className="min-h-screen bg-[#0c1409] text-[#e8f0e4] font-[Plus_Jakarta_Sans,sans-serif]">
+    <div className="public-root min-h-screen text-[#e8f0e4] font-[Plus_Jakarta_Sans,sans-serif]">
 
       {/* ── NAVBAR ── */}
       <nav className={`fixed top-0 left-0 right-0 z-[200] flex items-center justify-between px-6 py-[1.1rem] transition-all duration-300 ${
@@ -246,8 +247,12 @@ useEffect(() => {
             Find and book badminton, pickleball, and tennis courts near you. Smart queue, real-time availability.
           </p>
           <div className="anim-4 flex gap-3 flex-wrap">
-            <a href="#courts" className="book-btn">Find a Court</a>
-            <a href="#pricing" className="ghost-btn">For Court Owners</a>
+            <a href="#courts" className="no-underline">
+              <PublicButton variant="primary">Find a Court</PublicButton>
+            </a>
+            <a href="#pricing" className="no-underline">
+              <PublicButton variant="secondary">For Court Owners</PublicButton>
+            </a>
           </div>
         </div>
       </section>
@@ -276,11 +281,11 @@ useEffect(() => {
           <div className="reveal flex flex-wrap gap-3 mb-8">
             <div className="relative flex-1 min-w-[200px] max-w-[320px]">
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" />
-              <input
+              <PublicInput
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 placeholder="Search by name or city..."
-                className="w-full bg-white/[0.05] border border-white/10 rounded-md pl-9 pr-4 py-2.5 text-[0.82rem] text-[#e8f0e4] placeholder-white/25 outline-none focus:border-[rgba(200,168,75,0.4)] transition-colors"
+                className="pl-9 pr-4 py-2.5 text-[0.82rem]"
               />
             </div>
             <div className="flex gap-2">
@@ -288,8 +293,8 @@ useEffect(() => {
                 <button key={s} onClick={() => setSportFilter(s)}
                   className={`px-3.5 py-2 rounded-md text-[0.72rem] font-medium border transition-colors cursor-pointer capitalize ${
                     sportFilter === s
-                      ? 'bg-[#c8a84b] text-[#0c1409] border-[#c8a84b]'
-                      : 'bg-transparent text-white/50 border-white/10 hover:border-white/20'
+                      ? 'bg-[var(--public-accent)] text-[#0b1208] border-[var(--public-accent)]'
+                      : 'bg-transparent text-white/50 border-white/10 hover:border-[rgba(158,240,26,0.35)]'
                   }`}>
                   {s === 'all' ? 'All Sports' : SPORT_LABELS[s]}
                 </button>
@@ -305,15 +310,15 @@ useEffect(() => {
           ) : (
             <div className="reveal grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))' }}>
               {filteredCourts.map(court => (
-                <div key={court._id}
-                  className="group bg-[rgba(255,255,255,0.03)] border border-white/[0.07] rounded-xl p-5 hover:border-[rgba(200,168,75,0.25)] hover:bg-[rgba(200,168,75,0.04)] transition-all duration-300 cursor-pointer">
+                <PublicCard key={court._id}
+                  className="group p-5 hover:border-[rgba(158,240,26,0.26)] hover:bg-[rgba(158,240,26,0.05)] transition-all duration-300 cursor-pointer">
 
                   {/* Sports badges */}
                   <div className="flex gap-1.5 mb-4">
                     {court.sports.map(s => (
-                      <span key={s} className={`text-[0.6rem] font-semibold tracking-[0.08em] uppercase px-2 py-0.5 rounded-[3px] border ${SPORT_COLORS[s] ?? 'text-white/40 bg-white/5 border-white/10'}`}>
+                      <PublicBadge key={s} className={SPORT_COLORS[s] ?? 'text-white/40 bg-white/5 border-white/10'}>
                         {SPORT_LABELS[s] ?? s}
-                      </span>
+                      </PublicBadge>
                     ))}
                   </div>
 
@@ -335,7 +340,7 @@ useEffect(() => {
                       Book now <ArrowRight size={12} />
                     </Link>
                   </div>
-                </div>
+                </PublicCard>
               ))}
             </div>
           )}
@@ -428,9 +433,8 @@ useEffect(() => {
                   </li>
                 ))}
               </ul>
-              <Link href="/auth/signin"
-                className="block text-center ghost-btn no-underline text-[0.82rem] py-2.5">
-                Start Free Trial
+              <Link href="/auth/signin" className="block no-underline">
+                <PublicButton variant="secondary" className="w-full py-2.5">Start Free Trial</PublicButton>
               </Link>
             </div>
 
@@ -460,9 +464,8 @@ useEffect(() => {
                   </li>
                 ))}
               </ul>
-              <Link href="/auth/signin"
-                className="block text-center book-btn no-underline text-[0.82rem] py-2.5">
-                Start Free Trial
+              <Link href="/auth/signin" className="block no-underline">
+                <PublicButton variant="primary" className="w-full py-2.5">Start Free Trial</PublicButton>
               </Link>
             </div>
           </div>
