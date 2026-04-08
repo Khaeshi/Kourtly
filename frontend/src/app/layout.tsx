@@ -20,6 +20,12 @@ export const metadata: Metadata = {
   description: `Find the nearest and recommended courts near you! At PlayKou, 
   experience a convenient place to see available courts near you and book right 
   away your reservations! Or if you are a court owner, you found the right system to manage your court, subscribe now! `,
+  manifest: '/manifest.webmanifest',
+  themeColor: '#3b82f6',
+  icons: {
+    icon: '/icons/icon-192.svg',
+    apple: '/icons/icon-192.svg',
+  },
 };
 
 export default function RootLayout({

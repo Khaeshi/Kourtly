@@ -345,6 +345,10 @@ export default function BookingPage({ params }: { params: Promise<{ slug: string
 
   const handleSubmit = async () => {
     if (!date || !courtNum || !timeSlot || !form.name || !form.phone) return;
+    if (!navigator.onLine) {
+      alert('You are offline. Reconnect to submit a booking request.');
+      return;
+    }
     setSubmitting(true);
     try {
       const res = await fetch(`/api/public/courts/${slug}/reserve`, {
