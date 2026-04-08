@@ -30,21 +30,25 @@ body {
 ══════════════════════════════════════════ */
 
 :root {
-  --public-bg: #070b08;
-  --public-bg-alt: #0d1611;
+  --public-bg: #0b1120;
+  --public-bg-alt: #121b31;
   --public-surface: rgba(255, 255, 255, 0.035);
   --public-surface-strong: rgba(255, 255, 255, 0.06);
-  --public-border: rgba(255, 255, 255, 0.1);
+  --public-border: rgba(59, 130, 246, 0.2);
   --public-text: #e6f4ea;
   --public-text-muted: rgba(230, 244, 234, 0.62);
   --public-text-dim: rgba(230, 244, 234, 0.34);
-  --public-accent: #ff9f43;
-  --public-accent-strong: #ffb86b;
-  --public-accent-soft: rgba(255, 159, 67, 0.16);
+  --public-accent: #60a5fa;
+  --public-accent-strong: #93c5fd;
+  --public-accent-soft: rgba(59, 130, 246, 0.16);
+  --public-accent-rgb: 59, 130, 246;
+  --pub-bg: #0b1120;
+  --pub-bg2: #0f172a;
+  --pub-muted: rgba(255, 255, 255, 0.48);
 }
 
 .public-root {
-  background: radial-gradient(ellipse 75% 55% at 50% -10%, rgba(255, 159, 67, 0.18) 0%, transparent 65%), var(--public-bg);
+  background: radial-gradient(ellipse 75% 55% at 50% -10%, rgba(59, 130, 246, 0.18) 0%, transparent 65%), var(--public-bg);
   color: var(--public-text);
 }
 
@@ -59,9 +63,9 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
-  border: 1px solid rgba(255, 159, 67, 0.3);
-  background: rgba(255, 159, 67, 0.12);
-  color: rgba(255, 194, 138, 0.95);
+  border: 1px solid rgba(59, 130, 246, 0.32);
+  background: rgba(59, 130, 246, 0.12);
+  color: rgba(191, 219, 254, 0.95);
   border-radius: 999px;
   padding: 0.22rem 0.58rem;
   font-size: 0.65rem;
@@ -81,8 +85,8 @@ body {
 }
 .public-input::placeholder { color: rgba(230, 244, 234, 0.28); }
 .public-input:focus {
-  border-color: rgba(255, 159, 67, 0.5);
-  box-shadow: 0 0 0 3px rgba(255, 159, 67, 0.14);
+  border-color: rgba(59, 130, 246, 0.5);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.14);
 }
 
 

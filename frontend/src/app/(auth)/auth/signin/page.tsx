@@ -38,7 +38,7 @@ function SignInContent() {
     return (
       <div className="public-root min-h-screen flex items-center justify-center">
         <div className="text-center">
-          <div className="w-7 h-7 border-2 border-[rgba(158,240,26,0.2)] border-t-[var(--public-accent)] rounded-full animate-spin mx-auto mb-4" />
+          <div className="w-7 h-7 border-2 border-[rgba(59,130,246,0.2)] border-t-[var(--public-accent)] rounded-full animate-spin mx-auto mb-4" />
           <p className="text-sm text-white/40">
             {status === 'authenticated' ? 'Redirecting...' : 'Loading...'}
           </p>
@@ -50,7 +50,7 @@ function SignInContent() {
   return (
     <div className="public-root min-h-screen flex items-center justify-center p-6 font-sans">
       <div className="fixed top-0 left-1/2 -translate-x-1/2 w-[520px] h-[260px] rounded-full pointer-events-none opacity-35"
-        style={{ background: 'radial-gradient(ellipse, rgba(158,240,26,0.2) 0%, transparent 70%)', filter: 'blur(46px)' }} />
+        style={{ background: 'radial-gradient(ellipse, rgba(59,130,246,0.2) 0%, transparent 70%)', filter: 'blur(46px)' }} />
 
       <div className="w-full max-w-[390px] relative">
         <div className="text-center mb-10">

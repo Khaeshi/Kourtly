@@ -17,14 +17,14 @@ function slugify(s: string) {
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <label className="text-[0.72rem] font-semibold uppercase tracking-[0.06em] text-gray-500">{label}</label>
+      <label className="text-[0.72rem] font-semibold uppercase tracking-[0.06em] text-white/45">{label}</label>
       {children}
-      {hint && <p className="text-[0.68rem] text-gray-400">{hint}</p>}
+      {hint && <p className="text-[0.68rem] text-white/30">{hint}</p>}
     </div>
   );
 }
 
-const INPUT = "w-full bg-white border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-900 outline-none focus:border-gray-400 transition-colors";
+const INPUT = "w-full bg-white/5 border border-blue-500/20 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-blue-400 transition-colors";
 
 export default function RegisterCourtPage() {
   const [step,    setStep]    = useState(1);
@@ -83,54 +83,54 @@ export default function RegisterCourtPage() {
   const STEPS = ['Identity', 'Sports & Courts', 'Location', 'Contact'];
 
   if (done) return (
-    <div className="min-h-screen bg-[#0c1409] flex items-center justify-center p-6">
-      <div className="bg-white rounded-2xl p-10 max-w-[460px] w-full text-center">
-        <div className="w-14 h-14 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-5">
-          <Check size={24} className="text-green-600" />
+    <div className="public-root min-h-screen flex items-center justify-center p-6">
+      <div className="public-card rounded-2xl p-10 max-w-[460px] w-full text-center">
+        <div className="w-14 h-14 bg-blue-500/15 rounded-full flex items-center justify-center mx-auto mb-5 border border-blue-400/30">
+          <Check size={24} className="text-blue-300" />
         </div>
-        <h1 className="text-xl font-bold text-gray-900 mb-2">You're registered!</h1>
-        <p className="text-sm text-gray-500 leading-relaxed mb-5">
+        <h1 className="text-xl font-bold text-white mb-2">You&apos;re registered!</h1>
+        <p className="text-sm text-white/60 leading-relaxed mb-5">
           Your 14-day free trial has started. Sign in with Google using <strong>{form.adminEmail}</strong> to access your dashboard.
         </p>
-        <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-[0.78rem] text-amber-800 mb-5 text-left">
+        <div className="bg-blue-500/10 border border-blue-400/25 rounded-lg px-4 py-3 text-[0.78rem] text-blue-200 mb-5 text-left">
           Our team has been notified and will reach out within 24 hours.
         </div>
         <Link href="/auth/signin"
-          className="block w-full bg-gray-900 text-white py-3 rounded-lg text-sm font-medium no-underline text-center hover:bg-gray-700 transition-colors">
+          className="block w-full bg-blue-500 text-[#0b1120] py-3 rounded-lg text-sm font-medium no-underline text-center hover:bg-blue-400 transition-colors">
           Sign In to Dashboard
         </Link>
-        <Link href="/" className="block mt-3 text-sm text-gray-400 no-underline hover:text-gray-600">← Back to home</Link>
+        <Link href="/" className="block mt-3 text-sm text-white/45 no-underline hover:text-blue-300">← Back to home</Link>
       </div>
     </div>
   );
 
   return (
-    <div className="min-h-screen bg-[#0c1409] flex flex-col items-center justify-center p-6">
+    <div className="public-root min-h-screen flex flex-col items-center justify-center p-6">
       <Link href="/" className="flex items-center gap-2.5 mb-8 no-underline">
-        <div className="w-7 h-7 border-[1.5px] border-[#c8a84b] rounded-full flex items-center justify-center">
-          <div className="w-2 h-2 bg-[#c8a84b] rounded-full" />
+        <div className="w-7 h-7 border-[1.5px] border-blue-400 rounded-full flex items-center justify-center">
+          <div className="w-2 h-2 bg-blue-400 rounded-full" />
         </div>
-        <span className="font-bold text-[#e8f0e4] text-sm">{APP_NAME}</span>
+        <span className="font-bold text-white text-sm">{APP_NAME}</span>
       </Link>
 
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-[540px] overflow-hidden">
+      <div className="public-card rounded-2xl shadow-2xl w-full max-w-[540px] overflow-hidden">
         {/* Header */}
-        <div className="px-8 pt-8 pb-6 border-b border-gray-100">
-          <p className="text-[0.72rem] uppercase tracking-[0.05em] text-gray-400 mb-1">Court Registration</p>
-          <h1 className="text-xl font-bold text-gray-900">Start your free trial</h1>
-          <p className="text-sm text-gray-400 mt-1">14 days free · No credit card required</p>
+        <div className="px-8 pt-8 pb-6 border-b border-blue-500/15">
+          <p className="text-[0.72rem] uppercase tracking-[0.05em] text-blue-300/70 mb-1">Court Registration</p>
+          <h1 className="text-xl font-bold text-white">Start your free trial</h1>
+          <p className="text-sm text-white/45 mt-1">14 days free · No credit card required</p>
           <div className="flex items-center gap-2 mt-5">
             {STEPS.map((s, i) => (
               <div key={s} className="flex items-center gap-2">
                 <div className="flex items-center gap-1.5">
                   <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[0.65rem] font-bold transition-colors ${
-                    i+1 < step ? 'bg-green-600 text-white' : i+1 === step ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-400'
+                    i+1 < step ? 'bg-blue-500 text-white' : i+1 === step ? 'bg-blue-600 text-white' : 'bg-white/10 text-white/40'
                   }`}>
                     {i+1 < step ? <Check size={10}/> : i+1}
                   </div>
-                  <span className={`text-[0.72rem] font-medium hidden sm:inline ${i+1 === step ? 'text-gray-900' : 'text-gray-400'}`}>{s}</span>
+                  <span className={`text-[0.72rem] font-medium hidden sm:inline ${i+1 === step ? 'text-white' : 'text-white/40'}`}>{s}</span>
                 </div>
-                {i < STEPS.length-1 && <ChevronRight size={12} className="text-gray-300 shrink-0"/>}
+                {i < STEPS.length-1 && <ChevronRight size={12} className="text-white/25 shrink-0"/>}
               </div>
             ))}
           </div>
@@ -138,7 +138,7 @@ export default function RegisterCourtPage() {
 
         {/* Body */}
         <div className="px-8 py-6 flex flex-col gap-4">
-          {error && <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-[0.78rem] text-red-700">{error}</div>}
+          {error && <div className="bg-red-500/10 border border-red-400/25 rounded-lg px-4 py-3 text-[0.78rem] text-red-300">{error}</div>}
 
           {step === 1 && <>
             <Field label="Court Name *">
@@ -161,7 +161,7 @@ export default function RegisterCourtPage() {
                 {SPORTS.map(s => (
                   <button key={s} type="button" onClick={() => toggleSport(s)}
                     className={`px-4 py-2 rounded-lg text-sm font-medium border transition-all cursor-pointer capitalize ${
-                      form.sports.includes(s) ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'
+                      form.sports.includes(s) ? 'bg-blue-500 text-white border-blue-500' : 'bg-white/5 text-white/55 border-blue-500/20 hover:border-blue-400/45'
                     }`}>{s}</button>
                 ))}
               </div>
@@ -171,7 +171,7 @@ export default function RegisterCourtPage() {
                 {['1','2','3','4','5','6','8','10'].map(n => (
                   <button key={n} type="button" onClick={() => set('courtCount', n)}
                     className={`w-12 h-12 rounded-lg text-sm font-semibold border transition-all cursor-pointer ${
-                      form.courtCount === n ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'
+                      form.courtCount === n ? 'bg-blue-500 text-white border-blue-500' : 'bg-white/5 text-white/55 border-blue-500/20 hover:border-blue-400/45'
                     }`}>{n}</button>
                 ))}
               </div>
@@ -223,27 +223,27 @@ export default function RegisterCourtPage() {
         <div className="px-8 pb-8 flex gap-3">
           {step > 1 && (
             <button onClick={back}
-              className="flex-1 py-2.5 rounded-lg text-sm border border-gray-200 text-gray-600 hover:bg-gray-50 cursor-pointer transition-colors">
+              className="flex-1 py-2.5 rounded-lg text-sm border border-blue-500/20 text-white/65 hover:bg-white/5 cursor-pointer transition-colors">
               Back
             </button>
           )}
           {step < 4 ? (
             <button onClick={next}
-              className="flex-1 py-2.5 rounded-lg text-sm bg-gray-900 text-white hover:bg-gray-700 cursor-pointer transition-colors flex items-center justify-center gap-2">
+              className="flex-1 py-2.5 rounded-lg text-sm bg-blue-500 text-[#0b1120] hover:bg-blue-400 cursor-pointer transition-colors flex items-center justify-center gap-2 font-semibold">
               Continue <ArrowRight size={14}/>
             </button>
           ) : (
             <button onClick={submit} disabled={loading}
-              className="flex-1 py-2.5 rounded-lg text-sm bg-gray-900 text-white hover:bg-gray-700 cursor-pointer transition-colors disabled:opacity-50">
+              className="flex-1 py-2.5 rounded-lg text-sm bg-blue-500 text-[#0b1120] hover:bg-blue-400 cursor-pointer transition-colors disabled:opacity-50 font-semibold">
               {loading ? 'Registering...' : 'Start Free Trial'}
             </button>
           )}
         </div>
       </div>
 
-      <p className="text-[0.72rem] text-white/20 mt-6">
+      <p className="text-[0.72rem] text-white/35 mt-6">
         Already registered?{' '}
-        <Link href="/auth/signin" className="text-[#c8a84b] no-underline hover:underline">Sign in</Link>
+        <Link href="/auth/signin" className="text-blue-300 no-underline hover:underline">Sign in</Link>
       </p>
     </div>
   );

@@ -77,10 +77,10 @@ const CSS = `
   .booking-display { font-family: 'DM Serif Display', serif; }
   .grid-bg {
     background-image:
-      radial-gradient(ellipse 65% 45% at 50% -10%, rgba(255,159,67,0.2) 0%, transparent 65%),
-      radial-gradient(ellipse 50% 40% at 82% 22%, rgba(255,96,52,0.1) 0%, transparent 70%),
-      linear-gradient(rgba(255,159,67,0.05) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(255,159,67,0.05) 1px, transparent 1px);
+      radial-gradient(ellipse 65% 45% at 50% -10%, rgba(59,130,246,0.2) 0%, transparent 65%),
+      radial-gradient(ellipse 50% 40% at 82% 22%, rgba(16,185,129,0.1) 0%, transparent 70%),
+      linear-gradient(rgba(59,130,246,0.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(59,130,246,0.05) 1px, transparent 1px);
     background-size: auto, auto, 48px 48px, 48px 48px;
   }
   @keyframes fadeIn { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
@@ -91,8 +91,8 @@ const CSS = `
     color: rgba(255,255,255,0.5); border-radius: 12px; padding: 20px 12px;
     cursor: pointer; transition: all 0.15s ease; font-family: 'DM Mono', monospace; text-align: center;
   }
-  .duration-btn:hover { background: rgba(255,159,67,0.1); border-color: rgba(255,159,67,0.28); color: #ff9f43; }
-  .duration-btn.selected { background: rgba(255,159,67,0.14); border-color: rgba(255,159,67,0.42); color: #ff9f43; }
+  .duration-btn:hover { background: rgba(59,130,246,0.1); border-color: rgba(59,130,246,0.28); color: #60a5fa; }
+  .duration-btn.selected { background: rgba(59,130,246,0.14); border-color: rgba(59,130,246,0.42); color: #60a5fa; }
   .duration-btn.unavailable { opacity: 0.3; cursor: not-allowed; }
 
   .time-range-btn {
@@ -100,18 +100,18 @@ const CSS = `
     border-radius: 10px; padding: 14px 16px; cursor: pointer;
     transition: all 0.15s ease; font-family: 'DM Mono', monospace; text-align: left; width: 100%;
   }
-  .time-range-btn:hover:not(:disabled):not(.selected) { background: rgba(255,159,67,0.08); border-color: rgba(255,159,67,0.22); }
-  .time-range-btn.selected { background: rgba(255,159,67,0.12); border-color: rgba(255,159,67,0.36); }
+  .time-range-btn:hover:not(:disabled):not(.selected) { background: rgba(59,130,246,0.08); border-color: rgba(59,130,246,0.22); }
+  .time-range-btn.selected { background: rgba(59,130,246,0.12); border-color: rgba(59,130,246,0.36); }
   .time-range-btn.blocked { opacity: 0.35; cursor: not-allowed; }
 
   .court-btn {
-    background: linear-gradient(160deg, rgba(255,159,67,0.08) 0%, rgba(255,255,255,0.03) 55%, rgba(255,255,255,0.02) 100%);
-    border: 1px solid rgba(255,159,67,0.22);
+    background: linear-gradient(160deg, rgba(59,130,246,0.08) 0%, rgba(255,255,255,0.03) 55%, rgba(255,255,255,0.02) 100%);
+    border: 1px solid rgba(59,130,246,0.22);
     transition: all 0.2s ease; border-radius: 12px; padding: 16px;
     text-align: left; cursor: pointer; width: 100%;
   }
-  .court-btn:hover { background: rgba(255,159,67,0.08); border-color: rgba(255,159,67,0.22); }
-  .court-btn.selected { background: rgba(255,159,67,0.12); border-color: rgba(255,159,67,0.36); }
+  .court-btn:hover { background: rgba(59,130,246,0.08); border-color: rgba(59,130,246,0.22); }
+  .court-btn.selected { background: rgba(59,130,246,0.12); border-color: rgba(59,130,246,0.36); }
 
   .field {
     width: 100%; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
@@ -120,20 +120,20 @@ const CSS = `
     transition: border-color 0.15s ease; -webkit-appearance: none; appearance: none;
   }
   .field::placeholder { color: rgba(255,255,255,0.2); }
-  .field:focus { border-color: rgba(255,159,67,0.4); }
+  .field:focus { border-color: rgba(59,130,246,0.4); }
   .field option { background: #111; }
 
   .proceed-btn {
-    background: rgba(255,159,67,0.14); border: 1px solid rgba(255,159,67,0.34);
-    color: #ff9f43; font-family: 'DM Mono', monospace; font-size: 0.8rem;
+    background: rgba(59,130,246,0.14); border: 1px solid rgba(59,130,246,0.34);
+    color: #60a5fa; font-family: 'DM Mono', monospace; font-size: 0.8rem;
     padding: 12px 24px; border-radius: 10px; cursor: pointer;
     transition: all 0.2s ease; letter-spacing: 0.05em; white-space: nowrap;
   }
-  .proceed-btn:hover:not(:disabled) { background: rgba(255,159,67,0.24); border-color: rgba(255,159,67,0.52); }
+  .proceed-btn:hover:not(:disabled) { background: rgba(59,130,246,0.24); border-color: rgba(59,130,246,0.52); }
   .proceed-btn:disabled { opacity: 0.4; cursor: not-allowed; }
   .proceed-btn.ghost { background: transparent; color: rgba(255,255,255,0.3); border-color: transparent; }
-  .proceed-btn.submit { background: #ff9f43; border-color: #ff9f43; color: #0a0f05; font-weight: 600; }
-  .proceed-btn.submit:hover:not(:disabled) { background: #ffb86b; }
+  .proceed-btn.submit { background: #60a5fa; border-color: #60a5fa; color: #0a0f05; font-weight: 600; }
+  .proceed-btn.submit:hover:not(:disabled) { background: #93c5fd; }
 
   input[type="date"].field { color-scheme: dark; }
   .safe-bottom { padding-bottom: max(1.5rem, env(safe-area-inset-bottom)); }
@@ -184,7 +184,7 @@ function DurationStep({ duration, setDuration, date, courtNum, slug, onBack, onN
               <span className="text-[0.65rem] tracking-widest uppercase opacity-60 block mb-2">{h===1?'hour':'hours'}</span>
               {loading ? <span className="block w-12 h-3 mx-auto rounded bg-white/10 animate-pulse"/> :
                noSlots ? <span className="text-[0.6rem] tracking-widest uppercase text-red-400/60">No slots</span> :
-               <span className={`text-[0.6rem] tracking-widest uppercase ${duration===h?'text-[#ff9f43]/75':'text-white/25'}`}>{avail.length} slot{avail.length!==1?'s':''}</span>}
+               <span className={`text-[0.6rem] tracking-widest uppercase ${duration===h?'text-[#60a5fa]/75':'text-white/25'}`}>{avail.length} slot{avail.length!==1?'s':''}</span>}
             </button>
           );
         })}
@@ -194,7 +194,7 @@ function DurationStep({ duration, setDuration, date, courtNum, slug, onBack, onN
           <p className="text-[0.6rem] tracking-widest uppercase text-white/20 mb-3">Available times for {duration}h</p>
           <div className="flex flex-wrap gap-2">
             {selectedAvail.map(slot => (
-              <span key={slot} className="text-[0.7rem] text-[#ff9f43]/75 bg-[#ff9f43]/10 border border-[#ff9f43]/20 px-2.5 py-1 rounded-full font-mono">
+              <span key={slot} className="text-[0.7rem] text-[#60a5fa]/75 bg-[#60a5fa]/10 border border-[#60a5fa]/20 px-2.5 py-1 rounded-full font-mono">
                 {fmtSlotRange(slot, duration)}
               </span>
             ))}
@@ -248,7 +248,7 @@ function TimeStep({ date, courtNum, duration, slug, timeSlot, setTimeSlot, onBac
       <p className="text-white/20 text-xs mb-2">{fmtDateShort(date)} · Court {courtNum} · {duration}h session</p>
       <div className="mb-5 flex items-center gap-2">
         <span className="text-[0.6rem] tracking-widest uppercase text-white/20">Your session is</span>
-        <span className="text-xs text-[#ff9f43]/75 bg-[#ff9f43]/10 border border-[#ff9f43]/20 px-2 py-0.5 rounded-full">{duration} hour{duration>1?'s':''}</span>
+        <span className="text-xs text-[#60a5fa]/75 bg-[#60a5fa]/10 border border-[#60a5fa]/20 px-2 py-0.5 rounded-full">{duration} hour{duration>1?'s':''}</span>
       </div>
       {loading ? (
         <div className="space-y-2 mb-6">{[...Array(6)].map((_,i) => <div key={i} className="h-14 rounded-lg bg-white/3 animate-pulse"/>)}</div>
@@ -268,14 +268,14 @@ function TimeStep({ date, courtNum, duration, slug, timeSlot, setTimeSlot, onBac
                 onClick={() => setTimeSlot(slot)}>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <span className={`text-sm font-medium ${sel?'text-[#ff9f43]':blocked?'text-white/20':'text-white/70'}`}>
+                    <span className={`text-sm font-medium ${sel?'text-[#60a5fa]':blocked?'text-white/20':'text-white/70'}`}>
                       {fmtSlotRange(slot, duration)}
                     </span>
-                    <span className={`text-[0.6rem] tracking-widest uppercase ${sel?'text-[#ff9f43]/60':blocked?'text-white/15':'text-white/20'}`}>{duration}h</span>
+                    <span className={`text-[0.6rem] tracking-widest uppercase ${sel?'text-[#60a5fa]/60':blocked?'text-white/15':'text-white/20'}`}>{duration}h</span>
                   </div>
                   <div className="flex items-center gap-2">
                     {blocked && <span className="text-[0.6rem] tracking-widest uppercase text-white/20 bg-white/5 px-2 py-0.5 rounded-full">Booked</span>}
-                    {sel && <span className="text-[0.6rem] tracking-widest uppercase text-[#ff9f43] bg-[#ff9f43]/12 px-2 py-0.5 rounded-full">Selected ✓</span>}
+                    {sel && <span className="text-[0.6rem] tracking-widest uppercase text-[#60a5fa] bg-[#60a5fa]/12 px-2 py-0.5 rounded-full">Selected ✓</span>}
                   </div>
                 </div>
               </button>
@@ -389,7 +389,7 @@ export default function BookingPage({ params }: { params: Promise<{ slug: string
     <div className="min-h-screen bg-[#080c04] flex flex-col items-center justify-center gap-4">
       <style>{CSS}</style>
       <p className="text-white/40 text-sm font-mono">Court not found.</p>
-      <Link href="/" className="text-[#ff9f43]/70 text-sm no-underline hover:text-[#ff9f43]">← Back to home</Link>
+      <Link href="/" className="text-[#60a5fa]/70 text-sm no-underline hover:text-[#60a5fa]">← Back to home</Link>
     </div>
   );
 
@@ -398,8 +398,8 @@ export default function BookingPage({ params }: { params: Promise<{ slug: string
     <div className="min-h-screen bg-[#080c04] flex items-center justify-center p-4 sm:p-6">
       <style>{CSS}</style>
       <div className="text-center w-full max-w-sm" style={{ fontFamily:"'DM Mono',monospace" }}>
-        <div className="fade-up w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-[#ff9f43]/12 border border-[#ff9f43]/30 flex items-center justify-center mx-auto mb-6 sm:mb-8">
-          <span className="text-[#ff9f43] text-2xl sm:text-3xl">✓</span>
+        <div className="fade-up w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-[#60a5fa]/12 border border-[#60a5fa]/30 flex items-center justify-center mx-auto mb-6 sm:mb-8">
+          <span className="text-[#60a5fa] text-2xl sm:text-3xl">✓</span>
         </div>
         <h2 className="fade-up-2 booking-display text-3xl sm:text-4xl text-white mb-3">Booking Received</h2>
         <p className="fade-up-2 text-white/40 text-sm mb-2">at <span className="text-white/60">{court?.name}</span></p>
@@ -421,7 +421,7 @@ export default function BookingPage({ params }: { params: Promise<{ slug: string
             </div>
           ))}
         </div>
-        <button onClick={resetAll} className="fade-up-3 text-[#ff9f43]/70 hover:text-[#ff9f43] text-sm transition-colors">
+        <button onClick={resetAll} className="fade-up-3 text-[#60a5fa]/70 hover:text-[#60a5fa] text-sm transition-colors">
           ← Book another slot
         </button>
       </div>
@@ -435,7 +435,7 @@ export default function BookingPage({ params }: { params: Promise<{ slug: string
 
       {/* Ambient glow */}
       <div className="fixed top-0 left-1/2 -translate-x-1/2 w-[420px] sm:w-[680px] h-[220px] sm:h-[340px] rounded-full opacity-20 pointer-events-none"
-        style={{ background:'radial-gradient(ellipse, rgba(255,159,67,0.95) 0%, rgba(255,96,52,0.55) 38%, transparent 72%)', filter:'blur(70px)' }}/>
+        style={{ background:'radial-gradient(ellipse, rgba(59,130,246,0.85) 0%, rgba(16,185,129,0.45) 38%, transparent 72%)', filter:'blur(70px)' }}/>
 
       {/* Navbar */}
       <nav className="relative z-10 flex items-center gap-4 px-6 py-4 border-b border-white/[0.06]">
@@ -446,8 +446,8 @@ export default function BookingPage({ params }: { params: Promise<{ slug: string
         {court?.logoUrl ? (
           <img src={court.logoUrl} alt={court.name} className="w-6 h-6 rounded object-cover"/>
         ) : (
-          <div className="w-6 h-6 rounded bg-[#ff9f43]/20 flex items-center justify-center">
-            <div className="w-2.5 h-2.5 bg-[#ff9f43] rounded-sm"/>
+          <div className="w-6 h-6 rounded bg-[#60a5fa]/20 flex items-center justify-center">
+            <div className="w-2.5 h-2.5 bg-[#60a5fa] rounded-sm"/>
           </div>
         )}
         <span className="text-white/60 text-sm">{court?.name}</span>
@@ -466,22 +466,22 @@ export default function BookingPage({ params }: { params: Promise<{ slug: string
                   className="w-6 h-6 rounded object-cover"
                 />
               ) : (
-                <div className="w-6 h-6 rounded bg-[#ff9f43]/20 flex items-center justify-center">
-                  <div className="w-2.5 h-2.5 bg-[#ff9f43] rounded-sm" />
+                <div className="w-6 h-6 rounded bg-[#60a5fa]/20 flex items-center justify-center">
+                  <div className="w-2.5 h-2.5 bg-[#60a5fa] rounded-sm" />
                 </div>
               )}
-              <span className="text-sm sm:text-base text-[#ff9f43] font-medium tracking-wide">
+              <span className="text-sm sm:text-base text-[#60a5fa] font-medium tracking-wide">
                 {court?.name ?? 'Court'}
               </span>
             </div>
             <div className="flex items-center gap-3 mb-6 sm:mb-8">
               <span className="text-white/40 text-xs tracking-widest uppercase">Court Booking</span>
               {court?.sports?.map(s => (
-                <span key={s} className="text-[0.6rem] text-[#ff9f43]/60 bg-[#ff9f43]/10 border border-[#ff9f43]/20 px-2 py-0.5 rounded-full capitalize">{s}</span>
+                <span key={s} className="text-[0.6rem] text-[#60a5fa]/60 bg-[#60a5fa]/10 border border-[#60a5fa]/20 px-2 py-0.5 rounded-full capitalize">{s}</span>
               ))}
             </div>
             <h1 className="booking-display text-4xl sm:text-5xl text-white leading-tight mb-3">
-              Reserve Your<br /><em className="text-[#ff9f43]">{court?.name ?? 'Court'}</em>
+              Reserve Your<br /><em className="text-[#60a5fa]">{court?.name ?? 'Court'}</em>
             </h1>
             <p className="text-white/30 text-sm">
               {court?.location?.city && `${court.location.city} · `}
@@ -510,7 +510,7 @@ export default function BookingPage({ params }: { params: Promise<{ slug: string
               )}
               {date && !checkingSched && !closedDay && (
                 <InlineNotice className="mb-6">
-                  <p className="text-[#ff9f43]/75 text-sm">{fmtDateLong(date)}</p>
+                  <p className="text-[#60a5fa]/75 text-sm">{fmtDateLong(date)}</p>
                 </InlineNotice>
               )}
               <PublicButton className="proceed-btn w-full sm:w-auto" disabled={!date || checkingSched || closedDay}
@@ -529,7 +529,7 @@ export default function BookingPage({ params }: { params: Promise<{ slug: string
                     onClick={() => { setCourtNum(c); setTimeSlot(''); }}>
                     <div className="text-[0.55rem] tracking-widest uppercase text-white/30 mb-1">Court</div>
                     <div className="booking-display text-3xl sm:text-4xl text-white/80 mb-2">{c}</div>
-                    {courtNum===c && <div className="text-[0.55rem] text-[#ff9f43] tracking-widest uppercase">Selected ✓</div>}
+                    {courtNum===c && <div className="text-[0.55rem] text-[#60a5fa] tracking-widest uppercase">Selected ✓</div>}
                   </button>
                 ))}
               </div>
