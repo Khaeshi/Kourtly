@@ -216,6 +216,66 @@ useEffect(() => {
         </button>
       </nav>
 
+      {/* ── MOBILE MENU ── */}
+      {menuOpen && (
+        <div className="mobile-menu fixed inset-0 z-[190] md:hidden">
+          <button
+            aria-label="Close menu overlay"
+            className="absolute inset-0 bg-black/55 backdrop-blur-[2px] border-none"
+            onClick={() => setMenuOpen(false)}
+          />
+          <div className="absolute top-[72px] left-4 right-4 rounded-2xl border border-white/12 bg-[rgba(10,18,12,0.95)] p-4 shadow-[0_14px_40px_rgba(0,0,0,0.45)]">
+            <div className="flex flex-col gap-1">
+              {[
+                { href: '#courts', label: 'Courts' },
+                { href: '#pricing', label: 'Pricing' },
+                { href: '#features', label: 'Features' },
+              ].map(item => (
+                <a
+                  key={item.href}
+                  href={item.href}
+                  className="block no-underline px-3 py-2.5 rounded-lg text-sm tracking-[0.08em] uppercase text-white/75 hover:text-[var(--public-accent)] hover:bg-white/5 transition-colors"
+                  onClick={() => setMenuOpen(false)}
+                >
+                  {item.label}
+                </a>
+              ))}
+              <div className="h-px bg-white/10 my-1" />
+              {user ? (
+                <>
+                  {(isAdmin || isSuperAdmin) && (
+                    <Link
+                      href={isSuperAdmin ? '/superadmin' : '/admin'}
+                      className="block no-underline px-3 py-2.5 rounded-lg text-sm tracking-[0.08em] uppercase text-white/75 hover:text-[var(--public-accent)] hover:bg-white/5 transition-colors"
+                      onClick={() => setMenuOpen(false)}
+                    >
+                      {isSuperAdmin ? 'Super Admin' : 'Admin Panel'}
+                    </Link>
+                  )}
+                  <button
+                    className="w-full text-left px-3 py-2.5 rounded-lg text-sm tracking-[0.08em] uppercase text-red-300/80 hover:bg-red-500/10 transition-colors bg-transparent border-none cursor-pointer"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      signOut({ callbackUrl: '/' });
+                    }}
+                  >
+                    Sign Out
+                  </button>
+                </>
+              ) : (
+                <Link
+                  href="/auth/signin"
+                  className="block no-underline px-3 py-2.5 rounded-lg text-sm tracking-[0.08em] uppercase text-white/75 hover:text-[var(--public-accent)] hover:bg-white/5 transition-colors"
+                  onClick={() => setMenuOpen(false)}
+                >
+                  Sign In
+                </Link>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── HERO ── */}
       <section className="min-h-screen flex flex-col items-start justify-end relative overflow-hidden"
         style={{ padding: 'clamp(7rem,14vw,10rem) clamp(1.25rem,6vw,6rem) clamp(3rem,6vw,6rem)' }}>
