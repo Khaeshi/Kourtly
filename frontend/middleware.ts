@@ -44,7 +44,8 @@ export default auth((req) => {
     if (courtId) response.headers.set('x-court-id', courtId);
     if (role)    response.headers.set('x-user-role', role);
 
-  return NextResponse.next();
+  // IMPORTANT: return the same response instance where we set headers.
+  return response;
 });
 
 export const config = {

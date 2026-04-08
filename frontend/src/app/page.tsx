@@ -4,7 +4,7 @@ import Image from 'next/image';
 import { User2, Search, MapPin, ChevronDown, ArrowRight } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { useSession, signOut } from 'next-auth/react';
-import { APP_NAME, API_BASE } from '@/lib/config';
+import { APP_NAME } from '@/lib/config';
 
 interface Court {
   _id:        string;
@@ -76,7 +76,7 @@ useEffect(() => {
   );
   els.forEach(el => observer.observe(el));
   return () => observer.disconnect();
-}, [courts]); // re-run after courts load
+}, []); // reveal animations only need to be wired once
 
   useEffect(() => {
     const onScroll = () => { setScrolled(window.scrollY > 40); setScrollY(window.scrollY); };

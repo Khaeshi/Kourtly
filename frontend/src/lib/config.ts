@@ -4,5 +4,5 @@
  */
 export const API_BASE = '/api/proxy';
 
-export const APP_NAME = 'South City Badminton Court';
+export const APP_NAME = 'PlayKou';
 

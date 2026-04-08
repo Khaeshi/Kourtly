@@ -17,7 +17,9 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: APP_NAME,
-  description: "South City Recreation Center",
+  description: `Find the nearest and recommended courts near you! At PlayKou, 
+  experience a convenient place to see available courts near you and book right 
+  away your reservations! Or if you are a court owner, you found the right system to manage your court, subscribe now! `,
 };
 
 export default function RootLayout({
