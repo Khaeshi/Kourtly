@@ -12,7 +12,7 @@ const VARIANT_CLASS: Record<Variant, string> = {
   primary:
     'bg-[var(--public-accent)] text-[#0b1208] border-[var(--public-accent)] hover:bg-[var(--public-accent-strong)] hover:border-[var(--public-accent-strong)]',
   secondary:
-    'bg-[var(--public-accent-soft)] text-[var(--public-accent)] border-[rgba(255,159,67,0.36)] hover:bg-[rgba(255,159,67,0.24)]',
+    'bg-[var(--public-accent-soft)] text-[var(--public-accent)] border-[rgba(var(--public-accent-rgb),0.36)] hover:bg-[rgba(var(--public-accent-rgb),0.24)]',
   ghost:
     'bg-transparent text-[var(--public-text-muted)] border-transparent hover:text-[var(--public-text)]',
 };

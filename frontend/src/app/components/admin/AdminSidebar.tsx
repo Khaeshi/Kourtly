@@ -2,7 +2,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { signOut, useSession } from 'next-auth/react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Image from 'next/image';
 
 interface Props {
@@ -27,10 +27,30 @@ const SUPERADMIN_NAV = [
 ];
 
 export default function AdminSidebar({ isOpen, onClose, user }: Props) {
-  const pathname   = usePathname();
-  const { data: session } = useSession();
-  const isSuperAdmin = session?.user?.role === 'superadmin';
+  const pathname             = usePathname();
+  const { data: session }    = useSession();
+  const isSuperAdmin         = session?.user?.role === 'superadmin';
   const [signingOut, setSigningOut] = useState(false);
+
+  // Court name for the sidebar brand
+  const [courtName, setCourtName] = useState<string | null>(null);
+
+  useEffect(() => {
+    const courtId = session?.user?.courtId;
+    if (!courtId) return;
+
+    // Use the court name from token if already available (auth.ts stores it)
+    if (session?.user?.court?.name) {
+      setCourtName(session.user.court.name);
+      return;
+    }
+
+    // Fallback: fetch from /api/proxy/court/me
+    fetch('/api/proxy/court/me')
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data?.name) setCourtName(data.name); })
+      .catch(() => {});
+  }, [session?.user?.courtId, session?.user?.court?.name]);
 
   const handleSignOut = async () => {
     setSigningOut(true);
@@ -48,16 +68,23 @@ export default function AdminSidebar({ isOpen, onClose, user }: Props) {
     );
   };
 
+  // Display name: court name > 'Admin Panel' for superadmin > 'My Court'
+  const brandName = isSuperAdmin
+    ? 'Admin Panel'
+    : courtName ?? 'My Court';
+
   return (
     <aside className={`admin-sidebar-aside ${isOpen ? 'open' : ''}`}>
 
       {/* Brand */}
       <div className="px-5 py-5 pb-4 border-b border-gray-100">
         <Link href="/" className="no-underline flex items-center gap-2.5">
-          <div className="w-7 h-7 rounded-lg bg-green-700 flex items-center justify-center shrink-0">
+          <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${isSuperAdmin ? 'bg-purple-700' : 'bg-green-700'}`}>
             <div className="w-2.5 h-2.5 rounded-full bg-white opacity-90" />
           </div>
-          <span className="font-bold text-sm text-gray-900 tracking-tight">SCBC System</span>
+          <span className="font-bold text-sm text-gray-900 tracking-tight truncate max-w-[140px]" title={brandName}>
+            {brandName}
+          </span>
         </Link>
       </div>
 
@@ -96,6 +123,11 @@ export default function AdminSidebar({ isOpen, onClose, user }: Props) {
             {isSuperAdmin && (
               <p className="text-[0.58rem] font-semibold text-purple-500 uppercase tracking-wide leading-tight">
                 Super Admin
+              </p>
+            )}
+            {!isSuperAdmin && courtName && (
+              <p className="text-[0.58rem] font-semibold text-green-600 uppercase tracking-wide leading-tight truncate">
+                {courtName}
               </p>
             )}
           </div>
