@@ -181,4 +181,55 @@ router.patch('/me', async (req, res) => {
   res.json(court);
 });
 
+// PATCH /api/court/me/payout
+router.patch('/me/payout', async (req, res) => {
+  if (!req.courtId) return res.status(401).json({ error: 'Missing court context.' });
+  try {
+    const { recipientCode, accountName = '', channelCode = '', accountNumber = '' } = req.body;
+    if (!recipientCode) return res.status(400).json({ error: 'recipientCode is required.' });
+    const last4 = String(accountNumber || '').slice(-4);
+    const court = await Court.findByIdAndUpdate(
+      req.courtId,
+      {
+        $set: {
+          payout: {
+            recipientCode: String(recipientCode),
+            accountName: String(accountName),
+            channelCode: String(channelCode),
+            accountNumberLast4: last4,
+            isConfigured: true,
+          },
+        },
+      },
+      { new: true, runValidators: true }
+    ).lean();
+    if (!court) return res.status(404).json({ error: 'Court not found.' });
+    res.json({
+      payout: court.payout,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/court/me/payout
+router.get('/me/payout', async (req, res) => {
+  if (!req.courtId) return res.status(401).json({ error: 'Missing court context.' });
+  try {
+    const court = await Court.findById(req.courtId).lean();
+    if (!court) return res.status(404).json({ error: 'Court not found.' });
+    res.json({
+      payout: court.payout || {
+        recipientCode: '',
+        accountName: '',
+        channelCode: '',
+        accountNumberLast4: '',
+        isConfigured: false,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 export default router;

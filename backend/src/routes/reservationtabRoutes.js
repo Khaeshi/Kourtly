@@ -19,6 +19,16 @@ async function ensureTab(reservation) {
   const existing = await ReservationTab.findOne({ reservation: reservation._id });
   if (existing) return existing;
 
+  const hasOnlinePaymentData =
+    reservation.amountPaidOnline !== undefined &&
+    reservation.amountPaidOnline !== null &&
+    Number(reservation.amountPaidOnline) > 0;
+  const reservationFee = Number(reservation.reservationFeeAmount || 0);
+  const paidOnline = hasOnlinePaymentData ? Number(reservation.amountPaidOnline || 0) : 0;
+  const remainingBalance = hasOnlinePaymentData
+    ? Math.max(0, reservationFee - paidOnline)
+    : 0;
+
   return ReservationTab.create({
     courtId: reservation.courtId, 
     reservation: reservation._id,
@@ -28,8 +38,14 @@ async function ensureTab(reservation) {
     timeSlot:    reservation.timeSlot,
     duration:    reservation.duration ?? 1,
     items:       [],
-    total:       0,
-    status:      'open',
+    total:       remainingBalance,
+    status:      hasOnlinePaymentData ? (remainingBalance === 0 ? 'paid' : 'open') : 'open',
+    paymentSummary: {
+      reservationFee,
+      paidOnline,
+      remainingBalance,
+      source: 'xendit',
+    },
   });
 }
 
@@ -210,6 +226,24 @@ router.put('/:id/pay', async (req, res) => {
       );
     }
 
+    res.json(tab);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * PUT /api/reservation-tabs/:id/collect-balance
+ * Explicitly collect remaining reservation balance at counter.
+ */
+router.put('/:id/collect-balance', async (req, res) => {
+  try {
+    const tab = await ReservationTab.findOneAndUpdate(
+      { _id: req.params.id, courtId: req.courtId },
+      { status: 'paid', total: 0, 'paymentSummary.remainingBalance': 0 },
+      { new: true }
+    );
+    if (!tab) return res.status(404).json({ error: 'Tab not found' });
     res.json(tab);
   } catch (err) {
     res.status(500).json({ error: err.message });

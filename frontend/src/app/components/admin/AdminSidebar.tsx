@@ -32,25 +32,33 @@ export default function AdminSidebar({ isOpen, onClose, user }: Props) {
   const isSuperAdmin         = session?.user?.role === 'superadmin';
   const [signingOut, setSigningOut] = useState(false);
 
-  // Court name for the sidebar brand
+  // Court name + logo (API is source of truth; session carries logo after update())
   const [courtName, setCourtName] = useState<string | null>(null);
+  const [courtLogoUrl, setCourtLogoUrl] = useState<string | null>(null);
 
   useEffect(() => {
     const courtId = session?.user?.courtId;
-    if (!courtId) return;
-
-    // Use the court name from token if already available (auth.ts stores it)
-    if (session?.user?.court?.name) {
-      setCourtName(session.user.court.name);
+    if (!courtId) {
+      setCourtName(null);
+      setCourtLogoUrl(null);
       return;
     }
 
-    // Fallback: fetch from /api/proxy/court/me
+    if (session?.user?.court?.name) {
+      setCourtName(session.user.court.name);
+    }
+    if (session?.user?.court?.logoUrl) {
+      setCourtLogoUrl(session.user.court.logoUrl);
+    }
+
     fetch('/api/proxy/court/me')
-      .then(r => r.ok ? r.json() : null)
-      .then(data => { if (data?.name) setCourtName(data.name); })
+      .then(r => (r.ok ? r.json() : null))
+      .then(data => {
+        if (data?.name) setCourtName(data.name);
+        if (data?.logoUrl) setCourtLogoUrl(data.logoUrl);
+      })
       .catch(() => {});
-  }, [session?.user?.courtId, session?.user?.court?.name]);
+  }, [session?.user?.courtId, session?.user?.court?.name, session?.user?.court?.logoUrl, pathname]);
 
   const handleSignOut = async () => {
     setSigningOut(true);
@@ -79,9 +87,24 @@ export default function AdminSidebar({ isOpen, onClose, user }: Props) {
       {/* Brand */}
       <div className="px-5 py-5 pb-4 border-b border-gray-100">
         <Link href="/" className="no-underline flex items-center gap-2.5">
-          <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${isSuperAdmin ? 'bg-purple-700' : 'bg-green-700'}`}>
-            <div className="w-2.5 h-2.5 rounded-full bg-white opacity-90" />
-          </div>
+          {isSuperAdmin ? (
+            <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 bg-purple-700">
+              <div className="w-2.5 h-2.5 rounded-full bg-white opacity-90" />
+            </div>
+          ) : courtLogoUrl ? (
+            <Image
+              src={courtLogoUrl}
+              alt=""
+              width={28}
+              height={28}
+              className="w-7 h-7 rounded-lg object-cover shrink-0 border border-gray-200"
+              unoptimized
+            />
+          ) : (
+            <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 bg-green-700">
+              <div className="w-2.5 h-2.5 rounded-full bg-white opacity-90" />
+            </div>
+          )}
           <span className="font-bold text-sm text-gray-900 tracking-tight truncate max-w-[140px]" title={brandName}>
             {brandName}
           </span>

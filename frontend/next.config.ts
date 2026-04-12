@@ -9,6 +9,11 @@ const nextConfig: NextConfig = {
         protocol: 'https',
         hostname: 'lh3.googleusercontent.com', // Google profile pictures
       },
+      {
+        protocol: 'https',
+        hostname: 'res.cloudinary.com',
+        pathname: '/**',
+      },
     ],
   },
 };

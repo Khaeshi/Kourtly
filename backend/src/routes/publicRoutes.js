@@ -11,6 +11,10 @@ import {
 
 const router = express.Router();
 
+function buildPublicRef() {
+  return `RSV-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`.toUpperCase();
+}
+
 // ── Court Directory ───────────────────────────────────────────────────────────
 
 // GET /api/public/courts — landing page listing
@@ -29,7 +33,7 @@ router.get('/courts', async (req, res) => {
 // GET /api/public/courts/id/:id — fetch by ObjectId (used by auth.ts JWT callback)
 router.get('/courts/id/:id', async (req, res) => {
   try {
-    const court = await Court.findById(req.params.id).select('name slug').lean();
+    const court = await Court.findById(req.params.id).select('name slug logoUrl').lean();
     if (!court) return res.status(404).json({ error: 'Court not found.' });
     res.json(court);
   } catch (err) {
@@ -66,7 +70,7 @@ router.get('/courts/:slug/availability', async (req, res) => {
     const [rule, blocks, activeReservations] = await Promise.all([
       ScheduleRule.findOne({ courtId, dayOfWeek }).lean(),
       ScheduleBlock.find({ courtId, date }).lean(),
-      Reservation.find({ courtId, date, status: { $in: ['pending', 'confirmed'] } })
+      Reservation.find({ courtId, date, status: { $in: ['confirmed', 'completed'] } })
         .select('court timeSlot duration').lean(),
     ]);
 
@@ -134,7 +138,10 @@ router.post('/courts/:slug/reserve', async (req, res) => {
       return res.status(403).json({ error: 'This court is not accepting bookings.' });
     }
 
-    const { courtNum, date, timeSlot, duration = 1, name, phone, email = '', playerCount = 2, notes = '' } = req.body;
+    const {
+      courtNum, date, timeSlot, duration = 1, name, phone, email = '', playerCount = 2, notes = '',
+      paymentOption = 'downpayment',
+    } = req.body;
     if (!courtNum || !date || !timeSlot || !name || !phone) {
       return res.status(400).json({ error: 'courtNum, date, timeSlot, name, and phone are required.' });
     }
@@ -160,7 +167,7 @@ router.post('/courts/:slug/reserve', async (req, res) => {
     }
 
     const active = await Reservation.find({
-      courtId, court: courtNum, date, status: { $in: ['pending','confirmed'] }
+      courtId, court: courtNum, date, status: { $in: ['confirmed', 'completed'] }
     }).select('timeSlot duration').lean();
 
     const hasConflict = active.some(e => {
@@ -170,6 +177,10 @@ router.post('/courts/:slug/reserve', async (req, res) => {
     });
     if (hasConflict) return res.status(409).json({ error: 'This slot is already booked.' });
 
+    const reservationFeeAmount = Number(court?.settings?.hourlyRate ?? court?.settings?.reservationFee ?? 0) * Number(duration);
+    const downpaymentAmount = Number((reservationFeeAmount * 0.5).toFixed(2));
+    const maintenanceFeeAmount = Number((reservationFeeAmount * 0.01).toFixed(2));
+
     const endHour = String(Math.floor(endMins / 60)).padStart(2,'0');
     const endMin  = String(endMins % 60).padStart(2,'0');
     const reservation = await Reservation.create({
@@ -178,12 +189,71 @@ router.post('/courts/:slug/reserve', async (req, res) => {
       date, name, phone, email, playerCount, notes,
       timeSlot:    `${timeSlot.split('-')[0]}-${endHour}:${endMin}`,
       duration:    Number(duration),
-      status:      'pending',
+      status:      'pending_admin',
+      publicRef:   buildPublicRef(),
+      paymentOption: paymentOption === 'full' ? 'full' : 'downpayment',
+      reservationFeeAmount,
+      downpaymentAmount,
+      maintenanceFeeAmount,
+      remainingBalanceAmount: reservationFeeAmount,
     });
 
-    res.status(201).json(reservation);
+    res.status(201).json({
+      ...reservation.toObject(),
+      amountDue:
+        (reservation.paymentOption === 'full' ? reservationFeeAmount : downpaymentAmount) + maintenanceFeeAmount,
+    });
   } catch (err) {
     res.status(400).json({ error: err.message });
+  }
+});
+
+router.get('/courts/:slug/reservations/:publicRef', async (req, res) => {
+  try {
+    const court = await Court.findOne({ slug: req.params.slug, isActive: true }).lean();
+    if (!court) return res.status(404).json({ error: 'Court not found.' });
+
+    const reservation = await Reservation.findOne({
+      courtId: court._id,
+      publicRef: req.params.publicRef,
+    }).lean();
+    if (!reservation) return res.status(404).json({ error: 'Reservation not found.' });
+
+    const now = new Date();
+    if (
+      reservation.status === 'approved_waiting_payment' &&
+      reservation.paymentExpiresAt &&
+      new Date(reservation.paymentExpiresAt) <= now
+    ) {
+      await Reservation.updateOne(
+        { _id: reservation._id },
+        { $set: { status: 'expired', paymentStatus: 'expired' } }
+      );
+      reservation.status = 'expired';
+      reservation.paymentStatus = 'expired';
+    }
+
+    res.json({
+      _id: reservation._id,
+      publicRef: reservation.publicRef,
+      name: reservation.name,
+      court: reservation.court,
+      date: reservation.date,
+      timeSlot: reservation.timeSlot,
+      duration: reservation.duration,
+      status: reservation.status,
+      paymentStatus: reservation.paymentStatus,
+      paymentOption: reservation.paymentOption,
+      reservationFeeAmount: reservation.reservationFeeAmount,
+      downpaymentAmount: reservation.downpaymentAmount,
+      maintenanceFeeAmount: reservation.maintenanceFeeAmount,
+      amountPaidOnline: reservation.amountPaidOnline,
+      remainingBalanceAmount: reservation.remainingBalanceAmount,
+      xenditInvoiceUrl: reservation.xenditInvoiceUrl,
+      paymentExpiresAt: reservation.paymentExpiresAt,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 

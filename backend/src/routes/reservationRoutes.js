@@ -11,6 +11,7 @@ import {
   resolveSchedule,
   getBlockedSlots,
 } from '../utils/scheduleUtils.js';
+import { createInvoice } from '../services/xenditService.js';
 
 const router = express.Router();
 
@@ -69,7 +70,7 @@ router.get('/availability', async (req, res) => {
     const [rule, blocks, activeReservations] = await Promise.all([
       ScheduleRule.findOne({ courtId: req.courtId ,dayOfWeek }).lean(),
       ScheduleBlock.find({ courtId: req.courtId ,date }).lean(),
-      Reservation.find({ courtId: req.courtId , date, status: { $in: ['pending', 'confirmed'] } })
+      Reservation.find({ courtId: req.courtId , date, status: { $in: ['confirmed', 'completed'] } })
         .select('court timeSlot duration').lean(),
     ]);
 
@@ -180,7 +181,7 @@ router.post('/', async (req, res) => {
 
     // Check reservation overlaps
     const active = await Reservation
-      .find({ courtId: req.courtId, court, date, status: { $in: ['pending', 'confirmed'] } })
+      .find({ courtId: req.courtId, court, date, status: { $in: ['confirmed', 'completed'] } })
       .select('timeSlot duration').lean();
 
     const hasConflict = active.some(existing => {
@@ -237,6 +238,79 @@ router.put('/:id', async (req, res) => {
     res.json(reservation);
   } catch (err) {
     res.status(400).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/reservations/:id/approve-payment
+ * Admin approves reservation and creates/reuses one payment intent.
+ */
+router.post('/:id/approve-payment', async (req, res) => {
+  try {
+    const reservation = await Reservation.findOne({
+      _id: req.params.id,
+      courtId: req.courtId,
+    });
+    if (!reservation) return res.status(404).json({ error: 'Reservation not found.' });
+    if (['cancelled', 'expired', 'completed'].includes(reservation.status)) {
+      return res.status(400).json({ error: 'Reservation is not payable anymore.' });
+    }
+
+    if (
+      reservation.paymentStatus === 'awaiting_payment' &&
+      reservation.xenditInvoiceUrl &&
+      reservation.paymentExpiresAt &&
+      new Date(reservation.paymentExpiresAt) > new Date()
+    ) {
+      return res.json(reservation);
+    }
+
+    const reservationStart = new Date(`${reservation.date}T${reservation.timeSlot.split('-')[0]}:00+08:00`);
+    const in24h = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const expiryDate = reservationStart < in24h ? reservationStart : in24h;
+    const payableBase = reservation.paymentOption === 'full'
+      ? Number(reservation.reservationFeeAmount || 0)
+      : Number(reservation.downpaymentAmount || 0);
+    const amount = Number((payableBase + Number(reservation.maintenanceFeeAmount || 0)).toFixed(2));
+
+    const appBase = process.env.APP_BASE_URL || 'http://localhost:3000';
+    const invoice = await createInvoice({
+      externalId: `${reservation._id}-${Date.now()}`,
+      amount,
+      description: `Reservation ${reservation.publicRef}`,
+      payerEmail: reservation.email,
+      successRedirectUrl: `${appBase}/book/status/${reservation.publicRef}`,
+      failureRedirectUrl: `${appBase}/book/status/${reservation.publicRef}`,
+      expiryDate,
+    });
+
+    reservation.status = 'approved_waiting_payment';
+    reservation.paymentStatus = 'awaiting_payment';
+    reservation.xenditInvoiceId = invoice.id || '';
+    reservation.xenditInvoiceUrl = invoice.invoice_url || '';
+    reservation.paymentExpiresAt = expiryDate;
+    await reservation.save();
+    res.json(reservation);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/reservations/:id/cancel-payment
+ * Admin cancels a waiting payment reservation.
+ */
+router.post('/:id/cancel-payment', async (req, res) => {
+  try {
+    const reservation = await Reservation.findOneAndUpdate(
+      { _id: req.params.id, courtId: req.courtId },
+      { status: 'cancelled', paymentStatus: 'cancelled' },
+      { new: true }
+    );
+    if (!reservation) return res.status(404).json({ error: 'Reservation not found.' });
+    res.json(reservation);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 

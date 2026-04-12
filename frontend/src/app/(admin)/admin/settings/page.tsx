@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
+import { useSession } from 'next-auth/react';
 import { sileo } from 'sileo';
 import { Upload, X } from 'lucide-react';
 
@@ -15,6 +16,13 @@ interface Court {
   contact:  { phone: string; email: string; facebook: string; instagram: string; website: string; };
   subscription: { status: string; plan: string; amount: number; trialEnds: string; nextBilling: string | null; };
   settings: { timezone: string; currency: string; reservationFee?: number; hourlyRate?: number; };
+  payout?: {
+    recipientCode: string;
+    accountName: string;
+    channelCode: string;
+    accountNumberLast4: string;
+    isConfigured: boolean;
+  };
 }
 
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
@@ -38,7 +46,42 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
+async function uploadImageToCloudinary(file: File): Promise<string> {
+  const serverFd = new FormData();
+  serverFd.append('file', file);
+  const apiRes = await fetch('/api/upload/cloudinary', { method: 'POST', body: serverFd });
+  if (apiRes.ok) {
+    const j = (await apiRes.json()) as { secure_url?: string; error?: string };
+    if (j.secure_url) return j.secure_url;
+  }
+
+  const cloud = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME?.trim();
+  const preset = process.env.NEXT_PUBLIC_CLOUDINARY_PRESET?.trim();
+  if (!cloud || !preset) {
+    let msg = 'Cloudinary is not configured.';
+    try {
+      const j = (await apiRes.json()) as { error?: string };
+      if (j.error) msg = j.error;
+    } catch { /* ignore */ }
+    throw new Error(msg);
+  }
+
+  const fd = new FormData();
+  fd.append('file', file);
+  fd.append('upload_preset', preset);
+  const res = await fetch(`https://api.cloudinary.com/v1_1/${cloud}/image/upload`, {
+    method: 'POST',
+    body: fd,
+  });
+  const data = (await res.json()) as { secure_url?: string; error?: { message?: string } };
+  if (!res.ok || !data.secure_url) {
+    throw new Error(data.error?.message || 'Upload failed');
+  }
+  return data.secure_url;
+}
+
 export default function SettingsPage() {
+  const { update: updateSession } = useSession();
   const [court,   setCourt]   = useState<Court | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving,  setSaving]  = useState(false);
@@ -52,6 +95,10 @@ export default function SettingsPage() {
     address: '', city: '', province: '',
     phone: '', email: '', facebook: '', instagram: '', website: '',
     hourlyRate: '210',
+    payoutRecipientCode: '',
+    payoutAccountName: '',
+    payoutChannelCode: '',
+    payoutAccountNumber: '',
   });
 
   useEffect(() => {
@@ -74,6 +121,10 @@ export default function SettingsPage() {
           instagram:      c.contact?.instagram ?? '',
           website:        c.contact?.website   ?? '',
           hourlyRate:     String(c.settings?.hourlyRate ?? c.settings?.reservationFee ?? 210),
+          payoutRecipientCode: c.payout?.recipientCode ?? '',
+          payoutAccountName: c.payout?.accountName ?? '',
+          payoutChannelCode: c.payout?.channelCode ?? '',
+          payoutAccountNumber: '',
         });
       })
       .finally(() => setLoading(false));
@@ -107,6 +158,19 @@ export default function SettingsPage() {
       sileo.success({ title: 'Settings saved' });
       const updated = await res.json();
       setCourt(updated);
+
+      if (form.payoutRecipientCode) {
+        await fetch('/api/proxy/court/me/payout', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            recipientCode: form.payoutRecipientCode,
+            accountName: form.payoutAccountName,
+            channelCode: form.payoutChannelCode,
+            accountNumber: form.payoutAccountNumber,
+          }),
+        });
+      }
     } catch {
       sileo.error({ title: 'Failed to save settings' });
     } finally {
@@ -114,33 +178,28 @@ export default function SettingsPage() {
     }
   };
 
-  const uploadToCloudinary = async (file: File): Promise<string> => {
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('upload_preset', process.env.NEXT_PUBLIC_CLOUDINARY_PRESET!);
-    const res = await fetch(
-      `https://api.cloudinary.com/v1_1/${process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME}/image/upload`,
-      { method: 'POST', body: formData }
-    );
-    const data = await res.json();
-    return data.secure_url;
-  };
-
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    e.target.value = '';
     setUploading(true);
     try {
-      const url = await uploadToCloudinary(file);
-      await fetch('/api/proxy/court/me/logo', {
+      const url = await uploadImageToCloudinary(file);
+      const logoRes = await fetch('/api/proxy/court/me/logo', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ logoUrl: url }),
       });
+      if (!logoRes.ok) {
+        const err = await logoRes.json().catch(() => ({}));
+        throw new Error((err as { error?: string }).error || 'Could not save logo URL');
+      }
       setCourt(c => c ? { ...c, logoUrl: url } : c);
+      await updateSession();
       sileo.success({ title: 'Logo updated' });
-    } catch {
-      sileo.error({ title: 'Upload failed' });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Upload failed';
+      sileo.error({ title: 'Upload failed', description: message });
     } finally {
       setUploading(false);
     }
@@ -152,7 +211,7 @@ export default function SettingsPage() {
     setUploading(true);
     try {
       for (const file of files) {
-        const url = await uploadToCloudinary(file);
+        const url = await uploadImageToCloudinary(file);
         await fetch('/api/proxy/court/me/photos', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
@@ -161,8 +220,9 @@ export default function SettingsPage() {
         setCourt(c => c ? { ...c, photos: [...(c.photos ?? []), url] } : c);
       }
       sileo.success({ title: 'Photos uploaded' });
-    } catch {
-      sileo.error({ title: 'Upload failed' });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Upload failed';
+      sileo.error({ title: 'Upload failed', description: message });
     } finally {
       setUploading(false);
     }
@@ -210,6 +270,12 @@ export default function SettingsPage() {
               className="text-[0.72rem] border border-gray-200 rounded-md px-3 py-1.5 text-gray-600 hover:bg-gray-50 cursor-pointer transition-colors bg-white disabled:opacity-50 flex items-center gap-1.5">
               <Upload size={11} /> {uploading ? 'Uploading...' : 'Upload Logo'}
             </button>
+            <p className="text-[0.65rem] text-gray-400 max-w-xs mt-1">
+              Uses Cloudinary. Set <code className="text-gray-500">CLOUDINARY_CLOUD_NAME</code> +{' '}
+              <code className="text-gray-500">CLOUDINARY_UPLOAD_PRESET</code> in{' '}
+              <code className="text-gray-500">frontend/.env</code>, or the{' '}
+              <code className="text-gray-500">NEXT_PUBLIC_CLOUDINARY_*</code> pair. Preset must allow unsigned uploads.
+            </p>
             <input ref={logoInputRef} type="file" accept="image/*" className="hidden" onChange={handleLogoUpload} />
           </div>
         </div>
@@ -321,6 +387,31 @@ export default function SettingsPage() {
           <input value={form.website} onChange={e => set('website', e.target.value)}
             placeholder="https://yourcourtname.com" className={INPUT} />
         </Field>
+      </Section>
+
+      <Section title="Payout Destination (Xendit Recipient)">
+        <p className="text-xs text-gray-500">
+          Configure recipient details for reservation payout disbursements. Sensitive bank credentials are not stored here.
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <Field label="Recipient Code *" hint="Provided by Xendit recipient setup">
+            <input value={form.payoutRecipientCode} onChange={e => set('payoutRecipientCode', e.target.value)} className={INPUT} />
+          </Field>
+          <Field label="Channel Code" hint="e.g. BDO, BPI, GCASH, MAYA">
+            <input value={form.payoutChannelCode} onChange={e => set('payoutChannelCode', e.target.value)} className={INPUT} />
+          </Field>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <Field label="Account Name">
+            <input value={form.payoutAccountName} onChange={e => set('payoutAccountName', e.target.value)} className={INPUT} />
+          </Field>
+          <Field label="Account Number" hint="Stored as last 4 digits only">
+            <input value={form.payoutAccountNumber} onChange={e => set('payoutAccountNumber', e.target.value)} className={INPUT} />
+          </Field>
+        </div>
+        <p className="text-xs text-gray-400">
+          Current: {court?.payout?.isConfigured ? `Configured (${court?.payout?.channelCode || 'N/A'} ••••${court?.payout?.accountNumberLast4 || '----'})` : 'Not configured'}
+        </p>
       </Section>
 
       {/* Subscription — read only */}

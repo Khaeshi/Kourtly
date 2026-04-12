@@ -56,8 +56,12 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             try {
               const courtRes = await fetch(`${BASE}/api/public/courts/id/${user.courtId}`);
               if (courtRes.ok) {
-                const court   = await courtRes.json();
-                token.court   = { name: court.name, slug: court.slug };
+                const court = await courtRes.json();
+                token.court = {
+                  name: court.name,
+                  slug: court.slug,
+                  logoUrl: court.logoUrl || '',
+                };
               }
             } catch {
               token.court = null;

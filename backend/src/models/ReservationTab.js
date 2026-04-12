@@ -24,6 +24,12 @@ const ReservationTabSchema = new mongoose.Schema({
   items:     [ReservationTabItemSchema],
   total:     { type: Number, default: 0 },
   status:    { type: String, enum: ['open', 'paid', 'unpaid'], default: 'open' },
+  paymentSummary: {
+    reservationFee:  { type: Number, default: 0 },
+    paidOnline:      { type: Number, default: 0 },
+    remainingBalance:{ type: Number, default: 0 },
+    source:          { type: String, default: 'xendit' },
+  },
 }, { timestamps: true });
 
 ReservationTabSchema.index({ courtId: 1, date: 1, status: 1 });

@@ -22,7 +22,37 @@ npm test
 Current script notes:
 
 - `dev` runs `node server.js`
-- `test` is still a placeholder and not configured for Jest yet
+- `test` runs Jest in-band (`node --experimental-vm-modules ...jest --runInBand`)
+
+## Payment Environment (Xendit)
+
+Required for production payment flow:
+
+- `XENDIT_SECRET_KEY`
+- `XENDIT_WEBHOOK_TOKEN`
+- `APP_BASE_URL`
+- `MONGODB_URI`
+
+Runtime behavior:
+
+- In development, missing payment env vars emit warnings.
+- In production, missing payment env vars throw on startup (fail fast).
+
+## Production Readiness Checklist
+
+- Configure Xendit webhook URL to `POST /api/payments/xendit/webhook`.
+- Set `XENDIT_WEBHOOK_TOKEN` to match Xendit callback token.
+- Ensure each court has a configured payout recipient code in admin settings.
+- Verify public booking flow in sandbox:
+  - create reservation
+  - admin approve & generate payment
+  - complete payment
+  - webhook confirms reservation
+  - reservation tab reflects online-paid vs balance due
+- Verify payout transfer monitoring:
+  - admin dashboard recent transfers
+  - superadmin dashboard transfer list
+  - retry failed transfer path
 
 ## Folder Structure
 

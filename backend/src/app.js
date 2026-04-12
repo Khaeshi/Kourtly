@@ -13,6 +13,8 @@ import reservationTabRoutes from './routes/reservationtabRoutes.js';
 import courtRoutes from './routes/courtRoutes.js';
 import superadminRoutes from './routes/superadminRoutes.js';
 import publicRoutes from './routes/publicRoutes.js';
+import paymentRoutes from './routes/paymentRoutes.js';
+import payoutTransferRoutes from './routes/payoutTransferRoutes.js';
 import { tenantMiddleware } from './middleware/tenantMiddleware.js';
 import { notFound, errorHandler } from './middleware/errorMiddleware.js';
 
@@ -30,6 +32,7 @@ app.use(express.json());
 
 // Public routes
 app.use('/api/public', publicRoutes);
+app.use('/api/payments', paymentRoutes);
 app.use('/api/users', userRoutes);
 
 // Super admin
@@ -47,6 +50,7 @@ app.use('/api/reservations', tenantMiddleware, reservationRoutes);
 app.use('/api/schedule', tenantMiddleware, scheduleRoutes);
 app.use('/api/analytics', tenantMiddleware, analyticsRoutes);
 app.use('/api/reservation-tabs', tenantMiddleware, reservationTabRoutes);
+app.use('/api/payout-transfers', tenantMiddleware, payoutTransferRoutes);
 
 app.use(notFound);
 app.use(errorHandler);

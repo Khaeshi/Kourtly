@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback, use } from 'react';
 import { format, parseISO } from 'date-fns';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { ChevronLeft } from 'lucide-react';
 import {
   InlineNotice,
@@ -296,6 +297,7 @@ function TimeStep({ date, courtNum, duration, slug, timeSlot, setTimeSlot, onBac
 
 export default function BookingPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params);
+  const router = useRouter();
 
   const [court,    setCourt]    = useState<Court | null>(null);
   const [schedule, setSchedule] = useState<ScheduleRule[]>([]);
@@ -343,7 +345,7 @@ export default function BookingPage({ params }: { params: Promise<{ slug: string
   const hourlyRate = court?.settings?.hourlyRate ?? court?.settings?.reservationFee ?? 210;
   const totalFee = hourlyRate * duration;
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (paymentOption: 'downpayment' | 'full') => {
     if (!date || !courtNum || !timeSlot || !form.name || !form.phone) return;
     if (!navigator.onLine) {
       alert('You are offline. Reconnect to submit a booking request.');
@@ -356,6 +358,7 @@ export default function BookingPage({ params }: { params: Promise<{ slug: string
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           courtNum, date, timeSlot, duration,
+          paymentOption,
           name:        form.name,
           phone:       form.phone,
           email:       form.email,
@@ -366,6 +369,9 @@ export default function BookingPage({ params }: { params: Promise<{ slug: string
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Booking failed');
       setSuccess(true);
+      if (data.publicRef) {
+        router.push(`/book/${slug}/status/${data.publicRef}`);
+      }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Booking failed. Please try again.';
       alert(message);
@@ -609,11 +615,15 @@ export default function BookingPage({ params }: { params: Promise<{ slug: string
                 ]}
               />
 
-              <div className="flex flex-col sm:flex-row gap-3">
+              <div className="flex flex-col gap-3">
                 <PublicButton variant="ghost" className="proceed-btn ghost order-2 sm:order-1" onClick={() => setStep(4)}>← Back</PublicButton>
-                <PublicButton variant="primary" className="proceed-btn submit order-1 sm:order-2 w-full sm:w-auto"
-                  disabled={!form.name || !form.phone || submitting} onClick={handleSubmit}>
-                  {submitting ? 'Submitting...' : `Confirm Booking · ₱${totalFee}`}
+                <PublicButton variant="primary" className="proceed-btn submit order-1 sm:order-2 w-full"
+                  disabled={!form.name || !form.phone || submitting} onClick={() => handleSubmit('downpayment')}>
+                  {submitting ? 'Submitting...' : `Pay 50% Now (₱${(totalFee * 0.5).toFixed(2)}) + Fee`}
+                </PublicButton>
+                <PublicButton variant="primary" className="proceed-btn submit order-1 sm:order-2 w-full"
+                  disabled={!form.name || !form.phone || submitting} onClick={() => handleSubmit('full')}>
+                  {submitting ? 'Submitting...' : `Pay Full Amount (₱${totalFee.toFixed(2)}) + Fee`}
                 </PublicButton>
               </div>
               <p className="text-[0.65rem] text-white/15 mt-4">Your booking will be reviewed by admin before confirmation.</p>

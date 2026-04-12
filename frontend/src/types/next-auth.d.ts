@@ -9,9 +9,10 @@ declare module 'next-auth' {
       role: string;
       dbId: string;
       courtId: string | null;
-      court?: {     
+      court?: {
         name: string;
         slug?: string;
+        logoUrl?: string;
       } | null;
     } & DefaultSession['user'];
   }
@@ -22,9 +23,10 @@ declare module 'next-auth/jwt' {
     role: string;
     dbId: string;
     courtId: string | null;
-    court?: {     
+    court?: {
       name: string;
       slug?: string;
-    } | null
+      logoUrl?: string;
+    } | null;
   }
 }

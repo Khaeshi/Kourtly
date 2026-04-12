@@ -32,6 +32,8 @@ export default function SuperAdminDashboard() {
   const [formData,    setFormData]    = useState({ name: '', slug: '', adminEmail: '', courtCount: '4', sports: 'badminton' });
   const [formLoading, setFormLoading] = useState(false);
   const [formError,   setFormError]   = useState<string | null>(null);
+  const [payoutTransfers, setPayoutTransfers] = useState<any[]>([]);
+  const [payoutFilter, setPayoutFilter] = useState<'all' | 'queued' | 'succeeded' | 'failed'>('all');
 
   const load = useCallback(async () => {
     setLoading(true); setError(null);
@@ -51,6 +53,12 @@ export default function SuperAdminDashboard() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    fetch(`/api/proxy/superadmin/payout-transfers?limit=20&status=${payoutFilter}`)
+      .then(r => r.json())
+      .then(setPayoutTransfers)
+      .catch(() => setPayoutTransfers([]));
+  }, [payoutFilter]);
 
   const expiringTrials = courts.filter(c => {
     if (c.subscription.status !== 'trial') return false;
@@ -280,6 +288,37 @@ export default function SuperAdminDashboard() {
                     </button>
                   )}
                 </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+        <div className="px-5 py-3 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
+          <span className="text-[0.75rem] font-semibold tracking-[0.08em] uppercase text-gray-500">Recent Payout Transfers</span>
+          <div className="flex items-center gap-2">
+            <span className="text-[0.68rem] text-gray-400">{payoutTransfers.length} records</span>
+            <select value={payoutFilter} onChange={e => setPayoutFilter(e.target.value as any)} className="text-xs border border-gray-200 rounded px-2 py-1">
+              <option value="all">All</option>
+              <option value="queued">Queued</option>
+              <option value="succeeded">Succeeded</option>
+              <option value="failed">Failed</option>
+            </select>
+          </div>
+        </div>
+        {payoutTransfers.length === 0 ? (
+          <div className="py-10 text-center text-gray-400 text-sm">No payout transfers yet.</div>
+        ) : (
+          <div className="divide-y divide-gray-50">
+            {payoutTransfers.slice(0, 20).map((t: any) => (
+              <div key={t._id} className="px-5 py-3 text-xs flex items-center justify-between gap-3">
+                <span className="text-gray-700">{t.courtId?.name || 'Unknown court'}</span>
+                <span className="font-mono text-gray-500">{new Date(t.createdAt).toLocaleString()}</span>
+                <span className="font-mono text-gray-800">₱{Number(t.amount || 0).toFixed(2)}</span>
+                <span className={t.status === 'succeeded' ? 'text-green-600' : t.status === 'failed' ? 'text-red-600' : 'text-amber-600'}>
+                  {t.status}
+                </span>
               </div>
             ))}
           </div>

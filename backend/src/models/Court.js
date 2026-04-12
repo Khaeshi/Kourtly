@@ -76,6 +76,15 @@ const CourtSchema = new mongoose.Schema({
     reservationFee: { type: Number, default: 210 },        // legacy fallback
   },
 
+  // ── Payout Destination (admin) ─────────────────────────────────────────────
+  payout: {
+    recipientCode:    { type: String, default: '' }, // Xendit recipient code
+    accountName:      { type: String, default: '' },
+    channelCode:      { type: String, default: '' }, // e.g. BPI, BDO, GCASH, MAYA
+    accountNumberLast4: { type: String, default: '' },
+    isConfigured:     { type: Boolean, default: false },
+  },
+
   // ── Visibility ──────────────────────────────────────────────────────────────
   isPublic:  { type: Boolean, default: false }, // show on landing page once active
   isActive:  { type: Boolean, default: true  }, // false = suspended/deleted

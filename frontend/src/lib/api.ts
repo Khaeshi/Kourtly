@@ -167,7 +167,28 @@ export interface Reservation {
   timeSlot: string;    // "08:00-09:00"
   duration: number;
   playerCount: number;
-  status: 'pending' | 'confirmed' | 'cancelled' | 'completed';
+  status:
+    | 'pending'
+    | 'pending_admin'
+    | 'approved_waiting_payment'
+    | 'payment_processing'
+    | 'payment_received'
+    | 'payment_conflict'
+    | 'refund_required'
+    | 'expired'
+    | 'confirmed'
+    | 'cancelled'
+    | 'completed';
+  publicRef?: string;
+  paymentOption?: 'downpayment' | 'full';
+  reservationFeeAmount?: number;
+  downpaymentAmount?: number;
+  maintenanceFeeAmount?: number;
+  amountPaidOnline?: number;
+  remainingBalanceAmount?: number;
+  paymentStatus?: 'none' | 'awaiting_payment' | 'paid' | 'expired' | 'failed' | 'cancelled';
+  paymentExpiresAt?: string | null;
+  xenditInvoiceUrl?: string;
   notes: string;
   createdAt: string;
   updatedAt: string;
@@ -215,6 +236,14 @@ export async function updateReservation(
   });
 }
 
+export async function approveReservationPayment(id: string): Promise<Reservation> {
+  return req<Reservation>(`/reservations/${id}/approve-payment`, { method: 'POST' });
+}
+
+export async function cancelReservationPayment(id: string): Promise<Reservation> {
+  return req<Reservation>(`/reservations/${id}/cancel-payment`, { method: 'POST' });
+}
+
 export async function deleteReservation(id: string): Promise<void> {
   await fetch(`${API_BASE}/reservations/${id}`, { method: 'DELETE' });
 }
@@ -232,6 +261,12 @@ export interface ReservationTab {
   items:       TabItem[];
   total:       number;
   status:      'open' | 'paid' | 'unpaid';
+  paymentSummary?: {
+    reservationFee: number;
+    paidOnline: number;
+    remainingBalance: number;
+    source: string;
+  };
   createdAt:   string;
   updatedAt:   string;
 }
@@ -260,6 +295,8 @@ export const payReservationUnpaid  = (tabId: string) =>
   req<ReservationTab>(`/reservation-tabs/${tabId}/pay-unpaid`, { method: 'PUT' });
 export const clearReservationTab   = (tabId: string) =>
   req<void>(`/reservation-tabs/${tabId}`, { method: 'DELETE' });
+export const collectReservationBalance = (tabId: string) =>
+  req<ReservationTab>(`/reservation-tabs/${tabId}/collect-balance`, { method: 'PUT' });
  
 export interface ResTabHistoryParams {
   status?: 'paid' | 'unpaid' | 'all';

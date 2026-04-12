@@ -1,6 +1,7 @@
 import express from 'express';
 import Court from '../models/Court.js';
 import User  from '../models/User.js';
+import PayoutTransfer from '../models/PayoutTransfer.js';
 
 const router = express.Router();
 
@@ -138,6 +139,23 @@ router.patch('/courts/:id', async (req, res) => {
     res.json(court);
   } catch (err) {
     res.status(400).json({ error: err.message });
+  }
+});
+
+router.get('/payout-transfers', async (req, res) => {
+  try {
+    const limit = Math.min(200, Math.max(1, Number(req.query.limit || 100)));
+    const status = String(req.query.status || 'all');
+    const query = {};
+    if (status !== 'all') query.status = status;
+    const transfers = await PayoutTransfer.find(query)
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .populate('courtId', 'name slug')
+      .lean();
+    res.json(transfers);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 

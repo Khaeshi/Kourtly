@@ -6,6 +6,7 @@ import {
   openTab, addItemToTab, removeItemFromTab, payTab, markUnpaid, payUnpaid, closeTab, splitItem,
   getTodayReservationTabs, addItemToReservationTab,
   removeItemFromReservationTab, payReservationTab, markReservationUnpaid, payReservationUnpaid, clearReservationTab,
+  collectReservationBalance,
   getTabHistoryPaged, getReservationTabHistoryPaged,
 } from '@/lib/api';
 import type { Player, CatalogItem, Tab, ReservationTab, PaginatedTabs, PaginatedResTabs } from '@/lib/api';
@@ -552,6 +553,14 @@ export default function BillingPage() {
                         </span>
                       </div>
 
+                      {!!tab.paymentSummary && (
+                        <div className="px-4 py-2 border-b border-blue-50 text-[0.7rem] text-gray-600 bg-blue-50/20">
+                          <div className="flex justify-between"><span>Court Fee</span><span>₱{tab.paymentSummary.reservationFee.toFixed(2)}</span></div>
+                          <div className="flex justify-between"><span>Paid Online</span><span>₱{tab.paymentSummary.paidOnline.toFixed(2)}</span></div>
+                          <div className="flex justify-between"><span>Balance Due</span><span>₱{tab.paymentSummary.remainingBalance.toFixed(2)}</span></div>
+                        </div>
+                      )}
+
                       {/* Items */}
                       {tab.items.length > 0 && (
                         <div className="px-4 py-1.5">
@@ -589,6 +598,18 @@ export default function BillingPage() {
                             }}
                             className="flex-1 py-1.5 rounded-md border border-yellow-200 bg-yellow-50 text-yellow-900 text-xs font-semibold cursor-pointer hover:bg-yellow-100 transition-all">
                             Pay {fmt(tab.total)}
+                          </button>
+                        )}
+                        {(tab.paymentSummary?.remainingBalance ?? 0) > 0 && (
+                          <button
+                            onClick={async e => {
+                              e.stopPropagation();
+                              await collectReservationBalance(tab._id);
+                              sileo.success({ title: 'Balance collected', description: `${tab.guestName}` });
+                              loadAll();
+                            }}
+                            className="flex-1 py-1.5 rounded-md border border-blue-200 bg-blue-50 text-blue-700 text-xs font-semibold cursor-pointer hover:bg-blue-100 transition-all">
+                            Collect Balance
                           </button>
                         )}
                         <button
