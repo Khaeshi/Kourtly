@@ -1,119 +1,329 @@
-### **What I changed**
+## PlayKou — WAAS (Working Agreement & Architecture Spec)
 
-- Added a payment provider abstraction entrypoint at `backend/src/lib/payments/index.js`
-  - New exported API:
-    - `createPaymentLink(...)`
-    - `verifyWebhookSignature(...)`
-    - `getPaymentProvider()`
-  - Supports `PAYMENT_PROVIDER=xendit` now.
-  - `PAYMENT_PROVIDER=cocoart` is stubbed with explicit “not implemented yet” error (so we can plug Cocoart in cleanly next without touching routes again).
-- Updated `backend/src/routes/reservationRoutes.js`
-  - Replaced direct `createInvoice(...)` usage with `createPaymentLink(...)`.
-  - Fixed redirect path generation to use actual public route shape:
-    - `/book/${court.slug}/status/${reservation.publicRef}`
-  - It now resolves the `court.slug` from `courtId` before creating payment link.
-- Updated `backend/src/routes/paymentRoutes.js`
-  - Replaced direct webhook auth call with provider abstraction:
-    - `verifyWebhookSignature(req.body, req.headers)`
+Living document for **current architecture**, **what’s shipped**, and the **future roadmap** (including an experimental Phase 6 spec).
 
-### **Validation**
+- **Last updated**: April 2026
+- **External QA**: `docs/QA_EXTERNAL_CHECKLIST.md`
 
-- Backend tests pass:
-  - `10/10` test suites, `32/32` tests passed.
-- Lints on edited files: no issues found.
+---
 
-### **Notes from your environment changes**
+### Codebase Reality (read before touching anything)
 
-- I see your `npm install` and audit updates touched lockfiles and many `node_modules` entries (expected).
-- Agree on deferring the remaining moderate frontend vulnerabilities for last; no need to force-break deps now.
+- **Frontend**: Next.js (TypeScript), Tailwind, Auth.js (NextAuth)
+- **Backend**: Express (ES Modules), MongoDB
+- **Tenancy**: `courtId` per tenant; role/email forwarded to backend
+- **Proxy rule**: frontend calls backend only through `frontend/src/app/api/proxy/[...path]/route.ts`
 
-### **Best next step (recommended)**
+---
 
-I can proceed immediately with **Phase 2 hardening slice** next:
+### Working Features (must not break)
 
-1. Add canonical reservation/payment transition guards (prevent invalid jumps),
-2. Add provider metadata support to webhook processing (prep for Cocoart),
-3. Add configurable hold window (`PAYMENT_HOLD_MINUTES`) and expiration cron route-safe behavior.
+Queue management, billing tabs, reservations, scheduling, analytics dashboard, superadmin panel, court onboarding wizard, and public booking page (`/book/[slug]`).
 
-- Updated `frontend/src/app/(admin)/admin/settings/page.tsx`
-  - `Payout Destination (Xendit Recipient)` → `Payout Destination (Cocoart Recipient)`
-  - hint text now says `Provided by Cocoart recipient setup`
+---
 
-### **Validation completed**
+### Technical Standards (enforce on every PR)
 
-- Backend tests passed again: `10/10` suites, `32/32` tests.
-- Lints for edited files: no errors.
+- **Tenant scoping**: `courtId` on every new MongoDB document.
+- **Tenant-safe writes**: prefer `findOneAndUpdate({ _id, courtId })` over `findByIdAndUpdate`.
+- **Tenant middleware**: tenant routes must enforce `tenantMiddleware`.
+- **Realtime**: always emit to `court:{courtId}`; never `io.emit(...)` globally.
+- **AI resilience**: always provide fallback behavior; never crash UI on AI failure.
+- **Timezone**: `Asia/Manila` for cron schedules and date formatting.
+- **Env hygiene**: add new env vars to `.env.example` before merging.
 
-### **Current migration state**
+---
 
-The active payment flow is now Cocoart-based in backend/frontend:
+### Canonical State Machines (documented + enforced by guards)
 
-- New service: `backend/src/services/cocoartService.js`
-- Xendit service removed: `backend/src/services/xenditService.js` deleted
-- Webhook endpoint changed to `/api/payments/cocoart/webhook`
-- Reservation payment fields moved from `xendit`* to generic:
-  - `paymentLinkId`, `paymentUrl`, `paymentQrString`
-- Frontend status page now reads `paymentUrl` instead of `xenditInvoiceUrl`
-- Env validation switched to:
-  - `COCOART_API_KEY`
-  - `COCOART_WEBHOOK_SECRET`
-  - `APP_BASE_URL`
+**Reservation status (canonical intent):**
 
-### **What I implemented**
+- `pending` → `confirmed` (payment webhook)
+- `pending` → `expired` (hold expiry job releases slot)
+- `confirmed` → `completed` (tab paid / fulfillment complete)
+- `confirmed` → `cancelled` (admin cancels)
 
-#### **Backend realtime foundation**
+**Payment status:**
 
-- Added Socket.IO server bootstrap in `backend/server.js`:
-  - HTTP server wrapper via `createServer(app)`
-  - Socket.IO CORS config
-  - room join on connect using `court:{courtId}`
-  - `app.set('io', io)` for route access
-- Added central emitter helper:
-  - `backend/src/lib/emitCourtEvent.js`
+- `unpaid` → `paid` (webhook)
+- `unpaid` → `expired` (hold elapsed)
 
-#### **Backend route emit wiring**
+**Court subscription:**
 
-I added court-scoped emits after mutations in:
+- `trial` → `active` (subscription payment webhook OR superadmin action)
+- `active` → `suspended` (non-payment OR superadmin action)
+- `suspended` → `active` (payment OR superadmin action)
+- `active` → `expired` (billing passed without renewal)
 
-- `backend/src/routes/queueRoutes.js` → `queue:updated`
-- `backend/src/routes/tabRoutes.js` → `billing:tab_updated`, `billing:tab_paid`, `analytics:refresh`
-- `backend/src/routes/reservationRoutes.js` → `reservation:updated`, `analytics:refresh`
-- `backend/src/routes/reservationtabRoutes.js` → `billing:tab_updated`, `billing:tab_paid`, `reservation:updated`, `analytics:refresh`
-- `backend/src/routes/playerRoutes.js` → `players:updated`
-- `backend/src/routes/itemRoutes.js` → `items:updated`
-- `backend/src/routes/scheduleRoutes.js` → `schedule:updated`
-- `backend/src/routes/paymentRoutes.js` (webhook path) → room emits by reservation court id (`reservation:updated`, `billing:tab_updated`, `analytics:refresh`)
+---
 
-#### **Frontend socket client + hook**
+## Phase 1 — WebSocket Real-time Sync (Admin) ✅
 
-- Added singleton socket client:
-  - `frontend/src/lib/socket.ts`
-- Added hook:
-  - `frontend/src/hooks/useSocketEvent.ts`
+### What is shipped
 
-#### **Admin layout mount/unmount**
+**Backend**
 
-- Updated `frontend/src/app/components/admin/AdminLayoutClient.tsx`
-  - connects socket on admin mount via session courtId
-  - disconnects on unmount
+- Socket.IO bootstrap in `backend/server.js` (HTTP server wrapper).
+- Socket joins room `court:{courtId}` via handshake auth.
+- Shared emitter helper: `backend/src/lib/emitCourtEvent.js`.
 
-#### **Admin pages realtime refetch-on-event**
+**Events emitted (court-scoped)**
 
-- `frontend/src/app/(admin)/admin/queue/page.tsx`
-- `frontend/src/app/(admin)/admin/billing/page.tsx`
-- `frontend/src/app/(admin)/admin/reservation/page.tsx`
-- `frontend/src/app/(admin)/admin/players/page.tsx`
-- `frontend/src/app/(admin)/admin/items/page.tsx`
-- `frontend/src/app/(admin)/admin/schedule/page.tsx`
+- `queue:updated`
+- `billing:tab_updated`, `billing:tab_paid`
+- `reservation:updated`
+- `players:updated`, `items:updated`, `schedule:updated`
+- `analytics:refresh`
 
-### **Dependencies added**
+**Routes wired to emit**
+
+- `backend/src/routes/queueRoutes.js`
+- `backend/src/routes/tabRoutes.js`
+- `backend/src/routes/reservationRoutes.js`
+- `backend/src/routes/reservationtabRoutes.js`
+- `backend/src/routes/playerRoutes.js`
+- `backend/src/routes/itemRoutes.js`
+- `backend/src/routes/scheduleRoutes.js`
+- `backend/src/routes/paymentRoutes.js` (webhook-side effects emit by reservation court)
+
+**Frontend**
+
+- Socket singleton: `frontend/src/lib/socket.ts`
+- Event hook: `frontend/src/hooks/useSocketEvent.ts`
+- Mounted only in `frontend/src/app/components/admin/AdminLayoutClient.tsx`
+- Refetch-on-event wiring in:
+  - `frontend/src/app/(admin)/admin/queue/page.tsx`
+  - `frontend/src/app/(admin)/admin/billing/page.tsx`
+  - `frontend/src/app/(admin)/admin/reservation/page.tsx`
+  - `frontend/src/app/(admin)/admin/players/page.tsx`
+  - `frontend/src/app/(admin)/admin/items/page.tsx`
+  - `frontend/src/app/(admin)/admin/schedule/page.tsx`
+
+**Dependencies**
 
 - Backend: `socket.io`
 - Frontend: `socket.io-client`
 
-### **Validation**
+### Acceptance criteria
 
-- Backend tests: **pass** (`10/10` suites, `32/32` tests).
-- Lint on edited files via diagnostics tool: no new diagnostics there.
-- Full frontend `eslint` still fails due to **many pre-existing repo-wide issues** (not introduced by this slice), including existing strict hook rule violations and no-explicit-any across multiple files.
+- Same-tenant tabs update live without refresh.
+- No cross-tenant websocket leakage.
+- App still works if sockets disconnect (manual refresh fallback).
 
+---
+
+## Phase 2 — Payment Stabilization (Provider + Cocoart) ✅
+
+> Current repo state is **Cocoart-based** (Xendit is not the active provider).
+
+### What is shipped
+
+**Provider abstraction**
+
+- `backend/src/lib/payments/index.js` exports:
+  - `getPaymentProvider()`
+  - `createPaymentLink(...)` (supports `metadata`)
+  - `verifyWebhookSignature(...)`
+
+**Cocoart integration**
+
+- Service: `backend/src/services/cocoartService.js`
+- Webhook path: `/api/payments/cocoart/webhook`
+- Xendit service removed: `backend/src/services/xenditService.js` deleted
+- Reservation payment fields are generic:
+  - `paymentLinkId`, `paymentUrl`, `paymentQrString`
+- Public status page reads generic `paymentUrl` (not provider-specific fields).
+
+**Redirect correctness**
+
+Public payment redirects follow the actual route shape:
+
+- `/book/[slug]/status/[publicRef]`
+
+**Hold window + expiry job**
+
+- Hold window: `PAYMENT_HOLD_MINUTES` (default `10`)
+- Expiry job: `backend/src/jobs/expirePendingPayments.js` (every 2 minutes)
+  - Expires overdue payable reservations
+  - Emits `reservation:updated` + `analytics:refresh`
+- Wired in `backend/server.js` via `startExpirePendingPaymentsJob(io)`
+
+**Subscription activation**
+
+- Webhook supports subscription activation via metadata:
+  - If `metadata.type === 'subscription'`, court subscription becomes `active` and next billing is set.
+
+### Env vars (Phase 2)
+
+```bash
+PAYMENT_PROVIDER=cocoart
+COCOART_API_KEY=
+COCOART_WEBHOOK_SECRET=
+APP_BASE_URL=
+PAYMENT_HOLD_MINUTES=10
+```
+
+---
+
+## Phase 3 — AI Weekly Court Summary Email ✅
+
+### What is shipped
+
+- Service: `backend/src/services/weeklySummary.js`
+  - weekly analytics aggregation
+  - Anthropic narrative (optional)
+  - Resend send pipeline
+  - fallback summary if AI fails/unavailable
+- Cron: `backend/src/cron/weeklyReport.js`
+  - Mondays 08:00 `Asia/Manila`
+  - Targets: `subscription.status=active` + `settings.weeklySummary=true`
+  - Idempotency: `weeklySummary.lastSentAt`
+  - Status tracking: `weeklySummary.lastStatus`
+- Server wiring: `backend/server.js` registers cron.
+- Court fields in `backend/src/models/Court.js`:
+  - `settings.weeklySummary` default true
+  - `weeklySummary.lastSentAt`, `weeklySummary.lastStatus`
+- Admin settings toggle: `frontend/src/app/(admin)/admin/settings/page.tsx`
+
+### Env vars (Phase 3)
+
+```bash
+RESEND_API_KEY=
+RESEND_FROM_EMAIL=
+AI_PROVIDER=anthropic            # or local-llama
+ANTHROPIC_API_KEY=               # if AI_PROVIDER=anthropic
+ANTHROPIC_MODEL=                 # optional override (default is used if empty)
+LOCAL_LLM_ENDPOINT=              # if AI_PROVIDER=local-llama (defaults to Ollama generate endpoint)
+LOCAL_LLM_MODEL=                 # if AI_PROVIDER=local-llama (example: llama3)
+```
+
+---
+
+## Phase 4 — AI Natural Language Analytics Query ✅
+
+### What is shipped
+
+**AI provider layer (shared by Phase 3 + Phase 4)**
+
+- `backend/src/lib/ai/index.js`
+  - `AI_PROVIDER=anthropic` uses Anthropic Messages API
+  - `AI_PROVIDER=local-llama` uses local LLM HTTP endpoint (default targets Ollama-style `/api/generate`)
+  - Used by:
+    - `backend/src/services/weeklySummary.js` (Phase 3 narrative)
+    - `backend/src/routes/analyticsRoutes.js` (Phase 4 ask)
+
+**Backend API**
+
+- `POST /api/analytics/ask`
+  - tenant-scoped (`req.courtId`)
+  - admin-only (`admin|superadmin`)
+  - body: `{ question: string, period: 'today'|'week'|'month'|'year' }`
+  - returns: `{ answer: string, dataUsed: object }`
+  - fallback: returns `answer = "AI unavailable — check the charts above."` while still returning `dataUsed`
+
+**Rate limiting**
+
+- Per-court daily quota: **10/day**
+- Stored on Court document:
+  - `analyticsAskQuota.day` (PHT date key)
+  - `analyticsAskQuota.count`
+
+**Frontend**
+
+- Admin dashboard includes an “Ask Analytics” box:
+  - `frontend/src/app/(admin)/admin/page.tsx`
+- API helper:
+  - `askAnalytics(...)` in `frontend/src/lib/api.ts`
+
+---
+
+## Phase 5 — Queue AI Proofread (shipped; custom direction) ✅
+
+> This phase **does not** implement W/L tracking. The earlier W/L attempt was removed and replaced by AI-assisted “proofread” of matchups.
+
+### What is shipped
+
+**Backend**
+
+- Endpoint: `POST /api/queue/proofread` in `backend/src/routes/queueRoutes.js`
+- Validates same-tenant players (`courtId`)
+- Computes fairness heuristics (e.g. score gap/variance)
+- Calls AI provider when available (local Llama or Anthropic via existing AI layer)
+- Returns:
+  - `verdict`: `fair` | `review`
+  - `aiUsed`: boolean
+  - `explanation`: string
+
+**Frontend**
+
+- API helper: `proofreadMatch(...)` in `frontend/src/lib/api.ts`
+- UI panel in `frontend/src/app/(admin)/admin/queue/page.tsx`
+
+### Non-goals (explicit)
+
+- No win/loss tracking (tournament-style) in current product scope.
+- AI does not override strict leveling rules; it provides an explanation + a “fair/review” signal only.
+
+---
+
+## Phase 6 — Experimental: Facebook Messenger Auto-Reply (future)
+
+### Objective
+
+Provide fast replies to common booking questions on Facebook Messenger while enforcing strict privacy, tenancy, and safety guardrails.
+
+### Why Messenger (PH market fit)
+
+Many courts and players use Facebook Pages + Messenger as the default inquiry channel. A safe autoresponder reduces operator load and increases conversion.
+
+### Proposed flow (end-to-end)
+
+1. Player messages the court’s Facebook Page.
+2. Meta webhook posts event to PlayKou.
+3. PlayKou verifies signature + maps Page → Court.
+4. PlayKou pulls **allowed** context (never admin-only):
+   - booking link (`/book/[slug]`)
+   - operating hours
+   - schedule blocks / next available windows (only if already modeled)
+5. Reply generation:
+   - template-first for common intents
+   - optional AI phrasing assist grounded in server context
+6. Send reply via Messenger Send API.
+7. Persist minimal audit record (avoid raw sensitive content retention).
+
+### Must-have guardrails
+
+- Court opt-in via feature flag (default OFF).
+- Signature verification on every webhook request.
+- Strict tenancy mapping (Page ID must be linked to a court).
+- Prompt injection resistance: ignore any instructions in the user message.
+- Rate limiting:
+  - per court per day cap
+  - per sender per hour cap
+- Safe fallback + human handoff template when uncertain/outside hours.
+
+### Proposed Court fields
+
+- `integrations.messenger.enabled`
+- `integrations.messenger.pageId`
+- `integrations.messenger.pageAccessTokenRef` (token stored securely)
+- `integrations.messenger.autoreplyMode`: `off | template | ai`
+- `integrations.messenger.businessHoursOnly`
+
+### Proposed endpoints
+
+- `POST /api/webhooks/meta/messenger` (incoming messages)
+- `GET /api/webhooks/meta/messenger/verify` (Meta verification challenge)
+- `GET /api/integrations/messenger/oauth/callback` (page linking)
+
+### Rollout plan (recommended)
+
+- Start templates-only for 1–2 pilot courts.
+- Add AI phrasing only after logs show safe behavior and costs are bounded.
+- Expand context gradually (availability windows) without exposing restricted data.
+
+---
+
+### Validation & QA
+
+- Use `docs/QA_EXTERNAL_CHECKLIST.md` for external QA runs (Phases 1–5 + optional Phase 6 checks).

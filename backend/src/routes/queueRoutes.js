@@ -4,8 +4,10 @@ import Player from '../models/Player.js';
 import Tab from '../models/Tab.js';
 import Item from '../models/Item.js';
 import { emitCourtEvent } from '../lib/emitCourtEvent.js';
+import { generateAIText } from '../lib/ai/index.js';
 
 const router = express.Router();
+const LEVEL_ORDER = { A: 4, B: 3, C: 2, D: 1 };
 
 // GET active matches (queued + playing)
 router.get('/', async (req, res) => {
@@ -101,6 +103,63 @@ router.patch('/:id', async (req, res) => {
     res.json(match);
   } catch (err) {
     res.status(400).json({ error: err.message });
+  }
+});
+
+router.post('/proofread', async (req, res) => {
+  try {
+    const { team1 = [], team2 = [], matchType } = req.body || {};
+    if (!Array.isArray(team1) || !Array.isArray(team2) || team1.length !== 2 || team2.length !== 2) {
+      return res.status(400).json({ error: 'team1 and team2 must each contain exactly 2 player ids.' });
+    }
+
+    const ids = [...team1, ...team2];
+    const players = await Player.find({ _id: { $in: ids }, courtId: req.courtId }).lean();
+    if (players.length !== 4) return res.status(400).json({ error: 'Some players are missing or outside court scope.' });
+    const byId = new Map(players.map((p) => [String(p._id), p]));
+    const t1 = team1.map((id) => byId.get(String(id))).filter(Boolean);
+    const t2 = team2.map((id) => byId.get(String(id))).filter(Boolean);
+    if (t1.length !== 2 || t2.length !== 2) {
+      return res.status(400).json({ error: 'Invalid player mapping for match proofread.' });
+    }
+
+    const t1Score = t1.reduce((sum, p) => sum + (LEVEL_ORDER[p.level] || 0), 0);
+    const t2Score = t2.reduce((sum, p) => sum + (LEVEL_ORDER[p.level] || 0), 0);
+    const scoreGap = Math.abs(t1Score - t2Score);
+    const levelGap = Math.abs((LEVEL_ORDER[t1[0].level] || 0) - (LEVEL_ORDER[t1[1].level] || 0)) +
+      Math.abs((LEVEL_ORDER[t2[0].level] || 0) - (LEVEL_ORDER[t2[1].level] || 0));
+
+    const heuristicVerdict = scoreGap <= 1 ? 'fair' : 'review';
+    const heuristicReason = scoreGap <= 1
+      ? 'Team level sums are closely balanced.'
+      : 'Team level sums are far apart and may need manual adjustment.';
+
+    let aiNarrative = '';
+    try {
+      aiNarrative = await generateAIText({
+        maxTokens: 180,
+        system: 'You are a badminton queue assistant for PlayKou. Review a generated match and explain if it is fair based on player levels and match type. Keep response under 90 words. Give practical, non-hyped reasoning.',
+        prompt: `Match type: ${matchType || 'auto'}
+Team A: ${t1.map((p) => `${p.name}(${p.level})`).join(', ')}
+Team B: ${t2.map((p) => `${p.name}(${p.level})`).join(', ')}
+Heuristic metrics: teamScoreGap=${scoreGap}, internalLevelVariance=${levelGap}
+Return: verdict + short explanation.`,
+      });
+    } catch {
+      aiNarrative = '';
+    }
+
+    res.json({
+      verdict: heuristicVerdict,
+      metrics: {
+        teamScoreGap: scoreGap,
+        internalLevelVariance: levelGap,
+      },
+      explanation: aiNarrative || heuristicReason,
+      aiUsed: Boolean(aiNarrative),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 

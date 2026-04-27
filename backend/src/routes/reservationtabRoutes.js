@@ -2,6 +2,7 @@ import express from 'express';
 import ReservationTab from '../models/ReservationTab.js';
 import Reservation    from '../models/Reservation.js';
 import { emitCourtEvent } from '../lib/emitCourtEvent.js';
+import { assertReservationTransition } from '../lib/reservationStateMachine.js';
 
 const router = express.Router();
 
@@ -75,6 +76,9 @@ router.get('/today', async (req, res) => {
     const open = tabs.filter(t => t.status === 'open');
     res.json(open);
   } catch (err) {
+    if (String(err.message || '').includes('Invalid reservation status transition')) {
+      return res.status(409).json({ error: err.message });
+    }
     res.status(500).json({ error: err.message });
   }
 });
@@ -226,6 +230,10 @@ router.put('/:id/pay', async (req, res) => {
 
     // Auto-complete the reservation — payment means the session is done
     if (tab.reservation) {
+      const linkedReservation = await Reservation.findById(tab.reservation).select('status').lean();
+      if (linkedReservation?.status) {
+        assertReservationTransition(linkedReservation.status, 'completed');
+      }
       await Reservation.findOneAndUpdate(
         tab.reservation,
         { status: 'completed' },

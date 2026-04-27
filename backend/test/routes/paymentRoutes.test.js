@@ -67,5 +67,39 @@ describe('payment webhook routes', () => {
     const transfers = await PayoutTransfer.find({ reservationId: reservation._id }).lean();
     expect(transfers).toHaveLength(1);
   });
+
+  test('activates court subscription from subscription webhook metadata', async () => {
+    process.env.COCOART_WEBHOOK_SECRET = 'test-token';
+
+    const court = await Court.create({
+      name: 'Subscription Court',
+      slug: 'subscription-court',
+      adminEmail: 'owner@court.com',
+      isActive: true,
+      subscription: { status: 'suspended' },
+      courtCount: 4,
+    });
+
+    const payload = {
+      id: 'sub-evt-1',
+      status: 'PAID',
+      metadata: {
+        type: 'subscription',
+        courtId: String(court._id),
+      },
+    };
+
+    const res = await request(app)
+      .post('/api/payments/cocoart/webhook')
+      .set('x-cocoart-webhook-secret', 'test-token')
+      .send(payload);
+
+    expect(res.status).toBe(200);
+    expect(res.body.kind).toBe('subscription');
+
+    const updatedCourt = await Court.findById(court._id).lean();
+    expect(updatedCourt.subscription.status).toBe('active');
+    expect(updatedCourt.subscription.nextBilling).toBeTruthy();
+  });
 });
 

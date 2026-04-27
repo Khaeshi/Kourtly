@@ -74,6 +74,17 @@ const CourtSchema = new mongoose.Schema({
     currency:     { type: String, default: 'PHP' },
     hourlyRate:   { type: Number, default: 210 },          // per hour
     reservationFee: { type: Number, default: 210 },        // legacy fallback
+    weeklySummary: { type: Boolean, default: true },
+  },
+
+  weeklySummary: {
+    lastSentAt: { type: Date, default: null },
+    lastStatus: { type: String, enum: ['sent', 'failed', 'skipped'], default: 'skipped' },
+  },
+
+  analyticsAskQuota: {
+    day: { type: String, default: '' },
+    count: { type: Number, default: 0 },
   },
 
   // ── Payout Destination (admin) ─────────────────────────────────────────────

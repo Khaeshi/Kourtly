@@ -15,7 +15,7 @@ interface Court {
   location: { address: string; city: string; province: string; };
   contact:  { phone: string; email: string; facebook: string; instagram: string; website: string; };
   subscription: { status: string; plan: string; amount: number; trialEnds: string; nextBilling: string | null; };
-  settings: { timezone: string; currency: string; reservationFee?: number; hourlyRate?: number; };
+  settings: { timezone: string; currency: string; reservationFee?: number; hourlyRate?: number; weeklySummary?: boolean; };
   payout?: {
     recipientCode: string;
     accountName: string;
@@ -99,6 +99,7 @@ export default function SettingsPage() {
     payoutAccountName: '',
     payoutChannelCode: '',
     payoutAccountNumber: '',
+    weeklySummary: true,
   });
 
   useEffect(() => {
@@ -125,6 +126,7 @@ export default function SettingsPage() {
           payoutAccountName: c.payout?.accountName ?? '',
           payoutChannelCode: c.payout?.channelCode ?? '',
           payoutAccountNumber: '',
+          weeklySummary: c.settings?.weeklySummary ?? true,
         });
       })
       .finally(() => setLoading(false));
@@ -151,6 +153,7 @@ export default function SettingsPage() {
           settings:    {
             hourlyRate: Number(form.hourlyRate),
             reservationFee: Number(form.hourlyRate), // keep legacy consumers aligned
+            weeklySummary: Boolean(form.weeklySummary),
           },
         }),
       });
@@ -412,6 +415,24 @@ export default function SettingsPage() {
         <p className="text-xs text-gray-400">
           Current: {court?.payout?.isConfigured ? `Configured (${court?.payout?.channelCode || 'N/A'} ••••${court?.payout?.accountNumberLast4 || '----'})` : 'Not configured'}
         </p>
+      </Section>
+
+      <Section title="Weekly Summary Email">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-medium text-gray-700">Send Monday summary email</p>
+            <p className="text-xs text-gray-500">Receive a weekly analytics summary every Monday morning (Asia/Manila).</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => set('weeklySummary', !form.weeklySummary)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
+              form.weeklySummary ? 'bg-green-50 text-green-700 border-green-200' : 'bg-white text-gray-500 border-gray-200'
+            }`}
+          >
+            {form.weeklySummary ? 'Enabled' : 'Disabled'}
+          </button>
+        </div>
       </Section>
 
       {/* Subscription — read only */}

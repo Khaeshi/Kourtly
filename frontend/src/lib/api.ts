@@ -66,7 +66,16 @@ async function req<T>(path: string, options?: RequestInit): Promise<T> {
     headers: { 'Content-Type': 'application/json', ...courtHeaders },
     ...options,
   });
-  if (!res.ok) throw new Error(`API error ${res.status}`);
+  if (!res.ok) {
+    let message = `API error ${res.status}`;
+    try {
+      const data = await res.json();
+      if (data?.error) message = data.error;
+    } catch {
+      // ignore parse errors and keep generic status error
+    }
+    throw new Error(message);
+  }
   return res.json();
 }
 
@@ -93,6 +102,19 @@ export const updateMatch = (id: string, body: Partial<Pick<Match,'status'|'court
 
 export const deleteMatch = (id: string) =>
   req<{success:boolean}>(`/queue/${id}`, { method:'DELETE' });
+
+export interface QueueProofreadResponse {
+  verdict: 'fair' | 'review';
+  metrics: {
+    teamScoreGap: number;
+    internalLevelVariance: number;
+  };
+  explanation: string;
+  aiUsed: boolean;
+}
+
+export const proofreadMatch = (body: { team1: string[]; team2: string[]; matchType: MatchType }) =>
+  req<QueueProofreadResponse>('/queue/proofread', { method: 'POST', body: JSON.stringify(body) });
 
 // ─── Billing (legacy) ─────────────────────────────────────────────────────────
 
@@ -315,5 +337,17 @@ export async function getReservationTabHistoryPaged(params: ResTabHistoryParams 
   if (params.page)   q.set('page',   String(params.page));
   if (params.limit)  q.set('limit',  String(params.limit));
   return req<PaginatedResTabs>(`/reservation-tabs/history?${q}`);
+}
+
+export interface AnalyticsAskResponse {
+  answer: string;
+  dataUsed: unknown;
+}
+
+export async function askAnalytics(question: string, period: 'today' | 'week' | 'month' | 'year'): Promise<AnalyticsAskResponse> {
+  return req<AnalyticsAskResponse>('/analytics/ask', {
+    method: 'POST',
+    body: JSON.stringify({ question, period }),
+  });
 }
  

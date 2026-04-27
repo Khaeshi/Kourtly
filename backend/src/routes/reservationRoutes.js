@@ -14,8 +14,10 @@ import {
 } from '../utils/scheduleUtils.js';
 import { createPaymentLink } from '../lib/payments/index.js';
 import { emitCourtEvent } from '../lib/emitCourtEvent.js';
+import { transitionReservationPayment } from '../lib/reservationStateMachine.js';
 
 const router = express.Router();
+const PAYMENT_HOLD_MINUTES = Math.max(1, Number(process.env.PAYMENT_HOLD_MINUTES || 10));
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -209,6 +211,10 @@ router.post('/', async (req, res) => {
 
     res.status(201).json(reservation);
   } catch (err) {
+    if (String(err.message || '').includes('Invalid reservation status transition') ||
+        String(err.message || '').includes('Invalid payment status transition')) {
+      return res.status(409).json({ error: err.message });
+    }
     res.status(400).json({ error: err.message });
   }
 });
@@ -259,6 +265,9 @@ router.post('/:id/approve-payment', async (req, res) => {
     if (['cancelled', 'expired', 'completed'].includes(reservation.status)) {
       return res.status(400).json({ error: 'Reservation is not payable anymore.' });
     }
+    if (!['pending_admin', 'approved_waiting_payment'].includes(reservation.status)) {
+      return res.status(409).json({ error: `Cannot approve payment from status "${reservation.status}".` });
+    }
 
     if (
       reservation.paymentStatus === 'awaiting_payment' &&
@@ -270,8 +279,11 @@ router.post('/:id/approve-payment', async (req, res) => {
     }
 
     const reservationStart = new Date(`${reservation.date}T${reservation.timeSlot.split('-')[0]}:00+08:00`);
+    const holdExpiry = new Date(Date.now() + PAYMENT_HOLD_MINUTES * 60 * 1000);
     const in24h = new Date(Date.now() + 24 * 60 * 60 * 1000);
-    const expiryDate = reservationStart < in24h ? reservationStart : in24h;
+    const expiryDate = [reservationStart, holdExpiry, in24h]
+      .filter((d) => d instanceof Date && !Number.isNaN(d.getTime()))
+      .sort((a, b) => a.getTime() - b.getTime())[0];
     const payableBase = reservation.paymentOption === 'full'
       ? Number(reservation.reservationFeeAmount || 0)
       : Number(reservation.downpaymentAmount || 0);
@@ -291,10 +303,14 @@ router.post('/:id/approve-payment', async (req, res) => {
       successUrl: `${appBase}${statusPath}`,
       failureUrl: `${appBase}${statusPath}`,
       expiryDate,
+      metadata: {
+        type: 'reservation',
+        courtId: String(reservation.courtId),
+        reservationId: String(reservation._id),
+      },
     });
 
-    reservation.status = 'approved_waiting_payment';
-    reservation.paymentStatus = 'awaiting_payment';
+    transitionReservationPayment(reservation, 'approved_waiting_payment', 'awaiting_payment');
     reservation.paymentLinkId = paymentLink.id || paymentLink.payment_id || '';
     reservation.paymentUrl = paymentLink.payment_url || paymentLink.checkout_url || '';
     reservation.paymentQrString = paymentLink.qr_string || '';
@@ -313,9 +329,15 @@ router.post('/:id/approve-payment', async (req, res) => {
  */
 router.post('/:id/cancel-payment', async (req, res) => {
   try {
+    const existing = await Reservation.findOne({ _id: req.params.id, courtId: req.courtId });
+    if (!existing) return res.status(404).json({ error: 'Reservation not found.' });
+    if (!['pending_admin', 'approved_waiting_payment'].includes(existing.status)) {
+      return res.status(409).json({ error: `Cannot cancel payment from status "${existing.status}".` });
+    }
+    transitionReservationPayment(existing, 'cancelled', 'cancelled');
     const reservation = await Reservation.findOneAndUpdate(
       { _id: req.params.id, courtId: req.courtId },
-      { status: 'cancelled', paymentStatus: 'cancelled' },
+      { status: existing.status, paymentStatus: existing.paymentStatus },
       { new: true }
     );
     if (!reservation) return res.status(404).json({ error: 'Reservation not found.' });
@@ -323,6 +345,10 @@ router.post('/:id/cancel-payment', async (req, res) => {
     emitCourtEvent(req, 'analytics:refresh', { source: 'reservations' });
     res.json(reservation);
   } catch (err) {
+    if (String(err.message || '').includes('Invalid reservation status transition') ||
+        String(err.message || '').includes('Invalid payment status transition')) {
+      return res.status(409).json({ error: err.message });
+    }
     res.status(500).json({ error: err.message });
   }
 });

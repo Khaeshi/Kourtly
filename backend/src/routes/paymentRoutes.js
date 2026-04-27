@@ -5,6 +5,7 @@ import Court from '../models/Court.js';
 import PayoutTransfer from '../models/PayoutTransfer.js';
 import PaymentWebhookEvent from '../models/PaymentWebhookEvent.js';
 import { verifyWebhookSignature } from '../lib/payments/index.js';
+import { transitionReservationPayment } from '../lib/reservationStateMachine.js';
 
 const router = express.Router();
 
@@ -20,8 +21,8 @@ router.post('/cocoart/webhook', async (req, res) => {
       return res.status(401).json({ error: 'Unauthorized webhook.' });
     }
 
-    const { id, status, external_id, paid_amount } = req.body || {};
-    if (!id || !external_id) return res.status(400).json({ error: 'Missing webhook fields.' });
+    const { id, status, external_id, paid_amount, metadata = {} } = req.body || {};
+    if (!id) return res.status(400).json({ error: 'Missing webhook fields.' });
 
     const existingEvent = await PaymentWebhookEvent.findOne({ eventId: id }).lean();
     if (existingEvent?.processed) return res.json({ ok: true, deduped: true });
@@ -33,6 +34,31 @@ router.post('/cocoart/webhook', async (req, res) => {
       });
     }
 
+    if (metadata?.type === 'subscription') {
+      if (!metadata?.courtId) return res.status(400).json({ error: 'Missing subscription metadata.courtId.' });
+      if (status === 'PAID' || status === 'SETTLED') {
+        const now = new Date();
+        const nextBilling = new Date(now);
+        nextBilling.setDate(nextBilling.getDate() + 30);
+        await Court.findOneAndUpdate(
+          { _id: metadata.courtId },
+          {
+            $set: {
+              'subscription.status': 'active',
+              'subscription.startDate': now,
+              'subscription.nextBilling': nextBilling,
+            },
+          }
+        );
+      }
+      await PaymentWebhookEvent.updateOne(
+        { eventId: id },
+        { $set: { processed: true, eventType: String(status || '') } }
+      );
+      return res.json({ ok: true, kind: 'subscription' });
+    }
+
+    if (!external_id) return res.status(400).json({ error: 'Missing webhook external_id for reservation payment.' });
     const reservationId = String(external_id).split('-')[0];
     const reservation = await Reservation.findById(reservationId);
     if (!reservation) return res.status(404).json({ error: 'Reservation not found.' });
@@ -42,10 +68,15 @@ router.post('/cocoart/webhook', async (req, res) => {
     if (reservation.paymentStatus === 'paid') return res.json({ ok: true, deduped: true });
 
     if (status === 'PAID' || status === 'SETTLED') {
+      if (
+        !['approved_waiting_payment', 'pending_admin'].includes(reservation.status) ||
+        !['awaiting_payment', 'none'].includes(reservation.paymentStatus)
+      ) {
+        return res.status(409).json({ error: `Cannot mark paid from status "${reservation.status}/${reservation.paymentStatus}".` });
+      }
       const onlinePaid = Number(paid_amount || 0);
       const remaining = Math.max(0, Number(reservation.reservationFeeAmount || 0) - onlinePaid);
-      reservation.status = 'confirmed';
-      reservation.paymentStatus = 'paid';
+      transitionReservationPayment(reservation, 'confirmed', 'paid');
       reservation.amountPaidOnline = onlinePaid;
       reservation.remainingBalanceAmount = remaining;
       reservation.adminNetAmount = Math.max(0, onlinePaid - Number(reservation.maintenanceFeeAmount || 0));
@@ -100,8 +131,10 @@ router.post('/cocoart/webhook', async (req, res) => {
         source: 'payments',
       });
     } else if (status === 'EXPIRED') {
-      reservation.status = 'expired';
-      reservation.paymentStatus = 'expired';
+      if (reservation.paymentStatus === 'paid') {
+        return res.status(409).json({ error: 'Cannot expire an already paid reservation.' });
+      }
+      transitionReservationPayment(reservation, 'expired', 'expired');
       await reservation.save();
       emitCourtEventById(req, reservation.courtId, 'reservation:updated', {
         action: 'expired',
@@ -116,6 +149,10 @@ router.post('/cocoart/webhook', async (req, res) => {
 
     res.json({ ok: true });
   } catch (err) {
+    if (String(err.message || '').includes('Invalid reservation status transition') ||
+        String(err.message || '').includes('Invalid payment status transition')) {
+      return res.status(409).json({ error: err.message });
+    }
     res.status(500).json({ error: err.message });
   }
 });

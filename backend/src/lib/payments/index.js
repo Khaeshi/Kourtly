@@ -1,5 +1,9 @@
 import { createCocoartPayment, isCocoartWebhookAuthorized } from '../../services/cocoartService.js';
 
+export function getPaymentProvider() {
+  return (process.env.PAYMENT_PROVIDER || 'cocoart').toLowerCase();
+}
+
 export async function createPaymentLink({
   amount,
   description,
@@ -8,7 +12,12 @@ export async function createPaymentLink({
   successUrl,
   failureUrl,
   expiryDate,
+  metadata = {},
 }) {
+  const provider = getPaymentProvider();
+  if (provider !== 'cocoart') {
+    throw new Error(`Unsupported payment provider: ${provider}`);
+  }
   return createCocoartPayment({
     referenceId,
     amount,
@@ -17,9 +26,12 @@ export async function createPaymentLink({
     successUrl,
     failureUrl,
     expiryDate,
+    metadata,
   });
 }
 
 export function verifyWebhookSignature(payload, headers) {
+  const provider = getPaymentProvider();
+  if (provider !== 'cocoart') return false;
   return isCocoartWebhookAuthorized(headers, payload);
 }

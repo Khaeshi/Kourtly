@@ -13,6 +13,7 @@ export async function createCocoartPayment({
   successUrl,
   failureUrl,
   expiryDate,
+  metadata = {},
 }) {
   const payload = {
     reference_id: referenceId,
@@ -23,6 +24,7 @@ export async function createCocoartPayment({
     success_url: successUrl,
     failure_url: failureUrl,
     expires_at: expiryDate.toISOString(),
+    metadata,
   };
 
   const res = await fetch(`${COCOART_BASE_URL}/v1/payments`, {

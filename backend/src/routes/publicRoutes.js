@@ -8,6 +8,7 @@ import {
   ALL_SLOTS, toMinutes, getDayOfWeek,
   resolveSchedule, getBlockedSlots,
 } from '../utils/scheduleUtils.js';
+import { transitionReservationPayment } from '../lib/reservationStateMachine.js';
 
 const router = express.Router();
 
@@ -26,6 +27,10 @@ router.get('/courts', async (req, res) => {
     }).select('name slug sports courtCount location contact description logoUrl amenities').lean();
     res.json(courts);
   } catch (err) {
+    if (String(err.message || '').includes('Invalid reservation status transition') ||
+        String(err.message || '').includes('Invalid payment status transition')) {
+      return res.status(409).json({ error: err.message });
+    }
     res.status(500).json({ error: err.message });
   }
 });
@@ -225,12 +230,11 @@ router.get('/courts/:slug/reservations/:publicRef', async (req, res) => {
       reservation.paymentExpiresAt &&
       new Date(reservation.paymentExpiresAt) <= now
     ) {
+      transitionReservationPayment(reservation, 'expired', 'expired');
       await Reservation.updateOne(
         { _id: reservation._id },
-        { $set: { status: 'expired', paymentStatus: 'expired' } }
+        { $set: { status: reservation.status, paymentStatus: reservation.paymentStatus } }
       );
-      reservation.status = 'expired';
-      reservation.paymentStatus = 'expired';
     }
 
     res.json({

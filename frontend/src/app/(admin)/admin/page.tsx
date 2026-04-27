@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { Users, Swords, Building2, TrendingUp, Calendar, ShoppingBag } from 'lucide-react';
 import { useState, useEffect, useCallback } from 'react';
 import { format, parseISO } from 'date-fns';
-import { getPlayers, getQueue } from '@/lib/api';
+import { askAnalytics, getPlayers, getQueue } from '@/lib/api';
 import { API_BASE } from '@/lib/config';
 import type { Player, Match } from '@/lib/api';
 import {
@@ -99,6 +99,10 @@ export default function AdminDashboard() {
   const [analyticsError,   setAnalyticsError]   = useState('');
   const [payoutTransfers, setPayoutTransfers] = useState<any[]>([]);
   const [payoutStatusFilter, setPayoutStatusFilter] = useState<'all' | 'queued' | 'succeeded' | 'failed'>('all');
+  const [aiQuestion, setAiQuestion] = useState('');
+  const [aiAnswer, setAiAnswer] = useState('');
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState('');
 
   // Load live counts
   useEffect(() => {
@@ -137,6 +141,22 @@ export default function AdminDashboard() {
   useEffect(() => {
     loadPayoutTransfers();
   }, [loadPayoutTransfers]);
+
+  const onAskAnalytics = useCallback(async () => {
+    const question = aiQuestion.trim();
+    if (!question) return;
+    setAiLoading(true);
+    setAiError('');
+    try {
+      const result = await askAnalytics(question, period);
+      setAiAnswer(result.answer);
+    } catch (err: any) {
+      setAiError(err.message || 'AI unavailable — check the charts above.');
+      setAiAnswer('');
+    } finally {
+      setAiLoading(false);
+    }
+  }, [aiQuestion, period]);
 
   // ── Derived stat cards (merges live + analytics) ───────────────────────────
   const statCards = [
@@ -439,6 +459,35 @@ export default function AdminDashboard() {
       </div>
 
       {/* ── Quick Actions (existing) ── */}
+      <div className="bg-white border border-gray-200 rounded-xl px-6 py-5 mb-6">
+        <p className="text-sm font-semibold text-gray-900 mb-3">Ask Analytics</p>
+        <div className="flex flex-col gap-2">
+          <div className="flex gap-2">
+            <input
+              value={aiQuestion}
+              onChange={(e) => setAiQuestion(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter' && !aiLoading) onAskAnalytics(); }}
+              placeholder="Ask anything about your court data..."
+              className="flex-1 border border-gray-200 rounded-md px-3 py-2 text-sm outline-none focus:border-gray-400"
+            />
+            <button
+              onClick={onAskAnalytics}
+              disabled={aiLoading || !aiQuestion.trim()}
+              className="px-3 py-2 rounded-md bg-gray-900 text-white text-xs font-medium disabled:opacity-50"
+            >
+              {aiLoading ? 'Asking...' : 'Ask'}
+            </button>
+          </div>
+          {aiError && <p className="text-xs text-red-600">{aiError}</p>}
+          {aiAnswer && (
+            <div className="bg-gray-50 border border-gray-200 rounded-md p-3">
+              <p className="text-xs text-gray-400 mb-1">Powered by AI</p>
+              <p className="text-sm text-gray-700 leading-relaxed">{aiAnswer}</p>
+            </div>
+          )}
+        </div>
+      </div>
+
       <div className="bg-white border border-gray-200 rounded-xl px-6 py-5 mb-6">
         <p className="text-sm font-semibold text-gray-900 mb-4">Quick Actions</p>
         <div className="actions-grid grid grid-cols-4 gap-2.5">

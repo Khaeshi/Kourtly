@@ -4,6 +4,8 @@ import { createServer } from 'node:http';
 import { Server } from 'socket.io';
 import app from './src/app.js';
 import { validateCoreEnv, validatePaymentEnv } from './src/utils/envValidation.js';
+import { startExpirePendingPaymentsJob } from './src/jobs/expirePendingPayments.js';
+import { registerWeeklyReportCron } from './src/cron/weeklyReport.js';
 
 dotenv.config();
 validateCoreEnv();
@@ -31,5 +33,8 @@ io.on('connection', (socket) => {
   const courtId = socket.handshake?.auth?.courtId;
   if (courtId) socket.join(`court:${courtId}`);
 });
+
+startExpirePendingPaymentsJob(io);
+registerWeeklyReportCron();
 
 httpServer.listen(PORT, '0.0.0.0', () => console.log(`Server running on port ${PORT}`));

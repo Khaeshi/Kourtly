@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
-import { getPlayers, getQueue, getHistory, getSplittableItems, createMatch, updateMatch, deleteMatch } from '@/lib/api';
+import { getPlayers, getQueue, getHistory, getSplittableItems, createMatch, updateMatch, deleteMatch, proofreadMatch } from '@/lib/api';
 import type { Player, Match, MatchType, Level, CatalogItem } from '@/lib/api';
 import { useSocketEvent } from '@/hooks/useSocketEvent';
 
@@ -267,6 +267,8 @@ export default function QueuePage() {
   const [submitting,   setSubmitting]   = useState(false);
   const [matchMode,    setMatchMode]    = useState<MatchMode>('balanced');
   const [matchTypePref,setMatchTypePref]= useState<MatchTypePreference>('auto');
+  const [proofread,    setProofread]    = useState<{ verdict: 'fair' | 'review'; explanation: string; aiUsed: boolean } | null>(null);
+  const [proofreadBusy,setProofreadBusy]= useState(false);
 
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -285,7 +287,10 @@ export default function QueuePage() {
 
   const handleGenerate = useCallback(() => {
     const m = generateMatch(available, matchMode, matchTypePref);
-    setGenerated(m); setEdited(m ? {...m,team1:[...m.team1],team2:[...m.team2]} : null); setEditingSlot(null);
+    setGenerated(m);
+    setEdited(m ? {...m,team1:[...m.team1],team2:[...m.team2]} : null);
+    setEditingSlot(null);
+    setProofread(null);
   }, [available, matchMode, matchTypePref]);
 
   const handleSwap = (p: Player) => {
@@ -311,6 +316,31 @@ export default function QueuePage() {
   const swapCandidates = editingSlot && edited
     ? players.filter(p => ![...edited.team1,...edited.team2].map(x=>x._id).includes(p._id))
     : [];
+
+  const runProofread = useCallback(async () => {
+    if (!edited) return;
+    setProofreadBusy(true);
+    try {
+      const result = await proofreadMatch({
+        team1: edited.team1.map((p) => p._id),
+        team2: edited.team2.map((p) => p._id),
+        matchType: edited.matchType,
+      });
+      setProofread({
+        verdict: result.verdict,
+        explanation: result.explanation,
+        aiUsed: result.aiUsed,
+      });
+    } catch {
+      setProofread({
+        verdict: 'review',
+        explanation: 'AI proofread is unavailable right now. You can still proceed with your strict level rules.',
+        aiUsed: false,
+      });
+    } finally {
+      setProofreadBusy(false);
+    }
+  }, [edited]);
 
   // ── Panels ─────────────────────────────────────────────────────────────────
 
@@ -496,6 +526,30 @@ export default function QueuePage() {
             <Btn v="gold"  style={{ flex:1 }} onClick={handleSubmit} disabled={submitting}>
               {submitting ? 'Submitting...' : 'Submit to Queue'}
             </Btn>
+          </div>
+
+          <div style={{ border:'1px solid #e5e7eb', borderRadius:'8px', padding:'0.75rem', background:'#fcfcfc' }}>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'0.45rem' }}>
+              <span style={{ fontSize:'0.65rem', fontWeight:600, letterSpacing:'0.1em', textTransform:'uppercase', color:'#9ca3af' }}>
+                AI Match Proofread
+              </span>
+              <Btn v="ghost" onClick={runProofread} disabled={proofreadBusy} style={{ padding:'0.2rem 0.5rem', fontSize:'0.68rem' }}>
+                {proofreadBusy ? 'Checking...' : 'Check Fairness'}
+              </Btn>
+            </div>
+            {!proofread ? (
+              <p style={{ fontSize:'0.75rem', color:'#9ca3af' }}>Run proofread to get a fairness explanation for this generated match.</p>
+            ) : (
+              <div>
+                <p style={{ fontSize:'0.72rem', fontWeight:600, color: proofread.verdict === 'fair' ? '#16a34a' : '#d97706', marginBottom:'0.3rem' }}>
+                  Verdict: {proofread.verdict === 'fair' ? 'Fair' : 'Needs Review'}
+                </p>
+                <p style={{ fontSize:'0.76rem', color:'#4b5563', lineHeight:1.45 }}>{proofread.explanation}</p>
+                <p style={{ fontSize:'0.65rem', color:'#9ca3af', marginTop:'0.35rem' }}>
+                  {proofread.aiUsed ? 'AI-assisted review' : 'Heuristic fallback review'}
+                </p>
+              </div>
+            )}
           </div>
         </div>
       )}
