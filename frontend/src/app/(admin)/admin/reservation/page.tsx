@@ -4,6 +4,7 @@ import { sileo } from 'sileo';
 import { getReservations, updateReservation, deleteReservation, approveReservationPayment, cancelReservationPayment } from '@/lib/api';
 import type { Reservation } from '@/lib/api';
 import { Button } from '@/app/components/ui/Button';
+import { useSocketEvent } from '@/hooks/useSocketEvent';
 
 // ── Constants (unchanged) ─────────────────────────────────────────────────────
 const STATUS_STYLE: Record<string, { label: string; text: string }> = {
@@ -214,6 +215,7 @@ export default function ReservationsPage() {
   }, [dateFilter, statusFilter]);
 
   useEffect(() => { load(); }, [load]);
+  useSocketEvent('reservation:updated', useCallback(() => { load(); }, [load]));
 
   const filtered = reservations.filter(r =>
     courtFilter === 'all' || String(r.court) === courtFilter

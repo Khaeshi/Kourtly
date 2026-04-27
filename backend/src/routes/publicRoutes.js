@@ -249,7 +249,7 @@ router.get('/courts/:slug/reservations/:publicRef', async (req, res) => {
       maintenanceFeeAmount: reservation.maintenanceFeeAmount,
       amountPaidOnline: reservation.amountPaidOnline,
       remainingBalanceAmount: reservation.remainingBalanceAmount,
-      xenditInvoiceUrl: reservation.xenditInvoiceUrl,
+      paymentUrl: reservation.paymentUrl,
       paymentExpiresAt: reservation.paymentExpiresAt,
     });
   } catch (err) {

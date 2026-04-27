@@ -11,7 +11,7 @@ export function validateCoreEnv() {
 }
 
 export function validatePaymentEnv() {
-  const required = ['XENDIT_SECRET_KEY', 'XENDIT_WEBHOOK_TOKEN', 'APP_BASE_URL'];
+  const required = ['COCOART_API_KEY', 'COCOART_WEBHOOK_SECRET', 'APP_BASE_URL'];
   const missingVars = missing(required);
 
   if (missingVars.length) {

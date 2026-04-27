@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 import { sileo } from 'sileo';
+import { useSocketEvent } from '@/hooks/useSocketEvent';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -442,6 +443,7 @@ export default function SchedulePage() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+  useSocketEvent('schedule:updated', useCallback(() => { load(); }, [load]));
 
   // deleteBlock
   const deleteBlock = async (id: string) => {

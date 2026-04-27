@@ -1,6 +1,7 @@
 import express from 'express';
 import { Resend } from 'resend';
 import Reservation   from '../models/Reservation.js';
+import Court from '../models/Court.js';
 import ScheduleRule  from '../models/ScheduleRule.js';
 import ScheduleBlock from '../models/ScheduleBlock.js';
 import { buildConfirmationEmail } from '../emails/confirmationEmail.js';
@@ -11,7 +12,8 @@ import {
   resolveSchedule,
   getBlockedSlots,
 } from '../utils/scheduleUtils.js';
-import { createInvoice } from '../services/xenditService.js';
+import { createPaymentLink } from '../lib/payments/index.js';
+import { emitCourtEvent } from '../lib/emitCourtEvent.js';
 
 const router = express.Router();
 
@@ -235,6 +237,8 @@ router.put('/:id', async (req, res) => {
         console.error('[email] Failed:', err.message)
       );
     }
+    emitCourtEvent(req, 'reservation:updated', { action: 'updated', reservationId: reservation._id, status: reservation.status });
+    emitCourtEvent(req, 'analytics:refresh', { source: 'reservations' });
     res.json(reservation);
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -258,7 +262,7 @@ router.post('/:id/approve-payment', async (req, res) => {
 
     if (
       reservation.paymentStatus === 'awaiting_payment' &&
-      reservation.xenditInvoiceUrl &&
+      reservation.paymentUrl &&
       reservation.paymentExpiresAt &&
       new Date(reservation.paymentExpiresAt) > new Date()
     ) {
@@ -274,22 +278,29 @@ router.post('/:id/approve-payment', async (req, res) => {
     const amount = Number((payableBase + Number(reservation.maintenanceFeeAmount || 0)).toFixed(2));
 
     const appBase = process.env.APP_BASE_URL || 'http://localhost:3000';
-    const invoice = await createInvoice({
-      externalId: `${reservation._id}-${Date.now()}`,
+    const court = await Court.findById(reservation.courtId).select('slug').lean();
+    if (!court?.slug) {
+      return res.status(400).json({ error: 'Court slug not found for reservation payment redirect.' });
+    }
+    const statusPath = `/book/${court.slug}/status/${reservation.publicRef}`;
+    const paymentLink = await createPaymentLink({
+      referenceId: `${reservation._id}-${Date.now()}`,
       amount,
       description: `Reservation ${reservation.publicRef}`,
       payerEmail: reservation.email,
-      successRedirectUrl: `${appBase}/book/status/${reservation.publicRef}`,
-      failureRedirectUrl: `${appBase}/book/status/${reservation.publicRef}`,
+      successUrl: `${appBase}${statusPath}`,
+      failureUrl: `${appBase}${statusPath}`,
       expiryDate,
     });
 
     reservation.status = 'approved_waiting_payment';
     reservation.paymentStatus = 'awaiting_payment';
-    reservation.xenditInvoiceId = invoice.id || '';
-    reservation.xenditInvoiceUrl = invoice.invoice_url || '';
+    reservation.paymentLinkId = paymentLink.id || paymentLink.payment_id || '';
+    reservation.paymentUrl = paymentLink.payment_url || paymentLink.checkout_url || '';
+    reservation.paymentQrString = paymentLink.qr_string || '';
     reservation.paymentExpiresAt = expiryDate;
     await reservation.save();
+    emitCourtEvent(req, 'reservation:updated', { action: 'awaiting_payment', reservationId: reservation._id, status: reservation.status });
     res.json(reservation);
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -308,6 +319,8 @@ router.post('/:id/cancel-payment', async (req, res) => {
       { new: true }
     );
     if (!reservation) return res.status(404).json({ error: 'Reservation not found.' });
+    emitCourtEvent(req, 'reservation:updated', { action: 'cancelled', reservationId: reservation._id, status: reservation.status });
+    emitCourtEvent(req, 'analytics:refresh', { source: 'reservations' });
     res.json(reservation);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -322,6 +335,8 @@ router.delete('/:id', async (req, res) => {
     const deleted = await Reservation.findByIdAndDelete(
       {_id: req.params.id, courtId: req.courtId });
     if (!deleted) return res.status(404).json({ error: 'Reservation not found.' });
+    emitCourtEvent(req, 'reservation:updated', { action: 'deleted', reservationId: req.params.id });
+    emitCourtEvent(req, 'analytics:refresh', { source: 'reservations' });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });

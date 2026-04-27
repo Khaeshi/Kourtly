@@ -7,12 +7,12 @@ Reservation payment lifecycle (backend)
 
 Extended Reservation with payment fields/statuses in backend/src/models/Reservation.js
 New statuses include pending_admin, approved_waiting_payment, expired, etc.
-Added payment metadata: option, fee amounts, Xendit invoice refs, expiry, paid timestamps
-Xendit integration skeleton (backend)
+Added payment metadata: option, fee amounts, payment link refs, expiry, paid timestamps
+Payment provider integration skeleton (backend)
 
-Added backend/src/services/xenditService.js
-Added invoice creation using Xendit API
-Added webhook token verification (x-callback-token)
+Added backend/src/services/cocoartService.js
+Added invoice creation using Cocoart API
+Added webhook token verification
 Admin approve/cancel payment flow
 
 Added POST /api/reservations/:id/approve-payment
@@ -29,7 +29,7 @@ Marks expired if TTL already passed when fetched
 Webhook processing
 
 Added backend/src/routes/paymentRoutes.js
-Added POST /api/payments/xendit/webhook
+Added POST /api/payments/cocoart/webhook
 validates callback token
 dedupes already-paid reservation
 sets reservation confirmed on paid
@@ -88,9 +88,9 @@ account number (stored as last4 only)
 Disbursement logging + execution hook
 
 Added PayoutTransfer model to track payout attempts/status.
-On successful Xendit payment webhook:
+On successful Cocoart payment webhook:
 create payout transfer record
-attempt disbursement via Xendit if recipient configured
+attempt disbursement via provider if recipient configured
 persist success/failure and disbursement ID
 Compatibility-safe behavior fix
 
@@ -160,7 +160,7 @@ New admin endpoint: POST /api/payout-transfers/:id/retry
 Behavior:
 blocks retry if already succeeded
 uses configured court recipient code
-re-attempts disbursement via Xendit
+re-attempts disbursement via provider
 updates transfer record to succeeded or keeps failure info
 Admin dashboard now shows a Retry button for failed transfers.
 Webhook idempotency persistence test
@@ -198,7 +198,7 @@ Runtime env validation
 Added backend/src/utils/envValidation.js
 Startup now validates:
 MONGODB_URI (required always)
-XENDIT_SECRET_KEY, XENDIT_WEBHOOK_TOKEN, APP_BASE_URL
+COCOART_API_KEY, COCOART_WEBHOOK_SECRET, APP_BASE_URL
 Behavior:
 development = warning on missing payment env
 production = fail fast if payment env missing

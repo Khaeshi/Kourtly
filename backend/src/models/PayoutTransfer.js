@@ -6,7 +6,7 @@ const PayoutTransferSchema = new mongoose.Schema({
   recipientCode: { type: String, default: '' },
   amount: { type: Number, required: true },
   status: { type: String, enum: ['queued', 'succeeded', 'failed'], default: 'queued' },
-  xenditDisbursementId: { type: String, default: '', index: true },
+  providerDisbursementId: { type: String, default: '', index: true },
   failureReason: { type: String, default: '' },
 }, { timestamps: true });
 

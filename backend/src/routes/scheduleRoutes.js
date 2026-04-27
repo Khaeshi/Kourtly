@@ -2,6 +2,7 @@ import express from 'express';
 import ScheduleRule  from '../models/ScheduleRule.js';
 import ScheduleBlock from '../models/ScheduleBlock.js';
 import { getDayOfWeek, resolveSchedule, ALL_SLOTS } from '../utils/scheduleUtils.js';
+import { emitCourtEvent } from '../lib/emitCourtEvent.js';
 
 const router = express.Router();
 
@@ -68,6 +69,7 @@ router.put('/rules/:dayOfWeek', async (req, res) => {
       { new: true, upsert: true, runValidators: true }
     );
 
+    emitCourtEvent(req, 'schedule:updated', { action: 'rule_updated', dayOfWeek });
     res.json({ ...rule.toObject(), dayName: DAY_NAMES[rule.dayOfWeek] });
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -104,6 +106,7 @@ router.post('/blocks', async (req, res) => {
     }
 
     const block = await ScheduleBlock.create({ courtId: req.courtId, date, courts, blockType, startTime, endTime, reason });
+    emitCourtEvent(req, 'schedule:updated', { action: 'block_created', blockId: block._id });
     res.status(201).json(block);
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -118,6 +121,7 @@ router.delete('/blocks/:id', async (req, res) => {
   try {
     const deleted = await ScheduleBlock.findByIdAndDelete({ _id: req.params.id, courtId: req.courtId });
     if (!deleted) return res.status(404).json({ error: 'Block not found.' });
+    emitCourtEvent(req, 'schedule:updated', { action: 'block_deleted', blockId: req.params.id });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });

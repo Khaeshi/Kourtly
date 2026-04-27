@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { getPlayers, getQueue, getHistory, getSplittableItems, createMatch, updateMatch, deleteMatch } from '@/lib/api';
 import type { Player, Match, MatchType, Level, CatalogItem } from '@/lib/api';
+import { useSocketEvent } from '@/hooks/useSocketEvent';
 
 const LEVEL_ORDER: Record<Level, number> = { A:0, B:1, C:2, D:3 };
 const LEVEL_COLOR: Record<Level, string>  = { A:'#d97706', B:'#16a34a', C:'#0891b2', D:'#7c3aed' };
@@ -274,6 +275,9 @@ export default function QueuePage() {
   }, []);
 
   useEffect(() => { loadAll(); }, [loadAll]);
+  useSocketEvent('queue:updated', useCallback(() => { loadAll(); }, [loadAll]));
+  useSocketEvent('players:updated', useCallback(() => { loadAll(); }, [loadAll]));
+  useSocketEvent('items:updated', useCallback(() => { loadAll(); }, [loadAll]));
 
   const busyIds   = new Set(queueList.flatMap(m => [...m.team1,...m.team2].map(p=>p._id)));
   const available = players.filter(p => !busyIds.has(p._id));

@@ -1,9 +1,10 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { sileo } from 'sileo';
 import { getPlayers, createPlayer, updatePlayer, deletePlayer } from '@/lib/api';
 import type { Player, Level, Gender } from '@/lib/api';
 import { Button } from '@/app/components/ui/Button';
+import { useSocketEvent } from '@/hooks/useSocketEvent';
 
 const LEVEL_COLOR: Record<Level, string> = { A: '#e8c84a', B: '#8BC34A', C: '#4db8a0', D: '#7a9cbf' };
 const LEVEL_BG:    Record<Level, string> = { A: 'rgba(232,200,74,0.1)', B: 'rgba(139,195,74,0.1)', C: 'rgba(77,184,160,0.1)', D: 'rgba(122,156,191,0.1)' };
@@ -26,8 +27,13 @@ export default function PlayersPage() {
   const [editForm, setEditForm] = useState<PlayerForm>(empty);
   const [showAdd,  setShowAdd]  = useState(false);
 
-  useEffect(() => { load(); }, []);
-  const load = async () => { setLoading(true); setPlayers(await getPlayers()); setLoading(false); };
+  const load = useCallback(async () => {
+    setLoading(true);
+    setPlayers(await getPlayers());
+    setLoading(false);
+  }, []);
+  useEffect(() => { load(); }, [load]);
+  useSocketEvent('players:updated', useCallback(() => { load(); }, [load]));
 
   const handleAdd = async () => {
     if (!form.name.trim() || !form.age) return;

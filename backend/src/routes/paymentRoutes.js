@@ -4,14 +4,19 @@ import ReservationTab from '../models/ReservationTab.js';
 import Court from '../models/Court.js';
 import PayoutTransfer from '../models/PayoutTransfer.js';
 import PaymentWebhookEvent from '../models/PaymentWebhookEvent.js';
-import { isWebhookAuthorized } from '../services/xenditService.js';
-import { createDisbursement } from '../services/xenditService.js';
+import { verifyWebhookSignature } from '../lib/payments/index.js';
 
 const router = express.Router();
 
-router.post('/xendit/webhook', async (req, res) => {
+function emitCourtEventById(req, courtId, event, payload = {}) {
+  const io = req.app.get('io');
+  if (!io || !courtId) return;
+  io.to(`court:${courtId}`).emit(event, payload);
+}
+
+router.post('/cocoart/webhook', async (req, res) => {
   try {
-    if (!isWebhookAuthorized(req.headers)) {
+    if (!verifyWebhookSignature(req.body, req.headers)) {
       return res.status(401).json({ error: 'Unauthorized webhook.' });
     }
 
@@ -31,7 +36,7 @@ router.post('/xendit/webhook', async (req, res) => {
     const reservationId = String(external_id).split('-')[0];
     const reservation = await Reservation.findById(reservationId);
     if (!reservation) return res.status(404).json({ error: 'Reservation not found.' });
-    if (reservation.xenditInvoiceId && reservation.xenditInvoiceId !== id) {
+    if (reservation.paymentLinkId && reservation.paymentLinkId !== id) {
       return res.status(409).json({ error: 'Invoice mismatch.' });
     }
     if (reservation.paymentStatus === 'paid') return res.json({ ok: true, deduped: true });
@@ -66,14 +71,13 @@ router.post('/xendit/webhook', async (req, res) => {
               reservationFee: Number(reservation.reservationFeeAmount || 0),
               paidOnline: onlinePaid,
               remainingBalance: remaining,
-              source: 'xendit',
+              source: 'cocoart',
             },
           },
         },
         { upsert: true, new: true }
       );
 
-      // Platform collect then disburse: transfer admin net when recipient configured
       const transfer = await PayoutTransfer.create({
         courtId: reservation.courtId,
         reservationId: reservation._id,
@@ -81,32 +85,28 @@ router.post('/xendit/webhook', async (req, res) => {
         amount: Number(reservation.adminNetAmount || 0),
         status: 'queued',
       });
-
       const court = await Court.findById(reservation.courtId).lean();
-      const recipientCode = court?.payout?.recipientCode || '';
-      if (recipientCode && Number(reservation.adminNetAmount || 0) > 0) {
-        try {
-          const dis = await createDisbursement({
-            externalId: `rsv-${reservation._id}-${Date.now()}`,
-            amount: Number(reservation.adminNetAmount || 0),
-            recipientCode,
-            description: `Reservation ${reservation.publicRef} payout`,
-          });
-          transfer.status = 'succeeded';
-          transfer.recipientCode = recipientCode;
-          transfer.xenditDisbursementId = dis.id || '';
-          await transfer.save();
-        } catch (err) {
-          transfer.status = 'failed';
-          transfer.recipientCode = recipientCode;
-          transfer.failureReason = err.message || 'Disbursement failed';
-          await transfer.save();
-        }
-      }
+      transfer.recipientCode = court?.payout?.recipientCode || '';
+      await transfer.save();
+      emitCourtEventById(req, reservation.courtId, 'reservation:updated', {
+        action: 'paid',
+        reservationId: reservation._id,
+      });
+      emitCourtEventById(req, reservation.courtId, 'billing:tab_updated', {
+        action: 'reservation_synced',
+        reservationId: reservation._id,
+      });
+      emitCourtEventById(req, reservation.courtId, 'analytics:refresh', {
+        source: 'payments',
+      });
     } else if (status === 'EXPIRED') {
       reservation.status = 'expired';
       reservation.paymentStatus = 'expired';
       await reservation.save();
+      emitCourtEventById(req, reservation.courtId, 'reservation:updated', {
+        action: 'expired',
+        reservationId: reservation._id,
+      });
     }
 
     await PaymentWebhookEvent.updateOne(

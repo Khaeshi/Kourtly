@@ -188,7 +188,7 @@ export interface Reservation {
   remainingBalanceAmount?: number;
   paymentStatus?: 'none' | 'awaiting_payment' | 'paid' | 'expired' | 'failed' | 'cancelled';
   paymentExpiresAt?: string | null;
-  xenditInvoiceUrl?: string;
+  paymentUrl?: string;
   notes: string;
   createdAt: string;
   updatedAt: string;

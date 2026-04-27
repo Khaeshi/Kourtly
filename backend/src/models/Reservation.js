@@ -43,9 +43,9 @@ const ReservationSchema = new mongoose.Schema({
   },
   paymentExpiresAt: { type: Date, default: null },
   paidAt: { type: Date, default: null },
-  xenditInvoiceId: { type: String, default: '', index: true },
-  xenditInvoiceUrl: { type: String, default: '' },
-  xenditQrString: { type: String, default: '' },
+  paymentLinkId: { type: String, default: '', index: true },
+  paymentUrl: { type: String, default: '' },
+  paymentQrString: { type: String, default: '' },
 }, { timestamps: true });
 
 ReservationSchema.index({ courtId: 1, date: 1, status: 1 });

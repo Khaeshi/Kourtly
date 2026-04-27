@@ -16,7 +16,7 @@ type StatusData = {
   maintenanceFeeAmount: number;
   amountPaidOnline: number;
   remainingBalanceAmount: number;
-  xenditInvoiceUrl: string;
+  paymentUrl: string;
   paymentExpiresAt: string | null;
 };
 
@@ -54,7 +54,7 @@ export default function ReservationStatusPage({
   if (loading) return <div className="min-h-screen bg-[#080c04] text-white/60 p-8">Loading reservation status...</div>;
   if (error || !data) return <div className="min-h-screen bg-[#080c04] text-red-400 p-8">{error || 'Not found'}</div>;
 
-  const showPay = data.status === 'approved_waiting_payment' && data.paymentStatus === 'awaiting_payment' && !!data.xenditInvoiceUrl;
+  const showPay = data.status === 'approved_waiting_payment' && data.paymentStatus === 'awaiting_payment' && !!data.paymentUrl;
 
   return (
     <div className="min-h-screen bg-[#080c04] text-white p-6">
@@ -73,7 +73,7 @@ export default function ReservationStatusPage({
 
         {showPay && (
           <a
-            href={data.xenditInvoiceUrl}
+            href={data.paymentUrl}
             target="_blank"
             rel="noreferrer"
             className="inline-block px-4 py-2 rounded bg-blue-500 text-black font-semibold no-underline"

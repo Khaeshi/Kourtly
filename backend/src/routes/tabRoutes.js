@@ -1,5 +1,6 @@
 import express from 'express';
 import Tab from '../models/Tab.js';
+import { emitCourtEvent } from '../lib/emitCourtEvent.js';
 
 const router = express.Router();
 
@@ -78,6 +79,7 @@ router.post('/', async (req, res) => {
     if (existing) return res.status(400).json({ error: 'Player already has an open tab' });
     const tab = await Tab.create({ courtId: req.courtId, player: req.body.player, items: [], total: 0 });
     await tab.populate('player', 'name level');
+    emitCourtEvent(req, 'billing:tab_updated', { action: 'opened', tabId: tab._id });
     res.status(201).json(tab);
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -98,6 +100,7 @@ router.post('/:id/items', async (req, res) => {
     ).populate('player', 'name level');
 
     if (!tab) return res.status(404).json({ error: 'Tab not found' });
+    emitCourtEvent(req, 'billing:tab_updated', { action: 'item_added', tabId: tab._id });
     res.json(tab);
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -149,6 +152,7 @@ router.post('/split', async (req, res) => {
       results.push(updated);
     }
 
+    emitCourtEvent(req, 'billing:tab_updated', { action: 'split_item_added', tabIds: results.map(t => t?._id).filter(Boolean) });
     res.json(results);
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -172,6 +176,7 @@ router.delete('/:id/items/:itemIndex', async (req, res) => {
       { new: true }
     ).populate('player', 'name level');
 
+    emitCourtEvent(req, 'billing:tab_updated', { action: 'item_removed', tabId: updated?._id });
     res.json(updated);
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -189,6 +194,8 @@ router.put('/:id/unpaid', async (req, res) => {
       { new: true }
     ).populate('player', 'name level');
     if (!tab) return res.status(404).json({ error: 'Tab not found' });
+    emitCourtEvent(req, 'billing:tab_paid', { action: 'marked_unpaid', tabId: tab._id });
+    emitCourtEvent(req, 'analytics:refresh', { source: 'tabs' });
     res.json(tab);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -204,6 +211,8 @@ router.put('/:id/pay-unpaid', async (req, res) => {
       { new: true }
     ).populate('player', 'name level');
     if (!tab) return res.status(404).json({ error: 'Tab not found' });
+    emitCourtEvent(req, 'billing:tab_paid', { action: 'unpaid_collected', tabId: tab._id });
+    emitCourtEvent(req, 'analytics:refresh', { source: 'tabs' });
     res.json(tab);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -219,6 +228,8 @@ router.put('/:id/pay', async (req, res) => {
       { new: true }
     ).populate('player', 'name level');
     if (!tab) return res.status(404).json({ error: 'Tab not found' });
+    emitCourtEvent(req, 'billing:tab_paid', { action: 'paid', tabId: tab._id });
+    emitCourtEvent(req, 'analytics:refresh', { source: 'tabs' });
     res.json(tab);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -229,6 +240,7 @@ router.put('/:id/pay', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   try {
     await Tab.findByIdAndDelete({ _id: req.params.id, courtId: req.courtId });
+    emitCourtEvent(req, 'billing:tab_updated', { action: 'deleted', tabId: req.params.id });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });

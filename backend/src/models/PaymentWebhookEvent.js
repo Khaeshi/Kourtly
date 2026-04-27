@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 
 const PaymentWebhookEventSchema = new mongoose.Schema({
-  provider: { type: String, default: 'xendit', index: true },
+  provider: { type: String, default: 'cocoart', index: true },
   eventId: { type: String, required: true, unique: true, index: true },
   eventType: { type: String, default: '' },
   reservationId: { type: mongoose.Schema.Types.ObjectId, ref: 'Reservation', default: null },

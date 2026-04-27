@@ -1,5 +1,7 @@
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
+import { createServer } from 'node:http';
+import { Server } from 'socket.io';
 import app from './src/app.js';
 import { validateCoreEnv, validatePaymentEnv } from './src/utils/envValidation.js';
 
@@ -12,4 +14,22 @@ mongoose.connect(process.env.MONGODB_URI)
   .catch(err => console.error('MongoDB connection failed:', err));
 
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, '0.0.0.0', () => console.log(`Server running on port ${PORT}`));
+const httpServer = createServer(app);
+const io = new Server(httpServer, {
+  cors: {
+    origin: [
+      'http://localhost:3000',
+      'https://badminton-scbc.vercel.app',
+    ],
+    credentials: true,
+  },
+});
+
+app.set('io', io);
+
+io.on('connection', (socket) => {
+  const courtId = socket.handshake?.auth?.courtId;
+  if (courtId) socket.join(`court:${courtId}`);
+});
+
+httpServer.listen(PORT, '0.0.0.0', () => console.log(`Server running on port ${PORT}`));

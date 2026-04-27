@@ -1,9 +1,10 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { sileo } from 'sileo';
 import { getAllItems, createItem, updateItem, deleteItem } from '@/lib/api';
 import type { CatalogItem } from '@/lib/api';
 import { Button } from '@/app/components/ui/Button';
+import { useSocketEvent } from '@/hooks/useSocketEvent';
 
 // ── Constants (unchanged) ─────────────────────────────────────────────────────
 const CATEGORIES = ['general', 'drinks', 'equipment', 'food', 'court fee'];
@@ -53,8 +54,13 @@ export default function ItemsPage() {
   const [showAdd,  setShowAdd]  = useState(false);
   const [filter,   setFilter]   = useState('all');
 
-  useEffect(() => { load(); }, []);
-  const load = async () => { setLoading(true); setItems(await getAllItems()); setLoading(false); };
+  const load = useCallback(async () => {
+    setLoading(true);
+    setItems(await getAllItems());
+    setLoading(false);
+  }, []);
+  useEffect(() => { load(); }, [load]);
+  useSocketEvent('items:updated', useCallback(() => { load(); }, [load]));
 
   const handleAdd = async () => {
     if (!form.name.trim() || !form.price) return;

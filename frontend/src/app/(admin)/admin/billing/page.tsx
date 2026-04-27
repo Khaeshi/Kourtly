@@ -10,6 +10,7 @@ import {
   getTabHistoryPaged, getReservationTabHistoryPaged,
 } from '@/lib/api';
 import type { Player, CatalogItem, Tab, ReservationTab, PaginatedTabs, PaginatedResTabs } from '@/lib/api';
+import { useSocketEvent } from '@/hooks/useSocketEvent';
 
 // ── Constants (unchanged) ─────────────────────────────────────────────────────
 const LEVEL_COLOR: Record<string, string> = {
@@ -313,6 +314,9 @@ export default function BillingPage() {
 
   useEffect(() => { loadAll(); }, [loadAll]);
   useEffect(() => { if (view === 'history') loadHistory(); }, [view, loadHistory]);
+  useSocketEvent('billing:tab_updated', useCallback(() => { loadAll(); }, [loadAll]));
+  useSocketEvent('billing:tab_paid', useCallback(() => { loadAll(); loadHistory(); }, [loadAll, loadHistory]));
+  useSocketEvent('reservation:updated', useCallback(() => { loadAll(); }, [loadAll]));
 
   const playersWithTab   = new Set(openTabs.map(t => t.player._id));
   const availablePlayers = players.filter(p => !playersWithTab.has(p._id));

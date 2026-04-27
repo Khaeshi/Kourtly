@@ -1,6 +1,7 @@
 import express from 'express';
 import ReservationTab from '../models/ReservationTab.js';
 import Reservation    from '../models/Reservation.js';
+import { emitCourtEvent } from '../lib/emitCourtEvent.js';
 
 const router = express.Router();
 
@@ -44,7 +45,7 @@ async function ensureTab(reservation) {
       reservationFee,
       paidOnline,
       remainingBalance,
-      source: 'xendit',
+      source: 'cocoart',
     },
   });
 }
@@ -135,6 +136,7 @@ router.post('/:id/items', async (req, res) => {
     );
 
     if (!tab) return res.status(404).json({ error: 'Tab not found' });
+    emitCourtEvent(req, 'billing:tab_updated', { action: 'reservation_item_added', tabId: tab._id });
     res.json(tab);
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -161,6 +163,7 @@ router.delete('/:id/items/:itemIndex', async (req, res) => {
       { new: true }
     );
 
+    emitCourtEvent(req, 'billing:tab_updated', { action: 'reservation_item_removed', tabId: updated?._id });
     res.json(updated);
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -178,6 +181,8 @@ router.put('/:id/unpaid', async (req, res) => {
       { status: 'unpaid' }, { new: true }
     );
     if (!tab) return res.status(404).json({ error: 'Tab not found' });
+    emitCourtEvent(req, 'billing:tab_paid', { action: 'reservation_marked_unpaid', tabId: tab._id });
+    emitCourtEvent(req, 'analytics:refresh', { source: 'reservation_tabs' });
     res.json(tab);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -195,6 +200,8 @@ router.put('/:id/pay-unpaid', async (req, res) => {
       { status: 'paid' }, { new: true }
     );
     if (!tab) return res.status(404).json({ error: 'Tab not found' });
+    emitCourtEvent(req, 'billing:tab_paid', { action: 'reservation_unpaid_collected', tabId: tab._id });
+    emitCourtEvent(req, 'analytics:refresh', { source: 'reservation_tabs' });
     res.json(tab);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -226,6 +233,9 @@ router.put('/:id/pay', async (req, res) => {
       );
     }
 
+    emitCourtEvent(req, 'billing:tab_paid', { action: 'reservation_paid', tabId: tab._id });
+    emitCourtEvent(req, 'reservation:updated', { action: 'completed_from_tab', reservationId: tab.reservation });
+    emitCourtEvent(req, 'analytics:refresh', { source: 'reservation_tabs' });
     res.json(tab);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -244,6 +254,8 @@ router.put('/:id/collect-balance', async (req, res) => {
       { new: true }
     );
     if (!tab) return res.status(404).json({ error: 'Tab not found' });
+    emitCourtEvent(req, 'billing:tab_paid', { action: 'reservation_balance_collected', tabId: tab._id });
+    emitCourtEvent(req, 'analytics:refresh', { source: 'reservation_tabs' });
     res.json(tab);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -262,6 +274,7 @@ router.delete('/:id', async (req, res) => {
       { new: true }
     );
     if (!tab) return res.status(404).json({ error: 'Tab not found' });
+    emitCourtEvent(req, 'billing:tab_updated', { action: 'reservation_tab_cleared', tabId: tab._id });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });

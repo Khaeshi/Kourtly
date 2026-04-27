@@ -78,7 +78,7 @@ const CourtSchema = new mongoose.Schema({
 
   // ── Payout Destination (admin) ─────────────────────────────────────────────
   payout: {
-    recipientCode:    { type: String, default: '' }, // Xendit recipient code
+    recipientCode:    { type: String, default: '' }, // Cocoart recipient code
     accountName:      { type: String, default: '' },
     channelCode:      { type: String, default: '' }, // e.g. BPI, BDO, GCASH, MAYA
     accountNumberLast4: { type: String, default: '' },

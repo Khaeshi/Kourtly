@@ -3,6 +3,7 @@ import Match from '../models/Match.js';
 import Player from '../models/Player.js';
 import Tab from '../models/Tab.js';
 import Item from '../models/Item.js';
+import { emitCourtEvent } from '../lib/emitCourtEvent.js';
 
 const router = express.Router();
 
@@ -37,6 +38,7 @@ router.get('/history', async (req, res) => {
 router.delete('/history', async (req, res) => {
   try {
     const result = await Match.deleteMany({ courtId: req.courtId, status: 'done' });
+    emitCourtEvent(req, 'queue:updated', { action: 'history_cleared', deletedCount: result.deletedCount });
     res.status(200).json({ message: `${result.deletedCount} done matches deleted successfully` });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -82,6 +84,7 @@ router.post('/', async (req, res) => {
     }
 
     const populated = await Match.findById(match._id).populate('team1 team2');
+    emitCourtEvent(req, 'queue:updated', { action: 'added', matchId: populated?._id });
     res.status(201).json(populated);
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -94,6 +97,7 @@ router.patch('/:id', async (req, res) => {
     const match = await Match.findOneAndUpdate({ _id: req.params.id, courtId: req.courtId }, req.body, { new: true })
       .populate('team1 team2');
     if (!match) return res.status(404).json({ error: 'Match not found' });
+    emitCourtEvent(req, 'queue:updated', { action: 'updated', matchId: match._id, status: match.status });
     res.json(match);
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -108,6 +112,7 @@ router.delete('/:id', async (req, res) => {
       const allPlayerIds = [...match.team1, ...match.team2];
       await Player.updateMany({ _id: { $in: allPlayerIds } }, { $inc: { matchCount: -1 } });
       await Match.findByIdAndDelete({ _id: req.params.id, courtId: req.courtId });
+      emitCourtEvent(req, 'queue:updated', { action: 'deleted', matchId: req.params.id });
     }
     res.json({ success: true });
   } catch (err) {

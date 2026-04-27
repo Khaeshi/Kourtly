@@ -1,5 +1,6 @@
 import express from 'express';
 import Item from '../models/Item.js';
+import { emitCourtEvent } from '../lib/emitCourtEvent.js';
 
 const router = express.Router();
 
@@ -37,6 +38,7 @@ router.get('/splittable', async (req, res) => {
 router.post('/', async (req, res) => {
   try {
     const item = await Item.create({ ...req.body, courtId: req.courtId });
+    emitCourtEvent(req, 'items:updated', { action: 'created', itemId: item._id });
     res.status(201).json(item);
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -48,6 +50,7 @@ router.put('/:id', async (req, res) => {
   try {
     const item = await Item.findOneAndUpdate({ _id: req.params.id, courtId: req.courtId }, req.body, { new: true });
     if (!item) return res.status(404).json({ error: 'Item not found' });
+    emitCourtEvent(req, 'items:updated', { action: 'updated', itemId: item._id });
     res.json(item);
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -58,6 +61,7 @@ router.put('/:id', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   try {
     await Item.findOneAndUpdate({ _id: req.params.id, courtId: req.courtId }, { isActive: false });
+    emitCourtEvent(req, 'items:updated', { action: 'deleted', itemId: req.params.id });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });

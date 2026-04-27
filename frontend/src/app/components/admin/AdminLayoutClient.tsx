@@ -1,8 +1,10 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
+import { useSession } from 'next-auth/react';
 import { Toaster } from 'sileo';
 import { APP_NAME } from '@/lib/config';
 import AdminSidebar from './AdminSidebar';
+import { disconnectSocket, getSocket } from '@/lib/socket';
 
 interface Props {
   children: React.ReactNode;
@@ -10,6 +12,7 @@ interface Props {
 }
 
 export default function AdminLayoutClient({ children, user }: Props) {
+  const { data: session } = useSession();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [fsSupported, setFsSupported] = useState(false);
@@ -46,6 +49,13 @@ export default function AdminLayoutClient({ children, user }: Props) {
     }, 300);
     return () => clearTimeout(timer);
   }, []);
+
+  useEffect(() => {
+    const courtId = session?.user?.courtId;
+    if (!courtId) return;
+    getSocket(courtId);
+    return () => disconnectSocket();
+  }, [session?.user?.courtId]);
 
   const toggleFullscreen = useCallback(() => {
     if (typeof document === 'undefined') return;

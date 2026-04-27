@@ -6,8 +6,8 @@ import PaymentWebhookEvent from '../../src/models/PaymentWebhookEvent.js';
 import PayoutTransfer from '../../src/models/PayoutTransfer.js';
 
 describe('payment webhook routes', () => {
-  test('dedupes repeated xendit webhook events by event id', async () => {
-    process.env.XENDIT_WEBHOOK_TOKEN = 'test-token';
+  test('dedupes repeated cocoart webhook events by event id', async () => {
+    process.env.COCOART_WEBHOOK_SECRET = 'test-token';
 
     const court = await Court.create({
       name: 'Webhook Court',
@@ -31,7 +31,7 @@ describe('payment webhook routes', () => {
       reservationFeeAmount: 500,
       downpaymentAmount: 250,
       maintenanceFeeAmount: 5,
-      xenditInvoiceId: 'inv-1',
+      paymentLinkId: 'inv-1',
       publicRef: 'RSV-TEST-1',
       paymentStatus: 'awaiting_payment',
     });
@@ -44,14 +44,14 @@ describe('payment webhook routes', () => {
     };
 
     const first = await request(app)
-      .post('/api/payments/xendit/webhook')
-      .set('x-callback-token', 'test-token')
+      .post('/api/payments/cocoart/webhook')
+      .set('x-cocoart-webhook-secret', 'test-token')
       .send(payload);
     expect(first.status).toBe(200);
 
     const second = await request(app)
-      .post('/api/payments/xendit/webhook')
-      .set('x-callback-token', 'test-token')
+      .post('/api/payments/cocoart/webhook')
+      .set('x-cocoart-webhook-secret', 'test-token')
       .send(payload);
     expect(second.status).toBe(200);
     expect(second.body.deduped).toBe(true);
