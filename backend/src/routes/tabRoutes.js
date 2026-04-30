@@ -162,16 +162,19 @@ router.post('/split', async (req, res) => {
 // DELETE remove item from tab by index
 router.delete('/:id/items/:itemIndex', async (req, res) => {
   try {
-    const tab = await Tab.findById({ _id: req.params.id, courtId: req.courtId });
+    const tab = await Tab.findOne({ _id: req.params.id, courtId: req.courtId });
     if (!tab) return res.status(404).json({ error: 'Tab not found' });
 
     const idx = Number(req.params.itemIndex);
     const removed = tab.items[idx];
     if (!removed) return res.status(404).json({ error: 'Item not found' });
 
-    await Tab.findOneAndUpdate(req.params.id, { $unset: { [`items.${idx}`]: 1 } });
+    await Tab.findOneAndUpdate(
+      { _id: req.params.id, courtId: req.courtId },
+      { $unset: { [`items.${idx}`]: 1 } }
+    );
     const updated = await Tab.findOneAndUpdate(
-      req.params.id,
+      { _id: req.params.id, courtId: req.courtId },
       { $pull: { items: null }, $inc: { total: -(removed.price * removed.quantity) } },
       { new: true }
     ).populate('player', 'name level');
@@ -239,7 +242,8 @@ router.put('/:id/pay', async (req, res) => {
 // DELETE close/discard tab
 router.delete('/:id', async (req, res) => {
   try {
-    await Tab.findByIdAndDelete({ _id: req.params.id, courtId: req.courtId });
+    const deleted = await Tab.findOneAndDelete({ _id: req.params.id, courtId: req.courtId });
+    if (!deleted) return res.status(404).json({ error: 'Tab not found' });
     emitCourtEvent(req, 'billing:tab_updated', { action: 'deleted', tabId: req.params.id });
     res.json({ success: true });
   } catch (err) {

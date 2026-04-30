@@ -66,7 +66,7 @@ router.post('/', async (req, res) => {
 
     // Auto-split shuttlecock if provided
     if (shuttlecockId) {
-      const shuttle = await Item.findById({ _id: shuttlecockId, courtId: req.courtId });
+      const shuttle = await Item.findOne({ _id: shuttlecockId, courtId: req.courtId });
       if (shuttle && shuttle.isSplittable) {
         const splitPrice = Math.round((shuttle.price / allPlayerIds.length) * 100) / 100;
         const itemName = `${shuttle.name} (÷${allPlayerIds.length})`;
@@ -166,11 +166,14 @@ Return: verdict + short explanation.`,
 // DELETE match + decrement matchCount
 router.delete('/:id', async (req, res) => {
   try {
-    const match = await Match.findById({ _id: req.params.id, courtId: req.courtId });
+    const match = await Match.findOne({ _id: req.params.id, courtId: req.courtId });
     if (match) {
       const allPlayerIds = [...match.team1, ...match.team2];
-      await Player.updateMany({ _id: { $in: allPlayerIds } }, { $inc: { matchCount: -1 } });
-      await Match.findByIdAndDelete({ _id: req.params.id, courtId: req.courtId });
+      await Player.updateMany(
+        { _id: { $in: allPlayerIds }, courtId: req.courtId },
+        { $inc: { matchCount: -1 } }
+      );
+      await Match.findOneAndDelete({ _id: req.params.id, courtId: req.courtId });
       emitCourtEvent(req, 'queue:updated', { action: 'deleted', matchId: req.params.id });
     }
     res.json({ success: true });

@@ -153,16 +153,19 @@ router.post('/:id/items', async (req, res) => {
  */
 router.delete('/:id/items/:itemIndex', async (req, res) => {
   try {
-    const tab = await ReservationTab.findById({_id: req.params.id, courtId: req.courtId});
+    const tab = await ReservationTab.findOne({ _id: req.params.id, courtId: req.courtId });
     if (!tab) return res.status(404).json({ error: 'Tab not found' });
 
     const idx     = Number(req.params.itemIndex);
     const removed = tab.items[idx];
     if (!removed) return res.status(404).json({ error: 'Item not found' });
 
-    await ReservationTab.findOneAndUpdate(req.params.id, { $unset: { [`items.${idx}`]: 1 } });
+    await ReservationTab.findOneAndUpdate(
+      { _id: req.params.id, courtId: req.courtId },
+      { $unset: { [`items.${idx}`]: 1 } }
+    );
     const updated = await ReservationTab.findOneAndUpdate(
-      req.params.id,
+      { _id: req.params.id, courtId: req.courtId },
       { $pull: { items: null }, $inc: { total: -(removed.price * removed.quantity) } },
       { new: true }
     );

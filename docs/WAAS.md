@@ -327,3 +327,24 @@ Many courts and players use Facebook Pages + Messenger as the default inquiry ch
 ### Validation & QA
 
 - Use `docs/QA_EXTERNAL_CHECKLIST.md` for external QA runs (Phases 1–5 + optional Phase 6 checks).
+
+#### Tenant isolation (automated regression)
+
+**Backend tenant isolation is enforced by both code patterns and tests.**
+
+- **Forbidden patterns (do not reintroduce):**
+  - `Model.findById({ _id, courtId })`
+  - `Model.findByIdAndDelete({ _id, courtId })`
+  - `Model.findByIdAndUpdate({ _id, courtId })`
+  - Any `findOneAndUpdate(id, ...)` / `updateOne(id, ...)` style call that omits `{ courtId }` on tenant-scoped resources.
+
+- **Required pattern (tenant-scoped resources):**
+  - Reads: `findOne({ _id, courtId })`
+  - Writes/Deletes: `findOneAndUpdate({ _id, courtId }, ...)`, `findOneAndDelete({ _id, courtId })`
+
+- **Regression tests (Court A vs Court B):**
+  - `backend/test/routes/tenantIsolation.test.js` verifies Court A cannot mutate/delete Court B resources by ID for:
+    - Tabs (`/api/tabs`)
+    - Queue matches (`/api/queue`)
+    - Schedule blocks (`/api/schedule/blocks`)
+    - Reservation tabs (`/api/reservation-tabs`)

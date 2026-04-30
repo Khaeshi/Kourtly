@@ -1,54 +1,54 @@
-import { auth } from './auth'; 
-import { NextResponse } from 'next/server';
-import type { NextRequest } from 'next/server';
+import { withAuth } from "next-auth/middleware";
+import { NextResponse } from "next/server";
 
-export default auth((req) => {
-  const { pathname } = req.nextUrl;
-  const session      = req.auth;
+export default withAuth(
+  function middleware(req) {
+    const { pathname } = req.nextUrl;
+    const token = req.nextauth.token;
 
-  // ── Protect /admin routes ─────────────────────────────────────────────────
-  if (pathname.startsWith('/admin')) {
-    // Not signed in → redirect to sign-in
-    if (!session) {
-      const signInUrl = new URL('/auth/signin', req.url);
-      signInUrl.searchParams.set('callbackUrl', pathname);
-      return NextResponse.redirect(signInUrl);
+    if (pathname.startsWith("/admin")) {
+      if (!token) {
+        const signInUrl = new URL("/auth/signin", req.url);
+        signInUrl.searchParams.set("callbackUrl", pathname);
+        return NextResponse.redirect(signInUrl);
+      }
+
+      if (token.role !== "admin") {
+        return NextResponse.redirect(new URL("/?error=unauthorized", req.url));
+      }
     }
 
-    // Signed in but not admin → redirect to home with error
-    if (session.user?.role !== 'admin') {
-      const homeUrl = new URL('/?error=unauthorized', req.url);
-      return NextResponse.redirect(homeUrl);
-    }
-  }
+    if (pathname.startsWith("/superadmin")) {
+      if (!token) {
+        const signInUrl = new URL("/auth/signin", req.url);
+        signInUrl.searchParams.set("callbackUrl", pathname);
+        return NextResponse.redirect(signInUrl);
+      }
 
-  /**
-   *  Protect /superadmin routes
-   */
-  if (pathname.startsWith('/superadmin')) {
-    if (!session) {
-      const signInUrl = new URL('/auth/signin', req.url);
-      signInUrl.searchParams.set('callbackUrl', pathname);
-      return NextResponse.redirect(signInUrl);
+      if (token.role !== "superadmin") {
+        return NextResponse.redirect(new URL("/?error=unauthorized", req.url));
+      }
     }
-    if (session.user?.role !== 'superadmin') {
-      return NextResponse.redirect(new URL('/?error=unauthorized', req.url));
-    }
-  }
 
-    // ── Forward court context to Express ─────────────────────────────────────
     const response = NextResponse.next();
-    const courtId  = session?.user?.courtId;
-    const role     = session?.user?.role;
-  
-    if (courtId) response.headers.set('x-court-id', courtId);
-    if (role)    response.headers.set('x-user-role', role);
 
-  // IMPORTANT: return the same response instance where we set headers.
-  return response;
-});
+    if (token?.courtId) {
+      response.headers.set("x-court-id", token.courtId);
+    }
+
+    if (token?.role) {
+      response.headers.set("x-user-role", token.role);
+    }
+
+    return response;
+  },
+  {
+    callbacks: {
+      authorized: () => true, // we handle auth manually
+    },
+  }
+);
 
 export const config = {
-  // Run middleware on admin routes and auth routes
-  matcher: ['/admin/:path*', '/auth/:path*', '/superadmin/:path*'],
+  matcher: ["/admin/:path*", "/auth/:path*", "/superadmin/:path*"],
 };

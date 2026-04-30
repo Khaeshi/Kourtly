@@ -119,7 +119,7 @@ router.post('/blocks', async (req, res) => {
  */
 router.delete('/blocks/:id', async (req, res) => {
   try {
-    const deleted = await ScheduleBlock.findByIdAndDelete({ _id: req.params.id, courtId: req.courtId });
+    const deleted = await ScheduleBlock.findOneAndDelete({ _id: req.params.id, courtId: req.courtId });
     if (!deleted) return res.status(404).json({ error: 'Block not found.' });
     emitCourtEvent(req, 'schedule:updated', { action: 'block_deleted', blockId: req.params.id });
     res.json({ success: true });

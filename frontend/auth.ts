@@ -1,9 +1,12 @@
 import NextAuth from 'next-auth';
+import type { NextAuthOptions } from 'next-auth';
+import { getServerSession } from 'next-auth/next';
 import Google from 'next-auth/providers/google';
 
 const BASE = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
-export const { handlers, signIn, signOut, auth } = NextAuth({
+export const authOptions: NextAuthOptions = {
+  secret: process.env.NEXTAUTH_SECRET || process.env.AUTH_SECRET,
   providers: [
     Google({
       clientId:     process.env.AUTH_GOOGLE_ID!,
@@ -99,4 +102,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 
   pages: { signIn: '/auth/signin' },
   session: { strategy: 'jwt' },
-});
+};
+
+export async function auth() {
+  return getServerSession(authOptions);
+}
