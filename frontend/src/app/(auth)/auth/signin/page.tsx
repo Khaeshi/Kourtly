@@ -3,6 +3,7 @@ import { signIn, useSession } from 'next-auth/react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { APP_NAME } from '@/lib/config';
 import { InlineNotice, PublicButton, PublicCard } from '@/app/components/public/ui';
 
@@ -55,9 +56,14 @@ function SignInContent() {
       <div className="w-full max-w-[390px] relative">
         <div className="text-center mb-10">
           <div className="inline-flex items-center gap-2.5 mb-6">
-            <div className="w-7 h-7 border-[1.5px] border-[var(--public-accent)] rounded-full flex items-center justify-center">
-              <div className="w-2 h-2 bg-[var(--public-accent)] rounded-full" />
-            </div>
+            <Image
+              src="/Playkoubg.png"
+              alt={APP_NAME}
+              width={28}
+              height={28}
+              priority
+              className="w-7 h-7 rounded-full object-cover border border-[rgba(59,130,246,0.35)]"
+            />
             <span className="font-semibold text-base text-white">{APP_NAME}</span>
           </div>
           <h1 className="text-3xl font-semibold text-white mb-2">Welcome back</h1>

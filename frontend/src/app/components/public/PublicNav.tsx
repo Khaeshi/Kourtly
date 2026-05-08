@@ -56,9 +56,14 @@ export default function PublicNav({ links = [], alwaysVisible = false }: Props) 
 
         {/* Logo */}
         <Link href="/" className="flex items-center gap-2.5 min-w-0 no-underline">
-          <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 bg-gradient-to-br from-blue-900 to-blue-500">
-            <span className="text-white text-xs font-bold">P</span>
-          </div>
+          <Image
+            src="/Playkoubg.png"
+            alt={APP_NAME}
+            width={32}
+            height={32}
+            priority
+            className="w-8 h-8 rounded-xl object-cover shrink-0 border border-white/10"
+          />
           <span className="font-bold text-[clamp(0.85rem,3vw,1.05rem)] text-white tracking-tight whitespace-nowrap">
             {APP_NAME}
           </span>

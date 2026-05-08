@@ -1,6 +1,7 @@
 'use client';
 import { useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { APP_NAME } from '@/lib/config';
 import { Check, ArrowRight, ChevronRight } from 'lucide-react';
 
@@ -107,9 +108,14 @@ export default function RegisterCourtPage() {
   return (
     <div className="public-root min-h-screen flex flex-col items-center justify-center p-6">
       <Link href="/" className="flex items-center gap-2.5 mb-8 no-underline">
-        <div className="w-7 h-7 border-[1.5px] border-blue-400 rounded-full flex items-center justify-center">
-          <div className="w-2 h-2 bg-blue-400 rounded-full" />
-        </div>
+        <Image
+          src="/Playkoubg.png"
+          alt={APP_NAME}
+          width={28}
+          height={28}
+          priority
+          className="w-7 h-7 rounded-full object-cover border border-blue-400/40"
+        />
         <span className="font-bold text-white text-sm">{APP_NAME}</span>
       </Link>
 
