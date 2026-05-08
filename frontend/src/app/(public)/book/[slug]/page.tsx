@@ -491,7 +491,7 @@ export default function BookingPage({ params }: { params: Promise<{ slug: string
               ))}
             </div>
             <h1 className="booking-display text-4xl sm:text-5xl text-white leading-tight mb-3">
-              Reserve Your<br /><em className="text-[#60a5fa]">{court?.name ?? 'Court'}</em>
+              Reserve at<br /><em className="text-[#60a5fa]">{court?.name ?? 'Court'}</em>
             </h1>
             <p className="text-white/30 text-sm">
               {court?.location?.city && `${court.location.city} · `}
