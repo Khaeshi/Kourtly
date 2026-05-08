@@ -5,6 +5,9 @@ import { getPlayers, createPlayer, updatePlayer, deletePlayer } from '@/lib/api'
 import type { Player, Level, Gender } from '@/lib/api';
 import { Button } from '@/app/components/ui/Button';
 import { useSocketEvent } from '@/hooks/useSocketEvent';
+import { OfflineQueuedError } from '@/lib/offlineOutbox';
+import { cacheGet, cacheSet } from '@/lib/localCache';
+import { emitLocalEvent, subscribeLocalEvent } from '@/lib/localEvents';
 
 const LEVEL_COLOR: Record<Level, string> = { A: '#e8c84a', B: '#8BC34A', C: '#4db8a0', D: '#7a9cbf' };
 const LEVEL_BG:    Record<Level, string> = { A: 'rgba(232,200,74,0.1)', B: 'rgba(139,195,74,0.1)', C: 'rgba(77,184,160,0.1)', D: 'rgba(122,156,191,0.1)' };
@@ -29,38 +32,102 @@ export default function PlayersPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    setPlayers(await getPlayers());
+    try {
+      const p = await getPlayers();
+      setPlayers(p);
+      cacheSet('players', p);
+    } catch {
+      const cached = await cacheGet<Player[]>('players');
+      setPlayers(cached ?? []);
+    }
     setLoading(false);
   }, []);
   useEffect(() => { load(); }, [load]);
   useSocketEvent('players:updated', useCallback(() => { load(); }, [load]));
+  useEffect(() => subscribeLocalEvent('players:updated', load), [load]);
+  useEffect(() => subscribeLocalEvent('data:sync', load), [load]);
 
   const handleAdd = async () => {
     if (!form.name.trim() || !form.age) return;
     setSaving(true);
-    await sileo.promise(
-      createPlayer({ name: form.name.trim(), level: form.level, gender: form.gender, age: Number(form.age) }),
-      {
-        loading: { title: 'Adding player...' },
-        success: { title: 'Player added!', description: `${form.name.trim()} has been registered.` },
-        error:   { title: 'Failed to add player', description: 'Please try again.' },
+    try {
+      await sileo.promise(
+        createPlayer({ name: form.name.trim(), level: form.level, gender: form.gender, age: Number(form.age) }),
+        {
+          loading: { title: 'Adding player...' },
+          success: { title: 'Player added!', description: `${form.name.trim()} has been registered.` },
+          error:   { title: 'Failed to add player', description: 'Please try again.' },
+        }
+      );
+      setForm(empty); setShowAdd(false); await load();
+    } catch (err) {
+      if (err instanceof OfflineQueuedError) {
+        const tmp: Player = {
+          _id: `offline-${err.outboxId}`,
+          name: form.name.trim(),
+          level: form.level,
+          gender: form.gender,
+          age: Number(form.age),
+          matchCount: 0,
+          isActive: true,
+          createdAt: new Date().toISOString(),
+        };
+        setPlayers((prev) => {
+          const next = [tmp, ...prev];
+          cacheSet('players', next);
+          return next;
+        });
+        emitLocalEvent('players:updated');
+        sileo.info({ title: 'Saved offline', description: 'Player will sync when you are online.' });
+        setForm(empty); setShowAdd(false);
       }
-    );
-    setForm(empty); setShowAdd(false); await load(); setSaving(false);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleSave = async (id: string) => {
-    await updatePlayer(id, { ...editForm, age: Number(editForm.age) });
-    sileo.success({ title: 'Player updated', description: `${editForm.name} has been saved.` });
-    setEditId(null); await load();
+    const next = { ...editForm, age: Number(editForm.age) };
+    try {
+      await updatePlayer(id, next);
+      sileo.success({ title: 'Player updated', description: `${editForm.name} has been saved.` });
+      setEditId(null); await load();
+    } catch (err) {
+      if (err instanceof OfflineQueuedError) {
+        setPlayers((prev) => {
+          const updated = prev.map((p) => (p._id === id ? { ...p, ...next } : p));
+          cacheSet('players', updated);
+          return updated;
+        });
+        emitLocalEvent('players:updated');
+        sileo.info({ title: 'Saved offline', description: 'Changes will sync when you are online.' });
+        setEditId(null);
+      } else {
+        throw err;
+      }
+    }
   };
 
   const handleDelete = async (id: string) => {
     if (!confirm('Remove this player?')) return;
     const player = players.find(p => p._id === id);
-    await deletePlayer(id);
-    sileo.success({ title: 'Player removed', description: `${player?.name} has been removed.` });
-    await load();
+    try {
+      await deletePlayer(id);
+      sileo.success({ title: 'Player removed', description: `${player?.name} has been removed.` });
+      await load();
+    } catch (err) {
+      if (err instanceof OfflineQueuedError) {
+        setPlayers((prev) => {
+          const next = prev.filter((p) => p._id !== id);
+          cacheSet('players', next);
+          return next;
+        });
+        emitLocalEvent('players:updated');
+        sileo.info({ title: 'Removed offline', description: 'Deletion will sync when you are online.' });
+      } else {
+        throw err;
+      }
+    }
   };
 
   const filtered = players.filter(p =>

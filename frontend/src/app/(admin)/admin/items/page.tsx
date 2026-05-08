@@ -5,6 +5,9 @@ import { getAllItems, createItem, updateItem, deleteItem } from '@/lib/api';
 import type { CatalogItem } from '@/lib/api';
 import { Button } from '@/app/components/ui/Button';
 import { useSocketEvent } from '@/hooks/useSocketEvent';
+import { OfflineQueuedError } from '@/lib/offlineOutbox';
+import { cacheGet, cacheSet } from '@/lib/localCache';
+import { emitLocalEvent, subscribeLocalEvent } from '@/lib/localEvents';
 
 // ── Constants (unchanged) ─────────────────────────────────────────────────────
 const CATEGORIES = ['general', 'drinks', 'equipment', 'food', 'court fee'];
@@ -56,38 +59,115 @@ export default function ItemsPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    setItems(await getAllItems());
+    try {
+      const i = await getAllItems();
+      setItems(i);
+      cacheSet('items', i);
+    } catch {
+      const cached = await cacheGet<CatalogItem[]>('items');
+      setItems(cached ?? []);
+    }
     setLoading(false);
   }, []);
   useEffect(() => { load(); }, [load]);
   useSocketEvent('items:updated', useCallback(() => { load(); }, [load]));
+  useEffect(() => subscribeLocalEvent('items:updated', load), [load]);
+  useEffect(() => subscribeLocalEvent('data:sync', load), [load]);
 
   const handleAdd = async () => {
     if (!form.name.trim() || !form.price) return;
     setSaving(true);
-    await sileo.promise(
-      createItem({ name: form.name.trim(), price: Number(form.price), category: form.category, isActive: true, isSplittable: form.isSplittable }),
-      { loading: { title: 'Adding item...' }, success: { title: 'Item added!', description: form.name.trim() }, error: { title: 'Failed' } }
-    );
-    setForm(emptyForm); setShowAdd(false); await load(); setSaving(false);
+    try {
+      await sileo.promise(
+        createItem({ name: form.name.trim(), price: Number(form.price), category: form.category, isActive: true, isSplittable: form.isSplittable }),
+        { loading: { title: 'Adding item...' }, success: { title: 'Item added!', description: form.name.trim() }, error: { title: 'Failed' } }
+      );
+      setForm(emptyForm); setShowAdd(false); await load();
+    } catch (err) {
+      if (err instanceof OfflineQueuedError) {
+        const tmp: CatalogItem = {
+          _id: `offline-${err.outboxId}`,
+          name: form.name.trim(),
+          price: Number(form.price),
+          category: form.category,
+          isActive: true,
+          isSplittable: form.isSplittable,
+        };
+        setItems((prev) => {
+          const next = [tmp, ...prev];
+          cacheSet('items', next);
+          return next;
+        });
+        emitLocalEvent('items:updated');
+        sileo.info({ title: 'Saved offline', description: 'Item will sync when you are online.' });
+        setForm(emptyForm); setShowAdd(false);
+      }
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleSave = async (id: string) => {
-    await updateItem(id, { name: editForm.name, price: Number(editForm.price), category: editForm.category, isSplittable: editForm.isSplittable });
-    sileo.success({ title: 'Updated', description: editForm.name });
-    setEditId(null); await load();
+    const nextPatch = { name: editForm.name, price: Number(editForm.price), category: editForm.category, isSplittable: editForm.isSplittable };
+    try {
+      await updateItem(id, nextPatch);
+      sileo.success({ title: 'Updated', description: editForm.name });
+      setEditId(null); await load();
+    } catch (err) {
+      if (err instanceof OfflineQueuedError) {
+        setItems((prev) => {
+          const updated = prev.map((it) => (it._id === id ? { ...it, ...nextPatch } : it));
+          cacheSet('items', updated);
+          return updated;
+        });
+        emitLocalEvent('items:updated');
+        sileo.info({ title: 'Saved offline', description: 'Changes will sync when you are online.' });
+        setEditId(null);
+      } else {
+        throw err;
+      }
+    }
   };
 
   const handleToggleActive = async (item: CatalogItem) => {
-    await updateItem(item._id, { isActive: !item.isActive });
-    await load();
+    const nextActive = !item.isActive;
+    try {
+      await updateItem(item._id, { isActive: nextActive });
+      await load();
+    } catch (err) {
+      if (err instanceof OfflineQueuedError) {
+        setItems((prev) => {
+          const updated = prev.map((it) => (it._id === item._id ? { ...it, isActive: nextActive } : it));
+          cacheSet('items', updated);
+          return updated;
+        });
+        emitLocalEvent('items:updated');
+        sileo.info({ title: 'Saved offline', description: 'Visibility will sync when you are online.' });
+      } else {
+        throw err;
+      }
+    }
   };
 
   const handleDelete = async (item: CatalogItem) => {
     if (!confirm(`Delete "${item.name}"?`)) return;
-    await deleteItem(item._id);
-    sileo.success({ title: 'Deleted', description: item.name });
-    await load();
+    try {
+      await deleteItem(item._id);
+      sileo.success({ title: 'Deleted', description: item.name });
+      await load();
+    } catch (err) {
+      if (err instanceof OfflineQueuedError) {
+        setItems((prev) => {
+          const next = prev.filter((it) => it._id !== item._id);
+          cacheSet('items', next);
+          return next;
+        });
+        emitLocalEvent('items:updated');
+        sileo.info({ title: 'Removed offline', description: 'Deletion will sync when you are online.' });
+      } else {
+        throw err;
+      }
+    }
   };
 
   const filtered = items.filter(i => filter === 'all' || i.category === filter);

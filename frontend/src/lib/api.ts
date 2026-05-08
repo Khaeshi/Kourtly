@@ -1,4 +1,5 @@
 import { API_BASE } from '@/lib/config'
+import { enqueueOutbox, flushOutbox, OfflineQueuedError } from '@/lib/offlineOutbox';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -62,10 +63,40 @@ async function getCourtHeaders(): Promise<Record<string, string>> {
 
 async function req<T>(path: string, options?: RequestInit): Promise<T> {
   const courtHeaders = await getCourtHeaders();
-  const res = await fetch(`${API_BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...courtHeaders },
-    ...options,
-  });
+  const method = (options?.method || 'GET').toUpperCase();
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...courtHeaders,
+    ...(options?.headers as Record<string, string> | undefined),
+  };
+
+  const requestForOutbox = {
+    path,
+    method,
+    headers,
+    body: typeof options?.body === 'string' ? options?.body : options?.body ? JSON.stringify(options.body) : null,
+  };
+
+  // Queue writes if offline (offline-first behavior).
+  if (method !== 'GET' && typeof navigator !== 'undefined' && !navigator.onLine) {
+    const id = await enqueueOutbox(requestForOutbox);
+    throw new OfflineQueuedError('Action queued offline. It will sync when you are back online.', id, requestForOutbox);
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      headers,
+      ...options,
+    });
+  } catch (e) {
+    // If the network flakes, queue writes as well.
+    if (method !== 'GET') {
+      const id = await enqueueOutbox(requestForOutbox);
+      throw new OfflineQueuedError('Network error — action queued. It will retry in the background.', id, requestForOutbox);
+    }
+    throw e;
+  }
   if (!res.ok) {
     let message = `API error ${res.status}`;
     try {
@@ -77,6 +108,16 @@ async function req<T>(path: string, options?: RequestInit): Promise<T> {
     throw new Error(message);
   }
   return res.json();
+}
+
+export async function flushQueuedActions() {
+  return flushOutbox(async (r) =>
+    fetch(`${API_BASE}${r.path}`, {
+      method: r.method,
+      headers: r.headers,
+      body: r.body ?? undefined,
+    }),
+  );
 }
 
 // ─── Players ──────────────────────────────────────────────────────────────────

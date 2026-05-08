@@ -11,6 +11,9 @@ import {
 } from '@/lib/api';
 import type { Player, CatalogItem, Tab, ReservationTab, PaginatedTabs, PaginatedResTabs } from '@/lib/api';
 import { useSocketEvent } from '@/hooks/useSocketEvent';
+import { OfflineQueuedError } from '@/lib/offlineOutbox';
+import { cacheGet, cacheSet } from '@/lib/localCache';
+import { emitLocalEvent, subscribeLocalEvent } from '@/lib/localEvents';
 
 // ── Constants (unchanged) ─────────────────────────────────────────────────────
 const LEVEL_COLOR: Record<string, string> = {
@@ -64,15 +67,44 @@ function SplitModal({ item, openTabs, primaryTab, onClose, onDone }: {
     const successDesc = isSinglePlayer
       ? `${fmt(item.price)} fully charged to ${primaryTab?.player.name ?? 'player'}.`
       : `${fmt(item.price)} split ${totalPlayers} ways — ${fmt(perPlayer)} each.`;
-    await sileo.promise(
-      splitItem({ itemId: item._id, name: item.name, price: item.price, playerIds: allPlayerIds }),
-      {
-        loading: { title: isSinglePlayer ? 'Charging...' : 'Splitting charge...' },
-        success: { title: isSinglePlayer ? 'Charged!' : 'Split complete!', description: successDesc },
-        error:   { title: 'Failed' },
+    try {
+      await sileo.promise(
+        splitItem({ itemId: item._id, name: item.name, price: item.price, playerIds: allPlayerIds }),
+        {
+          loading: { title: isSinglePlayer ? 'Charging...' : 'Splitting charge...' },
+          success: { title: isSinglePlayer ? 'Charged!' : 'Split complete!', description: successDesc },
+          error:   { title: 'Failed' },
+        }
+      );
+      onDone(); onClose();
+    } catch (err) {
+      if (err instanceof OfflineQueuedError) {
+        // Optimistic local split: add a line item to each selected player's open tab.
+        const now = new Date().toISOString();
+        const per = totalPlayers > 0 ? Math.round((item.price / totalPlayers) * 100) / 100 : item.price;
+
+        const cached = (await cacheGet<Tab[]>('openTabs')) ?? openTabs;
+        const next = cached.map((t) => {
+          if (!allPlayerIds.includes(t.player._id)) return t;
+          const added = {
+            item: item._id,
+            name: `${item.name}${totalPlayers > 1 ? ' (split)' : ''}`,
+            price: per,
+            quantity: 1,
+            addedAt: now,
+          };
+          const items = [...t.items, added];
+          const total = items.reduce((s, it) => s + it.price * it.quantity, 0);
+          return { ...t, items, total, updatedAt: now };
+        });
+        await cacheSet('openTabs', next);
+        emitLocalEvent('billing:tab_updated');
+        sileo.info({ title: 'Saved offline', description: 'Split will sync when you are online.' });
+        onDone(); onClose();
       }
-    );
-    setLoading(false); onDone(); onClose();
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -188,30 +220,78 @@ function TabCard({ tab, isActive, onClick, onUpdate }: {
   tab: Tab; isActive: boolean; onClick: () => void; onUpdate: () => void;
 }) {
   const [paying, setPaying] = useState(false);
+  const isPendingSync = tab._id.startsWith('offline-');
+
+  const updateCachedTab = useCallback(async (updater: (tabs: Tab[]) => Tab[]) => {
+    const cached = (await cacheGet<Tab[]>('openTabs')) ?? [];
+    const next = updater(cached);
+    await cacheSet('openTabs', next);
+  }, []);
 
   const handlePay = async (e: React.MouseEvent) => {
     e.stopPropagation();
     setPaying(true);
-    await sileo.promise(payTab(tab._id), {
-      loading: { title: 'Processing...' },
-      success: { title: 'Paid!', description: `${tab.player.name} — ${fmt(tab.total)}` },
-      error:   { title: 'Payment failed' },
-    });
-    setPaying(false); onUpdate();
+    try {
+      await sileo.promise(payTab(tab._id), {
+        loading: { title: 'Processing...' },
+        success: { title: 'Paid!', description: `${tab.player.name} — ${fmt(tab.total)}` },
+        error:   { title: 'Payment failed' },
+      });
+      emitLocalEvent('billing:tab_paid');
+      onUpdate();
+    } catch (err) {
+      if (err instanceof OfflineQueuedError) {
+        await updateCachedTab((tabs) =>
+          tabs.map((t) => (t._id === tab._id ? { ...t, status: 'paid', updatedAt: new Date().toISOString() } : t)),
+        );
+        sileo.info({ title: 'Queued offline', description: 'Payment will sync when online.' });
+        emitLocalEvent('billing:tab_paid');
+        onUpdate();
+      }
+    } finally {
+      setPaying(false);
+    }
   };
 
   const handleClose = async (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!confirm(`Discard ${tab.player.name}'s tab?`)) return;
-    await closeTab(tab._id);
-    sileo.success({ title: 'Tab closed' });
-    onUpdate();
+    try {
+      await closeTab(tab._id);
+      sileo.success({ title: 'Tab closed' });
+      emitLocalEvent('billing:tab_updated');
+      onUpdate();
+    } catch (err) {
+      if (err instanceof OfflineQueuedError) {
+        await updateCachedTab((tabs) => tabs.filter((t) => t._id !== tab._id));
+        sileo.info({ title: 'Queued offline', description: 'Close will sync when online.' });
+        emitLocalEvent('billing:tab_updated');
+        onUpdate();
+      }
+    }
   };
 
   const handleRemove = async (e: React.MouseEvent, idx: number) => {
     e.stopPropagation();
-    await removeItemFromTab(tab._id, idx);
-    onUpdate();
+    try {
+      await removeItemFromTab(tab._id, idx);
+      emitLocalEvent('billing:tab_updated');
+      onUpdate();
+    } catch (err) {
+      if (err instanceof OfflineQueuedError) {
+        await updateCachedTab((tabs) =>
+          tabs.map((t) => {
+            if (t._id !== tab._id) return t;
+            const removed = t.items.filter((_, i) => i !== idx);
+            const total = removed.reduce((s, it) => s + it.price * it.quantity, 0);
+            return { ...t, items: removed, total, updatedAt: new Date().toISOString() };
+          }),
+        );
+        sileo.info({ title: 'Queued offline', description: 'Removal will sync when online.' });
+        emitLocalEvent('billing:tab_updated');
+        onUpdate();
+      }
+    }
   };
 
   return (
@@ -250,16 +330,30 @@ function TabCard({ tab, isActive, onClick, onUpdate }: {
             <button onClick={async e => {
                 e.stopPropagation();
                 if (!confirm(`Mark ${tab.player.name}'s tab as unpaid?`)) return;
-                await markUnpaid(tab._id);
-                sileo.error({ title: 'Marked unpaid', description: `${tab.player.name} — ${fmt(tab.total)}` });
-                onUpdate();
+                try {
+                  await markUnpaid(tab._id);
+                  sileo.error({ title: 'Marked unpaid', description: `${tab.player.name} — ${fmt(tab.total)}` });
+                  emitLocalEvent('billing:tab_updated');
+                  onUpdate();
+                } catch (err) {
+                  if (err instanceof OfflineQueuedError) {
+                    await updateCachedTab((tabs) =>
+                      tabs.map((t) => (t._id === tab._id ? { ...t, status: 'unpaid', updatedAt: new Date().toISOString() } : t)),
+                    );
+                    sileo.info({ title: 'Queued offline', description: 'Will sync when online.' });
+                    emitLocalEvent('billing:tab_updated');
+                    onUpdate();
+                  }
+                }
               }}
+              disabled={isPendingSync}
               className="px-2.5 py-1.5 rounded-md border border-orange-200 bg-orange-50 text-orange-600 text-xs font-semibold cursor-pointer hover:bg-orange-100 transition-all">
               Not Paid
             </button>
           </>
         )}
         <button onClick={handleClose}
+          disabled={isPendingSync}
           className="px-2.5 py-1.5 rounded-md border border-red-100 bg-red-50/60 text-red-400 text-xs cursor-pointer hover:bg-red-100 transition-all">
           ✕
         </button>
@@ -296,11 +390,29 @@ export default function BillingPage() {
   const [histDate,      setHistDate]      = useState('');
 
   const loadAll = useCallback(async () => {
-    const [p, i, t, rt] = await Promise.all([
-      getPlayers(), getItems(), getOpenTabs(), getTodayReservationTabs(),
-    ]);
-    setPlayers(p); setItems(i); setOpenTabs(t);
-    setResTabs(rt); setLoading(false);
+    try {
+      const [p, i, t, rt] = await Promise.all([
+        getPlayers(), getItems(), getOpenTabs(), getTodayReservationTabs(),
+      ]);
+      setPlayers(p); setItems(i); setOpenTabs(t);
+      cacheSet('players', p);
+      cacheSet('items', i);
+      cacheSet('openTabs', t);
+      setResTabs(rt);
+    } catch {
+      const [p, i, t] = await Promise.all([
+        cacheGet<Player[]>('players'),
+        cacheGet<CatalogItem[]>('items'),
+        cacheGet<Tab[]>('openTabs'),
+      ]);
+      setPlayers(p ?? []);
+      setItems(i ?? []);
+      setOpenTabs(t ?? []);
+      // resTabs are read-only for your request; ok to be empty offline
+      setResTabs([]);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   const loadHistory = useCallback(async () => {
@@ -317,6 +429,11 @@ export default function BillingPage() {
   useSocketEvent('billing:tab_updated', useCallback(() => { loadAll(); }, [loadAll]));
   useSocketEvent('billing:tab_paid', useCallback(() => { loadAll(); loadHistory(); }, [loadAll, loadHistory]));
   useSocketEvent('reservation:updated', useCallback(() => { loadAll(); }, [loadAll]));
+  useEffect(() => subscribeLocalEvent('players:updated', loadAll), [loadAll]);
+  useEffect(() => subscribeLocalEvent('items:updated', loadAll), [loadAll]);
+  useEffect(() => subscribeLocalEvent('billing:tab_updated', loadAll), [loadAll]);
+  useEffect(() => subscribeLocalEvent('billing:tab_paid', () => { loadAll(); loadHistory(); }), [loadAll, loadHistory]);
+  useEffect(() => subscribeLocalEvent('data:sync', () => { loadAll(); loadHistory(); }), [loadAll, loadHistory]);
 
   const playersWithTab   = new Set(openTabs.map(t => t.player._id));
   const availablePlayers = players.filter(p => !playersWithTab.has(p._id));
@@ -336,7 +453,32 @@ export default function BillingPage() {
         error:   { title: 'Could not open tab', description: 'Player may already have an open tab.' },
       });
       setOpeningFor(''); await loadAll();
-    } catch { /* handled by sileo */ }
+    } catch (err) {
+      if (err instanceof OfflineQueuedError) {
+        const pl = players.find((p) => p._id === openingFor);
+        if (pl) {
+          const tmp: Tab = {
+            _id: `offline-${err.outboxId}`,
+            player: { _id: pl._id, name: pl.name, level: pl.level },
+            items: [],
+            total: 0,
+            status: 'open',
+            sessionDate: new Date().toISOString().slice(0, 10),
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+          setOpenTabs((prev) => {
+            const next = [tmp, ...prev];
+            cacheSet('openTabs', next);
+            return next;
+          });
+          setActiveTab(tmp._id);
+          emitLocalEvent('billing:tab_updated');
+          sileo.info({ title: 'Saved offline', description: 'Tab will sync when you are online.' });
+        }
+        setOpeningFor('');
+      }
+    }
   };
 
   const handleQuickAdd = async (item: CatalogItem) => {
@@ -344,9 +486,30 @@ export default function BillingPage() {
     if (item.isSplittable) { setSplitItem(item); return; }
     const quantity = getQty(item._id);
     setAddingItem(item._id);
-    await addItemToTab(activeTab, { itemId: item._id, name: item.name, price: item.price, quantity });
-    sileo.success({ title: 'Added', description: `${item.name} ×${quantity} → ${activeTabObj?.player.name}` });
-    setItemQty(item._id, 1); await loadAll(); setAddingItem(null);
+    try {
+      await addItemToTab(activeTab, { itemId: item._id, name: item.name, price: item.price, quantity });
+      sileo.success({ title: 'Added', description: `${item.name} ×${quantity} → ${activeTabObj?.player.name}` });
+      setItemQty(item._id, 1); await loadAll();
+    } catch (err) {
+      if (err instanceof OfflineQueuedError) {
+        setOpenTabs((prev) => {
+          const next = prev.map((t) => {
+            if (t._id !== activeTab) return t;
+            const added = { item: item._id, name: item.name, price: item.price, quantity, addedAt: new Date().toISOString() };
+            const items = [...t.items, added];
+            const total = t.total + item.price * quantity;
+            return { ...t, items, total, updatedAt: new Date().toISOString() };
+          });
+          cacheSet('openTabs', next);
+          return next;
+        });
+        emitLocalEvent('billing:tab_updated');
+        sileo.info({ title: 'Added offline', description: 'Will sync when you are online.' });
+        setItemQty(item._id, 1);
+      }
+    } finally {
+      setAddingItem(null);
+    }
   };
 
   const CATEGORY_ORDER = ['court fee', 'equipment', 'drinks', 'food', 'general'];

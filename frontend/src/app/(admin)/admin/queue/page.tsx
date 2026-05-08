@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { getPlayers, getQueue, getHistory, getSplittableItems, createMatch, updateMatch, deleteMatch, proofreadMatch } from '@/lib/api';
 import type { Player, Match, MatchType, Level, CatalogItem } from '@/lib/api';
 import { useSocketEvent } from '@/hooks/useSocketEvent';
+import { OfflineQueuedError } from '@/lib/offlineOutbox';
 
 const LEVEL_ORDER: Record<Level, number> = { A:0, B:1, C:2, D:3 };
 const LEVEL_COLOR: Record<Level, string>  = { A:'#d97706', B:'#16a34a', C:'#0891b2', D:'#7c3aed' };
@@ -209,12 +210,18 @@ function PlayerPill({ p, side, index, editingSlot, onEdit }: {
 function MatchCard({ match, index, showActions, onUpdate }: {
   match:Match; index:number; showActions:boolean; onUpdate:()=>void;
 }) {
+  const isPendingSync = match._id.startsWith('offline-');
   return (
     <div style={{ background:'#fff', border:`1px solid ${match.status==='playing'?'#fde68a':'#e5e7eb'}`, borderRadius:'8px', padding:'1rem', transition:'border-color 0.15s' }}>
       <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', marginBottom:'0.75rem', flexWrap:'wrap' }}>
         <span style={{ fontFamily:'monospace', fontSize:'0.65rem', color:'#9ca3af' }}>#{String(index+1).padStart(2,'0')}</span>
         <span style={{ fontSize:'0.7rem', fontWeight:600, background:'#f3f4f6', color:'#374151', padding:'0.15rem 0.5rem', borderRadius:'3px' }}>Court {match.court}</span>
         <span style={{ fontSize:'0.7rem', color:'#6b7280' }}>{MATCH_LABELS[match.matchType]}</span>
+        {isPendingSync && (
+          <span style={{ fontSize:'0.65rem', fontWeight:700, color:'#d97706', background:'#fffbeb', border:'1px solid #fde68a', padding:'0.15rem 0.45rem', borderRadius:'4px', fontFamily:'monospace' }}>
+            pending sync
+          </span>
+        )}
         <span style={{ marginLeft:'auto', fontSize:'0.68rem', fontWeight:600, color: match.status==='playing'?'#d97706': match.status==='done'?'#9ca3af':'#16a34a', textTransform:'uppercase', letterSpacing:'0.06em' }}>
           {match.status}
         </span>
@@ -242,9 +249,68 @@ function MatchCard({ match, index, showActions, onUpdate }: {
 
       {showActions && (
         <div style={{ display:'flex', gap:'6px', marginTop:'0.75rem', paddingTop:'0.75rem', borderTop:'1px solid #f3f4f6' }}>
-          {match.status === 'queued'  && <Btn v="gold"    onClick={() => updateMatch(match._id,{status:'playing'}).then(onUpdate)}>Mark Playing</Btn>}
-          {match.status === 'playing' && <Btn v="primary" onClick={() => updateMatch(match._id,{status:'done'}).then(onUpdate)}>Mark Done</Btn>}
-          <Btn v="danger" onClick={() => { if(confirm('Remove match?')) deleteMatch(match._id).then(onUpdate); }}>Remove</Btn>
+          {match.status === 'queued' && (
+            <Btn
+              v="gold"
+              onClick={async () => {
+                try {
+                  await updateMatch(match._id, { status: 'playing' });
+                  onUpdate();
+                } catch (err) {
+                  if (err instanceof OfflineQueuedError) {
+                    onUpdate();
+                  } else {
+                    alert(err instanceof Error ? err.message : 'Failed to update.');
+                  }
+                }
+              }}
+              disabled={isPendingSync}
+              style={{ opacity: isPendingSync ? 0.5 : 1 }}
+            >
+              Mark Playing
+            </Btn>
+          )}
+          {match.status === 'playing' && (
+            <Btn
+              v="primary"
+              onClick={async () => {
+                try {
+                  await updateMatch(match._id, { status: 'done' });
+                  onUpdate();
+                } catch (err) {
+                  if (err instanceof OfflineQueuedError) {
+                    onUpdate();
+                  } else {
+                    alert(err instanceof Error ? err.message : 'Failed to update.');
+                  }
+                }
+              }}
+              disabled={isPendingSync}
+              style={{ opacity: isPendingSync ? 0.5 : 1 }}
+            >
+              Mark Done
+            </Btn>
+          )}
+          <Btn
+            v="danger"
+            onClick={async () => {
+              if (!confirm('Remove match?')) return;
+              try {
+                await deleteMatch(match._id);
+                onUpdate();
+              } catch (err) {
+                if (err instanceof OfflineQueuedError) {
+                  onUpdate();
+                } else {
+                  alert(err instanceof Error ? err.message : 'Failed to remove.');
+                }
+              }
+            }}
+            disabled={isPendingSync}
+            style={{ opacity: isPendingSync ? 0.5 : 1 }}
+          >
+            Remove
+          </Btn>
         </div>
       )}
     </div>
@@ -302,15 +368,37 @@ export default function QueuePage() {
   const handleSubmit = async () => {
     if (!edited) return;
     setSubmitting(true);
-    await createMatch({
-      team1: edited.team1.map(p=>p._id),
-      team2: edited.team2.map(p=>p._id),
-      matchType: edited.matchType,
-      court: selectedCourt,
-      shuttlecockId: shuttlecockId || undefined,
-    });
-    setGenerated(null); setEdited(null); setShuttlecockId('');
-    await loadAll(); setSubmitting(false);
+    try {
+      await createMatch({
+        team1: edited.team1.map(p=>p._id),
+        team2: edited.team2.map(p=>p._id),
+        matchType: edited.matchType,
+        court: selectedCourt,
+        shuttlecockId: shuttlecockId || undefined,
+      });
+      setGenerated(null); setEdited(null); setShuttlecockId('');
+      await loadAll();
+    } catch (err) {
+      if (err instanceof OfflineQueuedError) {
+        // Optimistic UI: show a local "pending sync" match immediately.
+        const tmp: Match = {
+          _id: `offline-${err.outboxId}`,
+          team1: edited.team1,
+          team2: edited.team2,
+          matchType: edited.matchType,
+          court: selectedCourt,
+          status: 'queued',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        setQueueList((q) => [tmp, ...q]);
+        setGenerated(null); setEdited(null); setShuttlecockId('');
+      } else {
+        alert(err instanceof Error ? err.message : 'Failed to submit match.');
+      }
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const swapCandidates = editingSlot && edited
