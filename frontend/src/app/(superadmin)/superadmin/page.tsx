@@ -129,7 +129,7 @@ export default function SuperAdminDashboard() {
 
       {/* Stats strip */}
       {stats && (
-        <div className="grid grid-cols-4 sm:grid-cols-7 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
           {[
             { label: 'Total',     value: stats.total,                       color: ''      },
             { label: 'Active',    value: stats.active,                      color: 'green' },
@@ -237,59 +237,71 @@ export default function SuperAdminDashboard() {
           <div className="py-12 text-center text-gray-400 text-sm">Loading courts...</div>
         ) : (
           <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-            <div className="grid px-5 py-2.5 border-b border-gray-100 bg-gray-50 text-[0.65rem] font-semibold tracking-[0.08em] uppercase text-gray-400"
-              style={{ gridTemplateColumns: '1fr 140px 110px 70px 180px' }}>
-              <span>Court</span><span>Admin</span><span>Plan</span><span>Courts</span><span>Actions</span>
-            </div>
-            {filtered.length === 0 ? (
-              <div className="py-12 text-center text-gray-400 text-sm">No courts found.</div>
-            ) : filtered.map((court, i) => (
-              <div key={court._id} className="grid items-center gap-4 px-5 py-3.5 hover:bg-gray-50 transition-colors"
-                style={{ gridTemplateColumns: '1fr 140px 110px 70px 180px', borderBottom: i < filtered.length - 1 ? '1px solid #f9fafb' : 'none' }}>
-                <div className="min-w-0">
-                  <div className="text-[0.85rem] font-medium text-gray-900 truncate">{court.name}</div>
-                  <div className="text-[0.68rem] text-gray-400 font-mono">/{court.slug}</div>
+            <div className="overflow-x-auto">
+              <div className="min-w-[760px]">
+                <div
+                  className="grid px-5 py-2.5 border-b border-gray-100 bg-gray-50 text-[0.65rem] font-semibold tracking-[0.08em] uppercase text-gray-400"
+                  style={{ gridTemplateColumns: '1fr 140px 110px 70px 180px' }}
+                >
+                  <span>Court</span><span>Admin</span><span>Plan</span><span>Courts</span><span>Actions</span>
                 </div>
-                <div className="text-[0.72rem] text-gray-500 truncate">{court.adminEmail}</div>
-                <div className="flex flex-col gap-1">
-                  <span className={`text-[0.62rem] font-semibold uppercase px-2 py-0.5 rounded-[3px] border w-fit ${STATUS_STYLES[court.subscription.status]}`}>
-                    {court.subscription.status}
-                  </span>
-                  <span className="text-[0.65rem] text-gray-400 font-mono">₱{court.subscription.amount.toLocaleString()}/{court.subscription.plan === 'annual' ? 'yr' : 'mo'}</span>
-                </div>
-                <div className="text-[0.82rem] font-mono text-gray-700">{court.courtCount}</div>
-                <div className="flex gap-1.5 flex-wrap">
-                  {court.subscription.status === 'trial' && (
-                    <button onClick={() => { if(confirm(`Activate ${court.name}?`)) updateSubscription(court._id, { status: 'active', plan: court.subscription.plan }); }}
-                      disabled={acting === court._id}
-                      className="px-2.5 py-1 rounded-md text-[0.68rem] font-medium border cursor-pointer transition-all border-green-200 bg-green-50 text-green-700 hover:bg-green-100 disabled:opacity-50">
-                      {acting === court._id ? '...' : 'Activate'}
-                    </button>
-                  )}
-                  {court.subscription.status === 'trial' && (
-                    <button onClick={() => updateSubscription(court._id, { extendTrialDays: 7 })}
-                      disabled={acting === court._id}
-                      className="px-2.5 py-1 rounded-md text-[0.68rem] font-medium border cursor-pointer transition-all border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 disabled:opacity-50">
-                      {acting === court._id ? '...' : '+7 days'}
-                    </button>
-                  )}
-                  {court.subscription.status === 'active' && (
-                    <button onClick={() => { if(confirm(`Suspend ${court.name}?`)) updateSubscription(court._id, { status: 'suspended' }); }}
-                      disabled={acting === court._id}
-                      className="px-2.5 py-1 rounded-md text-[0.68rem] font-medium border cursor-pointer transition-all border-red-200 bg-red-50 text-red-600 hover:bg-red-100 disabled:opacity-50">
-                      {acting === court._id ? '...' : 'Suspend'}
-                    </button>
-                  )}
-                  {(court.subscription.status === 'suspended' || court.subscription.status === 'expired') && (
-                    <button onClick={() => { if(confirm(`Reactivate ${court.name}?`)) updateSubscription(court._id, { status: 'active', plan: court.subscription.plan }); }}
-                      disabled={acting === court._id}
-                      className="px-2.5 py-1 rounded-md text-[0.68rem] font-medium border cursor-pointer transition-all border-green-200 bg-green-50 text-green-700 hover:bg-green-100 disabled:opacity-50">
-                      {acting === court._id ? '...' : 'Reactivate'}
-                    </button>
-                  )}
-                </div>
+                {filtered.length === 0 ? (
+                  <div className="py-12 text-center text-gray-400 text-sm">No courts found.</div>
+                ) : filtered.map((court, i) => (
+                  <div
+                    key={court._id}
+                    className="grid items-center gap-4 px-5 py-3.5 hover:bg-gray-50 transition-colors"
+                    style={{
+                      gridTemplateColumns: '1fr 140px 110px 70px 180px',
+                      borderBottom: i < filtered.length - 1 ? '1px solid #f9fafb' : 'none',
+                    }}
+                  >
+                    <div className="min-w-0">
+                      <div className="text-[0.85rem] font-medium text-gray-900 truncate">{court.name}</div>
+                      <div className="text-[0.68rem] text-gray-400 font-mono">/{court.slug}</div>
+                    </div>
+                    <div className="text-[0.72rem] text-gray-500 truncate">{court.adminEmail}</div>
+                    <div className="flex flex-col gap-1">
+                      <span className={`text-[0.62rem] font-semibold uppercase px-2 py-0.5 rounded-[3px] border w-fit ${STATUS_STYLES[court.subscription.status]}`}>
+                        {court.subscription.status}
+                      </span>
+                      <span className="text-[0.65rem] text-gray-400 font-mono">₱{court.subscription.amount.toLocaleString()}/{court.subscription.plan === 'annual' ? 'yr' : 'mo'}</span>
+                    </div>
+                    <div className="text-[0.82rem] font-mono text-gray-700">{court.courtCount}</div>
+                    <div className="flex gap-1.5 flex-wrap">
+                      {court.subscription.status === 'trial' && (
+                        <button onClick={() => { if(confirm(`Activate ${court.name}?`)) updateSubscription(court._id, { status: 'active', plan: court.subscription.plan }); }}
+                          disabled={acting === court._id}
+                          className="px-2.5 py-1 rounded-md text-[0.68rem] font-medium border cursor-pointer transition-all border-green-200 bg-green-50 text-green-700 hover:bg-green-100 disabled:opacity-50">
+                          {acting === court._id ? '...' : 'Activate'}
+                        </button>
+                      )}
+                      {court.subscription.status === 'trial' && (
+                        <button onClick={() => updateSubscription(court._id, { extendTrialDays: 7 })}
+                          disabled={acting === court._id}
+                          className="px-2.5 py-1 rounded-md text-[0.68rem] font-medium border cursor-pointer transition-all border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 disabled:opacity-50">
+                          {acting === court._id ? '...' : '+7 days'}
+                        </button>
+                      )}
+                      {court.subscription.status === 'active' && (
+                        <button onClick={() => { if(confirm(`Suspend ${court.name}?`)) updateSubscription(court._id, { status: 'suspended' }); }}
+                          disabled={acting === court._id}
+                          className="px-2.5 py-1 rounded-md text-[0.68rem] font-medium border cursor-pointer transition-all border-red-200 bg-red-50 text-red-600 hover:bg-red-100 disabled:opacity-50">
+                          {acting === court._id ? '...' : 'Suspend'}
+                        </button>
+                      )}
+                      {(court.subscription.status === 'suspended' || court.subscription.status === 'expired') && (
+                        <button onClick={() => { if(confirm(`Reactivate ${court.name}?`)) updateSubscription(court._id, { status: 'active', plan: court.subscription.plan }); }}
+                          disabled={acting === court._id}
+                          className="px-2.5 py-1 rounded-md text-[0.68rem] font-medium border cursor-pointer transition-all border-green-200 bg-green-50 text-green-700 hover:bg-green-100 disabled:opacity-50">
+                          {acting === court._id ? '...' : 'Reactivate'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
+            </div>
           </div>
         )}
       </div>
