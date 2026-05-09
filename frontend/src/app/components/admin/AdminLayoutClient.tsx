@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { Toaster } from 'sileo';
 import { APP_NAME } from '@/lib/config';
+import { Suspense } from 'react';
 import AdminSidebar from './AdminSidebar';
 import { disconnectSocket, getSocket } from '@/lib/socket';
 
@@ -129,7 +130,9 @@ export default function AdminLayoutClient({ children, user }: Props) {
           user={user}
         />
         <main className="admin-main flex-1 px-[clamp(1rem,3vw,2rem)] pb-[clamp(1rem,3vw,2rem)] pt-[clamp(1rem,3vw,2rem)] md:pt-[clamp(1rem,3vw,2rem)]">
-          {children}
+          <Suspense fallback ={null}>
+            {children}
+          </Suspense>
         </main>
       </div>
     </>

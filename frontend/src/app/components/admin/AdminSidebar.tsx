@@ -1,8 +1,8 @@
 'use client';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { signOut, useSession } from 'next-auth/react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useTransition } from 'react';
 import Image from 'next/image';
 
 interface Props {
@@ -27,10 +27,18 @@ const SUPERADMIN_NAV = [
 ];
 
 export default function AdminSidebar({ isOpen, onClose, user }: Props) {
-  const pathname             = usePathname();
-  const { data: session }    = useSession();
-  const isSuperAdmin         = session?.user?.role === 'superadmin';
+  const pathname = usePathname();
+  const router = useRouter();
+  const { data: session } = useSession();
+  const isSuperAdmin = session?.user?.role === 'superadmin';
   const [signingOut, setSigningOut] = useState(false);
+  const [pending,    setPending]      = useState<string | null>(null);
+  const [isPending,  startTransition] = useTransition();
+
+    // Clear pending indicator when pathname settles
+    useEffect(() => {
+      setPending(null);
+    }, [pathname]);
 
   // Court name + logo (API is source of truth; session carries logo after update())
   const [courtName, setCourtName] = useState<string | null>(null);
@@ -38,19 +46,9 @@ export default function AdminSidebar({ isOpen, onClose, user }: Props) {
 
   useEffect(() => {
     const courtId = session?.user?.courtId;
-    if (!courtId) {
-      setCourtName(null);
-      setCourtLogoUrl(null);
-      return;
-    }
-
-    if (session?.user?.court?.name) {
-      setCourtName(session.user.court.name);
-    }
-    if (session?.user?.court?.logoUrl) {
-      setCourtLogoUrl(session.user.court.logoUrl);
-    }
-
+    if (!courtId) { setCourtName(null); setCourtLogoUrl(null); return; }
+    if (session?.user?.court?.name) { setCourtName(session.user.court.name); }
+    if (session?.user?.court?.logoUrl) { setCourtLogoUrl(session.user.court.logoUrl); }
     fetch('/api/proxy/court/me')
       .then(r => (r.ok ? r.json() : null))
       .then(data => {
@@ -65,21 +63,44 @@ export default function AdminSidebar({ isOpen, onClose, user }: Props) {
     await signOut({ callbackUrl: '/' });
   };
 
+  const handleNavClick = (
+    e: React.MouseEvent<HTMLAnchorElement>,
+    href: string
+  ) => {
+    e.preventDefault();
+    if (pathname === href) return; // already here, do nothing
+    setPending(href);              // ← active state moves instantly
+    onClose();
+    startTransition(() => {
+      router.push(href);
+    });
+  };
+
   const renderNavItem = (item: { href: string; label: string; exact?: boolean }) => {
-    const active = item.exact ? pathname === item.href : pathname.startsWith(item.href);
+    const isActive  = item.exact ? pathname === item.href : pathname.startsWith(item.href);
+    const isLoading = pending === item.href && isPending;
+    const showActive = isActive || pending === item.href;
+  
     return (
-      <Link key={item.href} href={item.href} onClick={onClose}
-        className={`sidebar-item ${active ? 'active' : ''}`}>
-        <span className={`w-1.5 h-1.5 rounded-full shrink-0 transition-colors duration-150 ${active ? 'bg-green-700' : 'bg-gray-300'}`} />
-        {item.label}
-      </Link>
+      <a
+        key={item.href}
+        href={item.href}
+        onClick={(e) => handleNavClick(e, item.href)}
+        className={`sidebar-item ${showActive ? 'active' : ''}`}
+      >
+        <span className={`w-1.5 h-1.5 rounded-full shrink-0 transition-colors duration-150 ${
+          showActive ? 'bg-green-700' : 'bg-gray-300'
+        }`} />
+        <span className="flex-1">{item.label}</span>
+        {isLoading && (
+          <span className="w-1 h-1 rounded-full bg-green-400 animate-pulse shrink-0" />
+        )}
+      </a>
     );
   };
 
   // Display name: court name > 'Admin Panel' for superadmin > 'My Court'
-  const brandName = isSuperAdmin
-    ? 'Admin Panel'
-    : courtName ?? 'My Court';
+  const brandName = isSuperAdmin ? 'Admin Panel' : courtName ?? 'My Court';
 
   return (
     <aside className={`admin-sidebar-aside ${isOpen ? 'open' : ''}`}>
