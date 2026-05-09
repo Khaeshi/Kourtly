@@ -1,5 +1,5 @@
 // components/skeletons/SettingsSkeleton.tsx
-export function SettingsSkeleton() {
+export default function SettingsSkeleton() {
     return (
       <div className="max-w-[760px] font-sans space-y-6 animate-pulse">
         {/* Header */}

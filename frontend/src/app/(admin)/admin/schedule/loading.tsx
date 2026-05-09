@@ -1,5 +1,5 @@
 // components/skeletons/ScheduleSkeleton.tsx
-export function ScheduleSkeleton() {
+export default function ScheduleSkeleton() {
     return (
       <div className="w-full font-sans animate-pulse">
         {/* Header */}

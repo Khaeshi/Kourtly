@@ -1,5 +1,5 @@
-// components/skeletons/ReservationSkeleton.tsx
-export function ReservationSkeleton() {
+
+export default function ReservationSkeleton() {
     return (
       <div className="w-full font-sans animate-pulse">
         {/* Header */}
@@ -63,3 +63,4 @@ export function ReservationSkeleton() {
       </div>
     );
   }
+
