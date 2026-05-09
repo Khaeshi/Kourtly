@@ -5,6 +5,7 @@ import { Toaster } from 'sileo';
 import { APP_NAME } from '@/lib/config';
 import { Suspense } from 'react';
 import AdminSidebar from './AdminSidebar';
+import AdminSplash from './AdminSplash';
 import { disconnectSocket, getSocket } from '@/lib/socket';
 
 interface Props {
@@ -70,6 +71,11 @@ export default function AdminLayoutClient({ children, user }: Props) {
 
   return (
     <>
+
+    <AdminSplash       
+      courtName={session?.user?.court?.name ?? 'My Court'}
+      logoUrl={session?.user?.court?.logoUrl}
+    />
       <Toaster
         position={isMobile ? 'bottom-center' : 'top-right'}
         options={{
