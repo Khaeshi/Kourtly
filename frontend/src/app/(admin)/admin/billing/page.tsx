@@ -70,7 +70,7 @@ function SplitModal({ item, openTabs, primaryTab, onClose, onDone }: {
     if (!canCharge) return;
     setLoading(true);
     const successDesc = isSinglePlayer
-      ? `${fmt(item.price)} fully charged to ${primaryTab?.player.name ?? 'player'}.`
+      ? `${fmt(item.price)} fully charged to ${primaryTab?.player?.name ?? 'player'}.`
       : `${fmt(item.price)} split ${totalPlayers} ways — ${fmt(perPlayer)} each.`;
     try {
       await sileo.promise(
@@ -167,9 +167,9 @@ function SplitModal({ item, openTabs, primaryTab, onClose, onDone }: {
           {otherTabs.length > 0 && (
             <div className="flex flex-col gap-1.5 max-h-44 overflow-y-auto">
               {otherTabs.map(tab => {
-                const checked = additionalIds.includes(tab.player._id);
+                const checked = additionalIds.includes(tab.player?._id ?? '');
                 return (
-                  <button key={tab._id} onClick={() => toggleAdditional(tab.player._id)}
+                  <button key={tab._id} onClick={() => toggleAdditional(tab.player?._id ?? '')}
                     className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border cursor-pointer text-left transition-all ${
                       checked ? 'bg-green-50 border-green-200' : 'bg-white border-gray-200 hover:border-gray-300'
                     }`}>
@@ -178,8 +178,8 @@ function SplitModal({ item, openTabs, primaryTab, onClose, onDone }: {
                     }`}>
                       {checked && <span className="text-white text-[10px] leading-none">✓</span>}
                     </div>
-                    <LevelBadge level={tab.player.level} />
-                    <span className="flex-1 text-sm font-medium text-gray-700">{tab.player.name}</span>
+                    <LevelBadge level={tab.player?.level ?? 'D'} />
+                    <span className="flex-1 text-sm font-medium text-gray-700">{tab.player?.name ?? ''}</span>
                     <span className="text-xs text-gray-400 font-mono">
                       {checked ? fmt(perPlayer) : fmt(tab.total)}
                     </span>
