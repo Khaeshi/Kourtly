@@ -75,7 +75,7 @@ router.post('/', async (req, res) => {
           // Find or auto-create open tab
           let tab = await Tab.findOne({ courtId: req.courtId, player: playerId, status: 'open' });
           if (!tab) {
-            tab = await Tab.create({ courtId: req.courtId, player: playerId, items: [], total: 0 });
+            tab = await Tab.create({ courtId: req.courtId, tabType: 'player', player: playerId, items: [], total: 0 });
           }
           await Tab.findOneAndUpdate(tab._id, {
             $push: { items: { item: shuttle._id, name: itemName, price: splitPrice, quantity: 1, addedAt: new Date() } },

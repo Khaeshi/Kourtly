@@ -28,18 +28,20 @@ export interface Bill {
 }
 
 export interface CatalogItem {
-  _id: string; name: string; price: number;
+  _id: string; name: string; price: number; costPrice?: number;
   category: string; isActive: boolean; isSplittable: boolean;
 }
 
 export interface TabItem {
   _id?: string; item?: string; name: string;
-  price: number; quantity: number; addedAt?: string;
+  price: number; costEach?: number; quantity: number; addedAt?: string;
 }
 
 export interface Tab {
   _id: string;
-  player: { _id: string; name: string; level: string };
+  tabType?: 'player' | 'cash';
+  cashLabel?: string;
+  player: { _id: string; name: string; level: string } | null;
   items: TabItem[]; total: number;
   status: 'open' | 'paid' | 'unpaid'; sessionDate: string;
   createdAt: string; updatedAt: string;
@@ -182,7 +184,13 @@ export const getOpenTabs   = () => req<Tab[]>('/tabs/open');
 export const getTabHistory = () => req<Tab[]>('/tabs/history');
 
 export const openTab = (playerId: string) =>
-  req<Tab>('/tabs', { method:'POST', body: JSON.stringify({ player: playerId }) });
+  req<Tab>('/tabs', { method:'POST', body: JSON.stringify({ player: playerId, tabType: 'player' }) });
+
+export const openCashTab = (cashLabel?: string) =>
+  req<Tab>('/tabs', {
+    method: 'POST',
+    body: JSON.stringify({ tabType: 'cash', ...(cashLabel?.trim() ? { cashLabel: cashLabel.trim() } : {}) }),
+  });
 
 export const addItemToTab = (tabId: string, item: { itemId: string; name: string; price: number; quantity: number }) =>
   req<Tab>(`/tabs/${tabId}/items`, { method:'POST', body: JSON.stringify(item) });

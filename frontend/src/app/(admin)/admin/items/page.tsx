@@ -23,8 +23,8 @@ const CATEGORY_CLS: Record<string, string> = {
 const inputCls = 'w-full bg-white border border-gray-200 rounded-md px-3 py-2 text-sm text-gray-800 outline-none focus:border-green-400 transition-colors';
 const labelCls = 'block text-[0.65rem] font-semibold tracking-widest uppercase text-gray-400 mb-1.5';
 
-interface ItemForm { name: string; price: string; category: string; isSplittable: boolean; }
-const emptyForm: ItemForm = { name: '', price: '', category: 'general', isSplittable: false };
+interface ItemForm { name: string; price: string; cost: string; category: string; isSplittable: boolean; }
+const emptyForm: ItemForm = { name: '', price: '', cost: '', category: 'general', isSplittable: false };
 
 // ── Toggle (same logic, Tailwind only) ────────────────────────────────────────
 function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
@@ -79,7 +79,14 @@ export default function ItemsPage() {
     setSaving(true);
     try {
       await sileo.promise(
-        createItem({ name: form.name.trim(), price: Number(form.price), category: form.category, isActive: true, isSplittable: form.isSplittable }),
+        createItem({
+          name: form.name.trim(),
+          price: Number(form.price),
+          costPrice: form.cost === '' ? 0 : Number(form.cost),
+          category: form.category,
+          isActive: true,
+          isSplittable: form.isSplittable,
+        }),
         { loading: { title: 'Adding item...' }, success: { title: 'Item added!', description: form.name.trim() }, error: { title: 'Failed' } }
       );
       setForm(emptyForm); setShowAdd(false); await load();
@@ -89,6 +96,7 @@ export default function ItemsPage() {
           _id: `offline-${err.outboxId}`,
           name: form.name.trim(),
           price: Number(form.price),
+          costPrice: form.cost === '' ? 0 : Number(form.cost),
           category: form.category,
           isActive: true,
           isSplittable: form.isSplittable,
@@ -108,7 +116,13 @@ export default function ItemsPage() {
   };
 
   const handleSave = async (id: string) => {
-    const nextPatch = { name: editForm.name, price: Number(editForm.price), category: editForm.category, isSplittable: editForm.isSplittable };
+    const nextPatch = {
+      name: editForm.name,
+      price: Number(editForm.price),
+      costPrice: editForm.cost === '' ? 0 : Number(editForm.cost),
+      category: editForm.category,
+      isSplittable: editForm.isSplittable,
+    };
     try {
       await updateItem(id, nextPatch);
       sileo.success({ title: 'Updated', description: editForm.name });
@@ -201,8 +215,8 @@ export default function ItemsPage() {
       {showAdd && (
         <div className="bg-white border border-gray-200 rounded-xl p-4 sm:p-5 mb-5">
           <p className={labelCls}>New Item</p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
-            <div className="sm:col-span-2">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+            <div className="sm:col-span-3">
               <label className={labelCls}>Name</label>
               <input className={inputCls} placeholder="e.g. Yonex AS-50"
                 value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
@@ -211,6 +225,11 @@ export default function ItemsPage() {
               <label className={labelCls}>Price (₱)</label>
               <input className={inputCls} type="number" placeholder="0.00"
                 value={form.price} onChange={e => setForm({ ...form, price: e.target.value })} />
+            </div>
+            <div>
+              <label className={labelCls}>Unit cost (₱)</label>
+              <input className={inputCls} type="number" placeholder="0"
+                value={form.cost} onChange={e => setForm({ ...form, cost: e.target.value })} />
             </div>
             <div>
               <label className={labelCls}>Category</label>
@@ -261,8 +280,8 @@ export default function ItemsPage() {
 
               {/* Desktop table header */}
               <div className="hidden sm:grid px-5 py-2 border-b border-gray-50 bg-gray-50/40"
-                style={{ gridTemplateColumns: '1fr 90px 120px 80px 80px 160px' }}>
-                {['Name', 'Price', 'Category', 'Split', 'Status', ''].map(h => (
+                style={{ gridTemplateColumns: '1fr 80px 80px 100px 72px 72px 150px' }}>
+                {['Name', 'Price', 'Cost', 'Category', 'Split', 'Status', ''].map(h => (
                   <span key={h} className="text-[0.62rem] font-bold tracking-widest uppercase text-gray-300">{h}</span>
                 ))}
               </div>
@@ -275,11 +294,14 @@ export default function ItemsPage() {
                   {editId === item._id ? (
                     /* Edit row */
                     <div className="px-4 sm:px-5 py-3 space-y-3">
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                         <input className={inputCls} value={editForm.name}
                           onChange={e => setEditForm({ ...editForm, name: e.target.value })} />
                         <input className={inputCls} type="number" value={editForm.price}
                           onChange={e => setEditForm({ ...editForm, price: e.target.value })} />
+                        <input className={inputCls} type="number" placeholder="0"
+                          value={editForm.cost}
+                          onChange={e => setEditForm({ ...editForm, cost: e.target.value })} />
                         <select className={inputCls} value={editForm.category}
                           onChange={e => setEditForm({ ...editForm, category: e.target.value })}>
                           {CATEGORIES.map(c => <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>)}
@@ -297,9 +319,10 @@ export default function ItemsPage() {
                     <>
                       {/* Desktop row */}
                       <div className="hidden sm:grid px-5 py-3 items-center"
-                        style={{ gridTemplateColumns: '1fr 90px 120px 80px 80px 160px' }}>
+                        style={{ gridTemplateColumns: '1fr 80px 80px 100px 72px 72px 150px' }}>
                         <span className="text-sm font-medium text-gray-700 truncate pr-2">{item.name}</span>
                         <span className="font-mono text-sm text-gray-800">₱{item.price.toFixed(2)}</span>
+                        <span className="font-mono text-sm text-gray-500">₱{(item.costPrice ?? 0).toFixed(2)}</span>
                         <CategoryBadge category={item.category} />
                         <span className={`text-xs font-semibold ${item.isSplittable ? 'text-blue-500' : 'text-gray-300'}`}>
                           {item.isSplittable ? '÷ Yes' : '—'}
@@ -308,7 +331,7 @@ export default function ItemsPage() {
                           {item.isActive ? 'Active' : 'Hidden'}
                         </span>
                         <div className="flex gap-1.5 justify-end">
-                          <Button v="ghost" size="sm" onClick={() => { setEditId(item._id); setEditForm({ name: item.name, price: String(item.price), category: item.category, isSplittable: item.isSplittable ?? false }); }}>Edit</Button>
+                          <Button v="ghost" size="sm" onClick={() => { setEditId(item._id); setEditForm({ name: item.name, price: String(item.price), cost: String(item.costPrice ?? 0), category: item.category, isSplittable: item.isSplittable ?? false }); }}>Edit</Button>
                           <Button v="ghost" size="sm" onClick={() => handleToggleActive(item)}>{item.isActive ? 'Hide' : 'Show'}</Button>
                           <Button v="danger" size="sm" onClick={() => handleDelete(item)}>Del</Button>
                         </div>
@@ -319,7 +342,10 @@ export default function ItemsPage() {
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
                             <p className="text-sm font-medium text-gray-700 truncate">{item.name}</p>
-                            <p className="font-mono text-sm text-gray-500 mt-0.5">₱{item.price.toFixed(2)}</p>
+                            <p className="font-mono text-sm text-gray-500 mt-0.5">
+                              ₱{item.price.toFixed(2)}
+                              <span className="text-gray-400"> · cost ₱{(item.costPrice ?? 0).toFixed(2)}</span>
+                            </p>
                           </div>
                           <CategoryBadge category={item.category} />
                         </div>
@@ -333,7 +359,7 @@ export default function ItemsPage() {
                           </span>
                         </div>
                         <div className="flex gap-1.5 pt-1">
-                          <Button v="ghost" size="sm" onClick={() => { setEditId(item._id); setEditForm({ name: item.name, price: String(item.price), category: item.category, isSplittable: item.isSplittable ?? false }); }}>Edit</Button>
+                          <Button v="ghost" size="sm" onClick={() => { setEditId(item._id); setEditForm({ name: item.name, price: String(item.price), cost: String(item.costPrice ?? 0), category: item.category, isSplittable: item.isSplittable ?? false }); }}>Edit</Button>
                           <Button v="ghost" size="sm" onClick={() => handleToggleActive(item)}>{item.isActive ? 'Hide' : 'Show'}</Button>
                           <Button v="danger" size="sm" onClick={() => handleDelete(item)}>Del</Button>
                         </div>

@@ -1,9 +1,9 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { sileo } from 'sileo';
 import {
   getPlayers, getItems, getOpenTabs,
-  openTab, addItemToTab, removeItemFromTab, payTab, markUnpaid, payUnpaid, closeTab, splitItem,
+  openTab, openCashTab, addItemToTab, removeItemFromTab, payTab, markUnpaid, payUnpaid, closeTab, splitItem,
   getTodayReservationTabs, addItemToReservationTab,
   removeItemFromReservationTab, payReservationTab, markReservationUnpaid, payReservationUnpaid, clearReservationTab,
   collectReservationBalance,
@@ -20,6 +20,11 @@ const LEVEL_COLOR: Record<string, string> = {
   A: '#d97706', B: '#16a34a', C: '#0891b2', D: '#7c3aed',
 };
 const fmt = (n: number) => `₱${n.toFixed(2)}`;
+
+function tabPersonLabel(tab: Tab) {
+  if (tab.tabType === 'cash') return tab.cashLabel?.trim() || 'Cash sale';
+  return tab.player?.name ?? '—';
+}
 
 // ── LevelBadge ────────────────────────────────────────────────────────────────
 function LevelBadge({ level }: { level: string }) {
@@ -42,8 +47,8 @@ function SplitModal({ item, openTabs, primaryTab, onClose, onDone }: {
   const [additionalIds, setAdditionalIds] = useState<string[]>([]);
   const [loading,       setLoading]       = useState(false);
 
-  const primaryId   = primaryTab?.player._id ?? null;
-  const otherTabs   = openTabs.filter(t => t.player._id !== primaryId);
+  const primaryId   = primaryTab?.player?._id ?? null;
+  const otherTabs   = openTabs.filter(t => t.tabType !== 'cash' && t.player && t.player._id !== primaryId);
 
   // Final list sent to backend: primary always first, then additional
   const allPlayerIds = primaryId
@@ -84,12 +89,14 @@ function SplitModal({ item, openTabs, primaryTab, onClose, onDone }: {
         const per = totalPlayers > 0 ? Math.round((item.price / totalPlayers) * 100) / 100 : item.price;
 
         const cached = (await cacheGet<Tab[]>('openTabs')) ?? openTabs;
+        const splitCost = totalPlayers > 0 ? Math.round((Number(item.costPrice ?? 0) / totalPlayers) * 100) / 100 : 0;
         const next = cached.map((t) => {
-          if (!allPlayerIds.includes(t.player._id)) return t;
+          if (!t.player || !allPlayerIds.includes(t.player._id)) return t;
           const added = {
             item: item._id,
             name: `${item.name}${totalPlayers > 1 ? ' (split)' : ''}`,
             price: per,
+            costEach: splitCost,
             quantity: 1,
             addedAt: now,
           };
@@ -130,7 +137,7 @@ function SplitModal({ item, openTabs, primaryTab, onClose, onDone }: {
             <p className="text-[0.65rem] font-semibold tracking-widest uppercase text-gray-400 mb-2">
               Charged to
             </p>
-            {primaryTab ? (
+            {primaryTab?.player ? (
               <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg border-2 border-green-300 bg-green-50">
                 {/* Lock icon to show this is fixed */}
                 <span className="text-green-500 text-xs shrink-0">🔒</span>
@@ -141,7 +148,7 @@ function SplitModal({ item, openTabs, primaryTab, onClose, onDone }: {
                 </span>
               </div>
             ) : (
-              <p className="text-xs text-red-400 px-1">No active tab selected. Select a player tab first.</p>
+              <p className="text-xs text-red-400 px-1">No player tab selected. Open a player tab and select it to split charges.</p>
             )}
           </div>
 
@@ -185,7 +192,7 @@ function SplitModal({ item, openTabs, primaryTab, onClose, onDone }: {
           {/* hint */}
           <p className="text-[0.65rem] text-gray-400">
             {isSinglePlayer
-              ? `Full ${fmt(item.price)} charged to ${primaryTab?.player.name ?? '—'}.`
+              ? `Full ${fmt(item.price)} charged to ${primaryTab?.player?.name ?? '—'}.`
               : `${fmt(item.price)} ÷ ${totalPlayers} = ${fmt(perPlayer)} each.`}
           </p>
         </div>
@@ -221,6 +228,8 @@ function TabCard({ tab, isActive, onClick, onUpdate }: {
 }) {
   const [paying, setPaying] = useState(false);
   const isPendingSync = tab._id.startsWith('offline-');
+  const isCash = tab.tabType === 'cash';
+  const displayName = isCash ? (tab.cashLabel?.trim() || 'Cash sale') : (tab.player?.name ?? 'Guest');
 
   const updateCachedTab = useCallback(async (updater: (tabs: Tab[]) => Tab[]) => {
     const cached = (await cacheGet<Tab[]>('openTabs')) ?? [];
@@ -234,7 +243,7 @@ function TabCard({ tab, isActive, onClick, onUpdate }: {
     try {
       await sileo.promise(payTab(tab._id), {
         loading: { title: 'Processing...' },
-        success: { title: 'Paid!', description: `${tab.player.name} — ${fmt(tab.total)}` },
+        success: { title: 'Paid!', description: `${displayName} — ${fmt(tab.total)}` },
         error:   { title: 'Payment failed' },
       });
       emitLocalEvent('billing:tab_paid');
@@ -255,7 +264,7 @@ function TabCard({ tab, isActive, onClick, onUpdate }: {
 
   const handleClose = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!confirm(`Discard ${tab.player.name}'s tab?`)) return;
+    if (!confirm(`Discard ${displayName}'s tab?`)) return;
     try {
       await closeTab(tab._id);
       sileo.success({ title: 'Tab closed' });
@@ -300,8 +309,14 @@ function TabCard({ tab, isActive, onClick, onUpdate }: {
         isActive ? 'ring-2 ring-green-500 ring-offset-1' : 'border border-gray-200'
       }`}>
       <div className={`px-4 py-3 flex items-center gap-2 ${tab.items.length > 0 ? 'border-b border-gray-100' : ''}`}>
-        <LevelBadge level={tab.player.level} />
-        <span className="flex-1 text-sm font-semibold text-gray-900 truncate">{tab.player.name}</span>
+        {isCash ? (
+          <span className="text-[0.62rem] font-bold uppercase px-1.5 py-0.5 rounded border border-amber-200 bg-amber-50 text-amber-800 shrink-0">
+            Cash
+          </span>
+        ) : (
+          <LevelBadge level={tab.player?.level ?? 'D'} />
+        )}
+        <span className="flex-1 text-sm font-semibold text-gray-900 truncate">{displayName}</span>
         <span className={`font-mono text-sm font-semibold shrink-0 ${tab.total > 0 ? 'text-yellow-900' : 'text-gray-300'}`}>
           {fmt(tab.total)}
         </span>
@@ -329,10 +344,10 @@ function TabCard({ tab, isActive, onClick, onUpdate }: {
             </button>
             <button onClick={async e => {
                 e.stopPropagation();
-                if (!confirm(`Mark ${tab.player.name}'s tab as unpaid?`)) return;
+                if (!confirm(`Mark ${displayName}'s tab as unpaid?`)) return;
                 try {
                   await markUnpaid(tab._id);
-                  sileo.error({ title: 'Marked unpaid', description: `${tab.player.name} — ${fmt(tab.total)}` });
+                  sileo.error({ title: 'Marked unpaid', description: `${displayName} — ${fmt(tab.total)}` });
                   emitLocalEvent('billing:tab_updated');
                   onUpdate();
                 } catch (err) {
@@ -370,7 +385,7 @@ export default function BillingPage() {
   const [history,    setHistory]    = useState<Tab[]>([]);
   const [loading,    setLoading]    = useState(true);
   const [activeTab,  setActiveTab]  = useState<string | null>(null);
-  const [view,          setView]          = useState<'active' | 'reservations' | 'history'>('active');
+  const [view,          setView]          = useState<'cash' | 'active' | 'reservations' | 'history'>('cash');
   const [openingFor,    setOpeningFor]    = useState('');
   const [search,        setSearch]        = useState('');
   const [splitItem_,    setSplitItem]     = useState<CatalogItem | null>(null);
@@ -435,11 +450,48 @@ export default function BillingPage() {
   useEffect(() => subscribeLocalEvent('billing:tab_paid', () => { loadAll(); loadHistory(); }), [loadAll, loadHistory]);
   useEffect(() => subscribeLocalEvent('data:sync', () => { loadAll(); loadHistory(); }), [loadAll, loadHistory]);
 
-  const playersWithTab   = new Set(openTabs.map(t => t.player._id));
+  const cashTabs   = useMemo(() => openTabs.filter(t => t.tabType === 'cash'), [openTabs]);
+  const playerTabs = useMemo(() => openTabs.filter(t => t.tabType !== 'cash'), [openTabs]);
+
+  const playersWithTab   = new Set(playerTabs.filter(t => t.player).map(t => t.player!._id));
   const availablePlayers = players.filter(p => !playersWithTab.has(p._id));
-  const grandTotal       = openTabs.reduce((s, t) => s + t.total, 0);
+  const grandTotalAll    = openTabs.reduce((s, t) => s + t.total, 0);
+  const grandTotalCash   = cashTabs.reduce((s, t) => s + t.total, 0);
+  const grandTotalPlayer = playerTabs.reduce((s, t) => s + t.total, 0);
   const queueHistory     = historyPaged?.tabs ?? [];
   const activeTabObj     = openTabs.find(t => t._id === activeTab) ?? null;
+
+  const addTargetLabel = activeTabObj?.tabType === 'cash'
+    ? (activeTabObj.cashLabel?.trim() || 'Cash sale')
+    : (activeTabObj?.player?.name ?? '');
+
+  const headerMoney = view === 'cash'
+    ? grandTotalCash
+    : view === 'active'
+      ? grandTotalPlayer
+      : grandTotalAll;
+  const headerTitle = view === 'cash'
+    ? 'Cash sales total'
+    : view === 'active'
+      ? 'Player tabs total'
+      : 'Open tabs total';
+  const headerSub = view === 'cash' || view === 'active'
+    ? `All open tabs: ${fmt(grandTotalAll)}`
+    : null;
+
+  useEffect(() => {
+    if (view !== 'cash') return;
+    if (cashTabs.length === 0) return;
+    if (!activeTab || !cashTabs.some((c) => c._id === activeTab)) {
+      setActiveTab(cashTabs[0]._id);
+    }
+  }, [view, cashTabs, activeTab]);
+
+  useEffect(() => {
+    if (view !== 'active') return;
+    const cur = openTabs.find((x) => x._id === activeTab);
+    if (cur?.tabType === 'cash') setActiveTab(null);
+  }, [view, openTabs, activeTab]);
 
   const getQty     = (id: string) => qty[id] ?? 1;
   const setItemQty = (id: string, val: number) => setQty(q => ({ ...q, [id]: Math.max(1, val) }));
@@ -452,6 +504,7 @@ export default function BillingPage() {
         success: { title: 'Tab opened!', description: players.find(p => p._id === openingFor)?.name },
         error:   { title: 'Could not open tab', description: 'Player may already have an open tab.' },
       });
+      setView('active');
       setOpeningFor(''); await loadAll();
     } catch (err) {
       if (err instanceof OfflineQueuedError) {
@@ -459,6 +512,7 @@ export default function BillingPage() {
         if (pl) {
           const tmp: Tab = {
             _id: `offline-${err.outboxId}`,
+            tabType: 'player',
             player: { _id: pl._id, name: pl.name, level: pl.level },
             items: [],
             total: 0,
@@ -473,6 +527,7 @@ export default function BillingPage() {
             return next;
           });
           setActiveTab(tmp._id);
+          setView('active');
           emitLocalEvent('billing:tab_updated');
           sileo.info({ title: 'Saved offline', description: 'Tab will sync when you are online.' });
         }
@@ -481,21 +536,65 @@ export default function BillingPage() {
     }
   };
 
+  const handleOpenCashTab = async () => {
+    try {
+      await sileo.promise(openCashTab(), {
+        loading: { title: 'Opening cash sale...' },
+        success: { title: 'Cash tab opened' },
+        error:   { title: 'Could not open tab' },
+      });
+      setView('cash');
+      await loadAll();
+    } catch (err) {
+      if (err instanceof OfflineQueuedError) {
+        const tmp: Tab = {
+          _id: `offline-${err.outboxId}`,
+          tabType: 'cash',
+          cashLabel: 'Cash sale',
+          player: null,
+          items: [],
+          total: 0,
+          status: 'open',
+          sessionDate: new Date().toISOString().slice(0, 10),
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        setOpenTabs((prev) => {
+          const next = [tmp, ...prev];
+          cacheSet('openTabs', next);
+          return next;
+        });
+        setActiveTab(tmp._id);
+        setView('cash');
+        emitLocalEvent('billing:tab_updated');
+        sileo.info({ title: 'Saved offline', description: 'Cash tab will sync when you are online.' });
+      }
+    }
+  };
+
   const handleQuickAdd = async (item: CatalogItem) => {
     if (!activeTab) return;
-    if (item.isSplittable) { setSplitItem(item); return; }
+    if (item.isSplittable) {
+      if (!activeTabObj?.player) {
+        sileo.error({ title: 'Player tab required', description: 'Open a player tab to split shuttlecock charges.' });
+        return;
+      }
+      setSplitItem(item);
+      return;
+    }
     const quantity = getQty(item._id);
     setAddingItem(item._id);
     try {
       await addItemToTab(activeTab, { itemId: item._id, name: item.name, price: item.price, quantity });
-      sileo.success({ title: 'Added', description: `${item.name} ×${quantity} → ${activeTabObj?.player.name}` });
+      sileo.success({ title: 'Added', description: `${item.name} ×${quantity} → ${addTargetLabel}` });
       setItemQty(item._id, 1); await loadAll();
     } catch (err) {
       if (err instanceof OfflineQueuedError) {
         setOpenTabs((prev) => {
           const next = prev.map((t) => {
             if (t._id !== activeTab) return t;
-            const added = { item: item._id, name: item.name, price: item.price, quantity, addedAt: new Date().toISOString() };
+            const costEach = Number(item.costPrice ?? 0);
+            const added = { item: item._id, name: item.name, price: item.price, costEach, quantity, addedAt: new Date().toISOString() };
             const items = [...t.items, added];
             const total = t.total + item.price * quantity;
             return { ...t, items, total, updatedAt: new Date().toISOString() };
@@ -523,7 +622,7 @@ export default function BillingPage() {
 
   return (
     <div className="w-full font-sans">
-      {splitItem_ && (
+      {splitItem_ && activeTabObj?.player && (
         <SplitModal item={splitItem_} openTabs={openTabs} primaryTab={activeTabObj}
           onClose={() => setSplitItem(null)} onDone={loadAll} />
       )}
@@ -535,20 +634,27 @@ export default function BillingPage() {
           <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Billing</h1>
         </div>
         <div className="text-right">
-          <div className="text-[0.65rem] font-semibold tracking-widest uppercase text-gray-400 mb-0.5">Open Tabs Total</div>
-          <div className="font-mono text-2xl font-semibold text-yellow-900">{fmt(grandTotal)}</div>
+          <div className="text-[0.65rem] font-semibold tracking-widest uppercase text-gray-400 mb-0.5">{headerTitle}</div>
+          <div className="font-mono text-2xl font-semibold text-yellow-900">{fmt(headerMoney)}</div>
+          {headerSub && <div className="text-[0.65rem] text-gray-400 mt-1">{headerSub}</div>}
         </div>
       </div>
 
       {/* View toggle */}
       <div className="flex gap-1.5 mb-5 flex-wrap">
-        <button onClick={() => setView('active')}
+        <button type="button" onClick={() => setView('cash')}
+          className={`px-4 py-1.5 rounded-md text-xs font-medium border cursor-pointer transition-all ${
+            view === 'cash' ? 'bg-amber-700 border-amber-700 text-white' : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'
+          }`}>
+          Cash ({cashTabs.length})
+        </button>
+        <button type="button" onClick={() => setView('active')}
           className={`px-4 py-1.5 rounded-md text-xs font-medium border cursor-pointer transition-all ${
             view === 'active' ? 'bg-gray-900 border-gray-900 text-white' : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'
           }`}>
-          Queue Tabs ({openTabs.length})
+          Player tabs ({playerTabs.length})
         </button>
-        <button onClick={() => setView('reservations')}
+        <button type="button" onClick={() => setView('reservations')}
           className={`px-4 py-1.5 rounded-md text-xs font-medium border cursor-pointer transition-all ${
             view === 'reservations'
               ? 'bg-blue-600 border-blue-600 text-white'
@@ -561,7 +667,7 @@ export default function BillingPage() {
             </span>
           )}
         </button>
-        <button onClick={() => setView('history')}
+        <button type="button" onClick={() => setView('history')}
           className={`px-4 py-1.5 rounded-md text-xs font-medium border cursor-pointer transition-all ${
             view === 'history' ? 'bg-gray-900 border-gray-900 text-white' : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'
           }`}>
@@ -569,12 +675,53 @@ export default function BillingPage() {
         </button>
       </div>
 
-      {/* ── ACTIVE VIEW ── */}
-      {view === 'active' && (
+      {/* ── CASH + PLAYER TABS ── */}
+      {(view === 'cash' || view === 'active') && (
         <div className="flex flex-col lg:grid lg:grid-cols-[1fr_280px] gap-6 items-start">
 
           {/* LEFT: Tabs */}
           <div className="w-full min-w-0">
+            {view === 'cash' ? (
+              <>
+                <div className="bg-white border border-gray-200 rounded-lg px-4 py-3 mb-4 flex flex-wrap gap-2 items-center">
+                  <button type="button" onClick={handleOpenCashTab}
+                    className="px-4 py-2 rounded-md text-xs font-semibold border bg-amber-50 border-amber-200 text-amber-900 cursor-pointer hover:bg-amber-100 transition-all">
+                    New cash sale
+                  </button>
+                  {activeTab && cashTabs.some((c) => c._id === activeTab) && (
+                    <span className="text-xs text-gray-400 w-full sm:w-auto">
+                      Selected: <strong className="text-gray-600">{addTargetLabel}</strong>
+                    </span>
+                  )}
+                </div>
+                {!activeTab && cashTabs.length > 0 && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-md px-4 py-2.5 mb-3.5 text-xs text-amber-900">
+                    Click a cash tab, then add items from the catalog for walk-in guests.
+                  </div>
+                )}
+                {loading ? (
+                  <div className="p-12 text-center text-gray-400 text-sm">Loading...</div>
+                ) : cashTabs.length === 0 ? (
+                  <div className="p-12 text-center bg-white border border-dashed border-amber-200 rounded-xl">
+                    <p className="text-sm text-gray-500 mb-3">No open cash sales.</p>
+                    <button type="button" onClick={handleOpenCashTab}
+                      className="text-sm text-amber-900 font-medium bg-amber-50 border border-amber-200 rounded-md px-3 py-2 cursor-pointer hover:bg-amber-100">
+                      Start a cash sale
+                    </button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                    {cashTabs.map(tab => (
+                      <TabCard key={tab._id} tab={tab}
+                        isActive={activeTab === tab._id}
+                        onClick={() => setActiveTab(t => t === tab._id ? null : tab._id)}
+                        onUpdate={loadAll} />
+                    ))}
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
             {/* Open tab bar */}
             <div className="bg-white border border-gray-200 rounded-lg px-4 py-3 mb-4 flex flex-wrap gap-2 items-center">
               <select value={openingFor} onChange={e => setOpeningFor(e.target.value)}
@@ -582,20 +729,20 @@ export default function BillingPage() {
                 <option value="">Open tab for player...</option>
                 {availablePlayers.map(p => <option key={p._id} value={p._id}>{p.name} — {p.level}</option>)}
               </select>
-              <button onClick={handleOpenTab} disabled={!openingFor}
+              <button type="button" onClick={handleOpenTab} disabled={!openingFor}
                 className={`px-4 py-2 rounded-md text-xs font-semibold border transition-all ${
                   openingFor ? 'bg-green-50 border-green-200 text-green-700 cursor-pointer hover:bg-green-100' : 'bg-gray-50 border-gray-200 text-gray-400 cursor-not-allowed'
                 }`}>
                 Open Tab
               </button>
-              {activeTab && (
+              {activeTab && activeTabObj?.player && (
                 <span className="text-xs text-gray-400 w-full sm:w-auto">
-                  Selected: <strong className="text-gray-600">{activeTabObj?.player.name}</strong>
+                  Selected: <strong className="text-gray-600">{activeTabObj.player.name}</strong>
                 </span>
               )}
             </div>
 
-            {!activeTab && openTabs.length > 0 && (
+            {!activeTab && playerTabs.length > 0 && (
               <div className="bg-yellow-50 border border-yellow-200 rounded-md px-4 py-2.5 mb-3.5 text-xs text-yellow-800">
                 Click a player card to select it, then use the item panel to add charges.
               </div>
@@ -603,13 +750,13 @@ export default function BillingPage() {
 
             {loading ? (
               <div className="p-12 text-center text-gray-400 text-sm">Loading...</div>
-            ) : openTabs.length === 0 ? (
+            ) : playerTabs.length === 0 ? (
               <div className="p-12 text-center bg-white border border-dashed border-gray-200 rounded-xl">
-                <p className="text-sm text-gray-400">No open tabs. Select a player above to open one.</p>
+                <p className="text-sm text-gray-400">No open player tabs. Select a player above to open one.</p>
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-                {openTabs.map(tab => (
+                {playerTabs.map(tab => (
                   <TabCard key={tab._id} tab={tab}
                     isActive={activeTab === tab._id}
                     onClick={() => setActiveTab(t => t === tab._id ? null : tab._id)}
@@ -617,13 +764,15 @@ export default function BillingPage() {
                 ))}
               </div>
             )}
+              </>
+            )}
           </div>
 
           {/* RIGHT: Item sidebar */}
           <div className="w-full lg:w-auto bg-white border border-gray-200 rounded-xl overflow-hidden lg:sticky lg:top-4">
             <div className="px-4 py-3 border-b border-gray-100 bg-gray-50/60">
               <p className="text-[0.65rem] font-bold tracking-widest uppercase text-gray-400">
-                {activeTab ? `Add to ${activeTabObj?.player.name}` : 'Select a player first'}
+                {activeTab ? `Add to ${addTargetLabel}` : view === 'cash' ? 'Select a cash tab' : 'Select a player first'}
               </p>
             </div>
 
@@ -924,7 +1073,7 @@ export default function BillingPage() {
               <div className="hidden sm:block bg-white border border-gray-200 rounded-xl overflow-hidden">
                 <div className="grid px-5 py-2.5 border-b border-gray-100 bg-gray-50/60"
                   style={{ gridTemplateColumns: '1fr 140px 90px 80px 90px' }}>
-                  {['Player', 'Items', 'Total', 'Status', 'Time'].map(h => (
+                  {['Customer / tab', 'Items', 'Total', 'Status', 'Time'].map(h => (
                     <span key={h} className="text-[0.65rem] font-bold tracking-widest uppercase text-gray-300">{h}</span>
                   ))}
                 </div>
@@ -936,8 +1085,12 @@ export default function BillingPage() {
                   <div key={tab._id} className="grid px-5 py-3 items-center hover:bg-gray-50/50 transition-colors"
                     style={{ gridTemplateColumns: '1fr 140px 90px 80px 90px', borderBottom: i < queueHistory.length - 1 ? '1px solid #f9fafb' : 'none' }}>
                     <div className="flex items-center gap-2 min-w-0">
-                      <LevelBadge level={tab.player.level} />
-                      <span className="text-sm font-medium text-gray-700 truncate">{tab.player.name}</span>
+                      {tab.tabType === 'cash' ? (
+                        <span className="text-[0.6rem] font-bold uppercase px-1.5 py-0.5 rounded border border-amber-200 bg-amber-50 text-amber-800 shrink-0">Cash</span>
+                      ) : (
+                        <LevelBadge level={tab.player?.level ?? 'D'} />
+                      )}
+                      <span className="text-sm font-medium text-gray-700 truncate">{tabPersonLabel(tab)}</span>
                     </div>
                     <div className="flex flex-wrap gap-1">
                       {tab.items.slice(0, 2).map((item, j) => (
@@ -952,7 +1105,7 @@ export default function BillingPage() {
                       {tab.status === 'unpaid' ? (
                         <button onClick={async () => {
                           await payUnpaid(tab._id);
-                          sileo.success({ title: 'Marked as paid', description: tab.player.name });
+                          sileo.success({ title: 'Marked as paid', description: tabPersonLabel(tab) });
                           loadHistory();
                         }} className="text-[0.65rem] font-semibold px-2 py-0.5 rounded-full border border-orange-300 bg-orange-50 text-orange-600 cursor-pointer hover:bg-orange-100 transition-all mr-4">
                           Collect Unpaid
@@ -970,19 +1123,23 @@ export default function BillingPage() {
 
               {/* Mobile cards */}
               <div className="sm:hidden flex flex-col gap-3">
-                {history.length === 0 ? (
+                {queueHistory.length === 0 ? (
                   <div className="p-12 text-center text-gray-400 text-sm">No records found.</div>
-                ) : history.map(tab => (
+                ) : queueHistory.map(tab => (
                   <div key={tab._id} className={`bg-white rounded-xl p-4 border ${tab.status === 'unpaid' ? 'border-orange-200' : 'border-gray-200'}`}>
                     <div className="flex items-center justify-between gap-3 mb-2">
                       <div className="flex items-center gap-2">
-                        <LevelBadge level={tab.player.level} />
-                        <span className="text-sm font-semibold text-gray-800">{tab.player.name}</span>
+                        {tab.tabType === 'cash' ? (
+                          <span className="text-[0.6rem] font-bold uppercase px-1.5 py-0.5 rounded border border-amber-200 bg-amber-50 text-amber-800 shrink-0">Cash</span>
+                        ) : (
+                          <LevelBadge level={tab.player?.level ?? 'D'} />
+                        )}
+                        <span className="text-sm font-semibold text-gray-800">{tabPersonLabel(tab)}</span>
                       </div>
                       <div className="text-right">
                         <p className="font-mono text-sm font-semibold text-yellow-900">{fmt(tab.total)}</p>
                         {tab.status === 'unpaid' && (
-                          <button onClick={async () => { await payUnpaid(tab._id); sileo.success({ title: 'Paid', description: tab.player.name }); loadHistory(); }}
+                          <button onClick={async () => { await payUnpaid(tab._id); sileo.success({ title: 'Paid', description: tabPersonLabel(tab) }); loadHistory(); }}
                             className="text-[0.65rem] text-orange-600 underline cursor-pointer mt-0.5">Collect</button>
                         )}
                       </div>

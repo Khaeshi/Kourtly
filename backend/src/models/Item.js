@@ -4,6 +4,7 @@ const ItemSchema = new mongoose.Schema({
   courtId:      { type: mongoose.Schema.Types.ObjectId, ref: 'Court', required: true, index: true },
   name:         { type: String, required: true },
   price:        { type: Number, required: true },
+  costPrice:    { type: Number, default: 0 },
   category:     { type: String, default: 'general' },
   isActive:     { type: Boolean, default: true },
   isSplittable: { type: Boolean, default: false },

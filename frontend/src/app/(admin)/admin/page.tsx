@@ -1,6 +1,6 @@
 'use client';
 import Link from 'next/link';
-import { Users, Swords, Building2, TrendingUp, Calendar, ShoppingBag } from 'lucide-react';
+import { Users, Swords, Building2, TrendingUp, Calendar, ShoppingBag, PiggyBank, Package } from 'lucide-react';
 import { useState, useEffect, useCallback } from 'react';
 import { format, parseISO } from 'date-fns';
 import { askAnalytics, getPlayers, getQueue } from '@/lib/api';
@@ -19,12 +19,22 @@ interface AnalyticsSummary {
   period: Period;
   dateRange: { start: string; end: string };
   reservations: { total: number; confirmed: number; pending: number; cancelled: number; completed: number };
-  billing: { totalRevenue: number; reservationRevenue: number; combinedRevenue: number; paidTabs: number; avgPerTab: number };
+  billing: {
+    totalRevenue: number;
+    reservationRevenue: number;
+    combinedRevenue: number;
+    paidTabs: number;
+    avgPerTab: number;
+    totalCOGS?: number;
+    grossProfit?: number;
+    cashTabRevenue?: number;
+    playerTabRevenue?: number;
+  };
   players: { total: number; active: number };
   queue: { matchesPlayed: number };
   revenueByDay: { date: string; reservationRevenue: number; billingRevenue: number; total: number }[];
   courtUtilization: { court: number; bookings: number; hours: number }[];
-  topItems: { name: string; quantity: number; revenue: number }[];
+  topItems: { name: string; quantity: number; revenue: number; cost?: number; grossProfit?: number }[];
   peakHours: { hour: number; label: string; count: number }[];
   statusBreakdown: { status: string; count: number }[];
 }
@@ -74,6 +84,7 @@ function ChartTooltip({ active, payload, label }: any) {
       {payload.map((p: any) => (
         <p key={p.name} style={{ color: p.color }}>
           {p.name}: {p.name.toLowerCase().includes('revenue') || p.name.toLowerCase().includes('billing') || p.name.toLowerCase().includes('reservation')
+            || p.name.toLowerCase().includes('profit') || p.name.toLowerCase().includes('cogs')
             ? fmt(p.value) : p.value}
         </p>
       ))}
@@ -178,6 +189,16 @@ export default function AdminDashboard() {
       sub: PERIOD_LABELS[period].toLowerCase(), color: '#d97706', icon: TrendingUp,
     },
     {
+      label: 'Gross profit',
+      value: analytics ? fmtK(analytics.billing.grossProfit ?? 0) : '—',
+      sub: 'POS after COGS', color: '#059669', icon: PiggyBank,
+    },
+    {
+      label: 'COGS',
+      value: analytics ? fmtK(analytics.billing.totalCOGS ?? 0) : '—',
+      sub: 'Catalog cost on sold lines', color: '#64748b', icon: Package,
+    },
+    {
       label: 'Reservations',
       value: analytics ? String(analytics.reservations.total) : '—',
       sub: `${analytics?.reservations.confirmed ?? 0} confirmed`, color: '#16a34a', icon: Calendar,
@@ -243,8 +264,8 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* ── Stat cards (6 cards — 3 live + 3 analytics) ── */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+      {/* ── Stat cards (live + analytics incl. profit) ── */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mb-6">
         {statCards.map(s => (
           <div key={s.label} className="stat-card">
             <div className="flex items-start justify-between w-full">
@@ -281,6 +302,11 @@ export default function AdminDashboard() {
                 </div>
               ))}
             </div>
+          )}
+          {analytics && typeof analytics.billing.cashTabRevenue === 'number' && (
+            <p className="text-[0.65rem] text-gray-400 mt-2 text-right w-full">
+              POS tabs: cash {fmt(analytics.billing.cashTabRevenue)} · player {fmt(analytics.billing.playerTabRevenue ?? 0)}
+            </p>
           )}
         </div>
 
@@ -449,6 +475,15 @@ export default function AdminDashboard() {
                     <div className="text-right shrink-0">
                       <p className="font-mono text-xs font-semibold text-gray-800">{fmt(item.revenue)}</p>
                       <p className="text-[0.6rem] text-gray-400">×{item.quantity}</p>
+                      <p
+                        className="text-[0.6rem] text-emerald-600 font-medium"
+                        title={typeof item.cost === 'number' ? `COGS ${fmt(item.cost)}` : undefined}
+                      >
+                        GP {fmt(item.grossProfit ?? 0)}
+                        {item.revenue > 0
+                          ? ` · ${Math.round(((item.grossProfit ?? 0) / item.revenue) * 100)}% margin`
+                          : ''}
+                      </p>
                     </div>
                   </div>
                 );

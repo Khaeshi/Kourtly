@@ -138,6 +138,20 @@ async function buildSummary(courtId, period) {
   const totalBillingRevenue = paidTabs.reduce((sum, t) => sum + (t.total ?? 0), 0);
   const avgPerTab = paidTabs.length > 0 ? Math.round(totalBillingRevenue / paidTabs.length) : 0;
 
+  let totalCOGS = 0;
+  let cashTabRevenue = 0;
+  let playerTabRevenue = 0;
+  paidTabs.forEach((t) => {
+    const rev = t.total ?? 0;
+    if (t.tabType === 'cash') cashTabRevenue += rev;
+    else playerTabRevenue += rev;
+    (t.items ?? []).forEach((item) => {
+      const qty = item.quantity ?? 1;
+      totalCOGS += (item.costEach ?? 0) * qty;
+    });
+  });
+  const grossProfit = totalBillingRevenue - totalCOGS;
+
   const dateList = buildDateRange(start, end);
   const resByDate = {};
   confirmedReservations.forEach((r) => {
@@ -173,9 +187,16 @@ async function buildSummary(courtId, period) {
   paidTabs.forEach((tab) => {
     (tab.items ?? []).forEach((item) => {
       const key = item.name;
-      if (!itemMap[key]) itemMap[key] = { name: key, quantity: 0, revenue: 0 };
-      itemMap[key].quantity += item.quantity ?? 1;
-      itemMap[key].revenue += (item.price ?? 0) * (item.quantity ?? 1);
+      const qty = item.quantity ?? 1;
+      const rev = (item.price ?? 0) * qty;
+      const cost = (item.costEach ?? 0) * qty;
+      if (!itemMap[key]) {
+        itemMap[key] = { name: key, quantity: 0, revenue: 0, cost: 0, grossProfit: 0 };
+      }
+      itemMap[key].quantity += qty;
+      itemMap[key].revenue += rev;
+      itemMap[key].cost += cost;
+      itemMap[key].grossProfit += rev - cost;
     });
   });
   const topItems = Object.values(itemMap).sort((a, b) => b.revenue - a.revenue).slice(0, 8);
@@ -206,6 +227,10 @@ async function buildSummary(courtId, period) {
       combinedRevenue: totalBillingRevenue + totalReservationRevenue,
       paidTabs: paidTabs.length,
       avgPerTab,
+      totalCOGS,
+      grossProfit,
+      cashTabRevenue,
+      playerTabRevenue,
     },
     players: {
       total: totalPlayers,
@@ -270,7 +295,7 @@ router.post('/ask', async (req, res) => {
     try {
       const answer = await generateAIText({
         maxTokens: 260,
-        system: "You are an analytics assistant for PlayKou court managers in the Philippines. You receive a question and structured analytics data (JSON) for their court. Answer the question directly using the data provided. Rules: Be specific: cite numbers, dates, percentages. If the data doesn't answer the question, say so clearly. Keep answers under 120 words. Taglish questions are fine - answer in plain English. Never suggest features that don't exist in the platform.",
+        system: "You are an analytics assistant for PlayKou court managers in the Philippines. You receive a question and structured analytics data (JSON) for their court. Answer the question directly using the data provided. Rules: Be specific: cite numbers, dates, percentages. When present, billing may include totalCOGS, grossProfit, cashTabRevenue, and playerTabRevenue (POS tabs); topItems may include cost and grossProfit per SKU. If the data doesn't answer the question, say so clearly. Keep answers under 120 words. Taglish questions are fine - answer in plain English. Never suggest features that don't exist in the platform.",
         prompt: `Question: ${question}\n\nAnalytics data:\n${JSON.stringify(dataUsed)}`,
       });
       if (!answer) throw new Error('Empty AI answer');

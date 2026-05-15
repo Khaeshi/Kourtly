@@ -41,6 +41,11 @@ export async function getWeeklyAnalytics(courtId) {
     .filter((r) => ['confirmed', 'completed'].includes(r.status))
     .reduce((sum, r) => sum + safeNum(r.reservationFeeAmount || 0), 0);
   const billingRevenue = paidTabs.reduce((sum, t) => sum + safeNum(t.total), 0);
+  const totalCOGS = paidTabs.reduce((tabSum, t) => {
+    const line = (t.items ?? []).reduce((s, item) => s + safeNum(item.costEach) * safeNum(item.quantity ?? 1), 0);
+    return tabSum + line;
+  }, 0);
+  const grossProfit = billingRevenue - totalCOGS;
 
   return {
     period: { start: toDateStr(start), end: toDateStr(new Date(end.getTime() - 1)) },
@@ -55,6 +60,8 @@ export async function getWeeklyAnalytics(courtId) {
       reservationRevenue,
       billingRevenue,
       combinedRevenue: reservationRevenue + billingRevenue,
+      totalCOGS,
+      grossProfit,
     },
   };
 }
@@ -62,7 +69,7 @@ export async function getWeeklyAnalytics(courtId) {
 export async function generateSummary(analyticsData) {
   const text = await generateAIText({
     maxTokens: 350,
-    system: 'You are a court management assistant for PlayKou, a sports booking platform in the Philippines. You receive 7 days of analytics data and write a short, friendly weekly summary for the court owner. Rules: Use simple English mixed with light Filipino phrases where natural (e.g. "Maganda!"). Always cite specific numbers. End with exactly one actionable suggestion (not a generic tip). Maximum 180 words. Tone: helpful colleague, not a corporate report.',
+    system: 'You are a court management assistant for PlayKou, a sports booking platform in the Philippines. You receive 7 days of analytics data and write a short, friendly weekly summary for the court owner. Rules: Use simple English mixed with light Filipino phrases where natural (e.g. "Maganda!"). Always cite specific numbers. When billing includes grossProfit and totalCOGS (POS), you may briefly mention profit vs cost of goods. End with exactly one actionable suggestion (not a generic tip). Maximum 180 words. Tone: helpful colleague, not a corporate report.',
     prompt: `Create weekly summary from this data:\n${JSON.stringify(analyticsData)}`,
   });
   if (!text) throw new Error('AI provider returned empty summary');
@@ -70,9 +77,15 @@ export async function generateSummary(analyticsData) {
 }
 
 function rawDataFallback(analyticsData) {
+  const gp = analyticsData.billing.grossProfit;
+  const cogs = analyticsData.billing.totalCOGS;
+  const profitLine =
+    typeof gp === 'number' && typeof cogs === 'number'
+      ? ` Gross profit PHP ${gp.toFixed(2)} (COGS PHP ${cogs.toFixed(2)}).`
+      : '';
   return [
     `Reservations: ${analyticsData.reservations.total} total, ${analyticsData.reservations.confirmed} confirmed, ${analyticsData.reservations.cancelled} cancelled, ${analyticsData.reservations.expired} expired.`,
-    `Revenue: PHP ${analyticsData.billing.combinedRevenue.toFixed(2)} total (Reservation ${analyticsData.billing.reservationRevenue.toFixed(2)} + Billing ${analyticsData.billing.billingRevenue.toFixed(2)}).`,
+    `Revenue: PHP ${analyticsData.billing.combinedRevenue.toFixed(2)} total (Reservation ${analyticsData.billing.reservationRevenue.toFixed(2)} + Billing ${analyticsData.billing.billingRevenue.toFixed(2)}).${profitLine}`,
     `Paid tabs: ${analyticsData.billing.paidTabs}.`,
   ].join(' ');
 }
@@ -84,6 +97,13 @@ export async function sendSummaryEmail(court, summary, analyticsData) {
 
   const to = court.contact?.email || court.adminEmail;
   if (!to) throw new Error('Court has no email recipient');
+
+  const profitBullets =
+    typeof analyticsData.billing.grossProfit === 'number' &&
+    typeof analyticsData.billing.totalCOGS === 'number'
+      ? `<li>Gross Profit (POS): PHP ${analyticsData.billing.grossProfit.toFixed(2)}</li>
+        <li>COGS (POS): PHP ${analyticsData.billing.totalCOGS.toFixed(2)}</li>`
+      : '';
 
   const html = `
     <div style="font-family:Arial,sans-serif;max-width:640px;margin:0 auto;padding:20px;">
@@ -97,6 +117,7 @@ export async function sendSummaryEmail(court, summary, analyticsData) {
         <li>Reservations: ${analyticsData.reservations.total}</li>
         <li>Confirmed: ${analyticsData.reservations.confirmed}</li>
         <li>Combined Revenue: PHP ${analyticsData.billing.combinedRevenue.toFixed(2)}</li>
+        ${profitBullets}
       </ul>
     </div>
   `;

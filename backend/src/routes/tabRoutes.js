@@ -1,16 +1,21 @@
 import express from 'express';
 import Tab from '../models/Tab.js';
+import Item from '../models/Item.js';
 import { emitCourtEvent } from '../lib/emitCourtEvent.js';
 
 const router = express.Router();
 
-// GET open tabs
+const PLAYER_TAB_FILTER = {
+  $or: [{ tabType: { $exists: false } }, { tabType: 'player' }],
+};
+
+// GET open tabs (player + cash walk-in)
 router.get('/open', async (req, res) => {
   try {
     const tabs = await Tab.find({ courtId: req.courtId, status: 'open' })
       .populate('player', 'name level')
       .sort({ createdAt: -1 });
-    res.json(tabs.filter(t => t.player != null));
+    res.json(tabs);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -65,19 +70,48 @@ router.get('/history', async (req, res) => {
 });
 
 /**
- * POST 
- * @desc open a new tab for a player
+ * POST open tab — player tab (body.player) or cash tab (body.tabType === 'cash')
  */
-// POST open a new tab for a player
 router.post('/', async (req, res) => {
   try {
+    const tabType = req.body.tabType === 'cash' ? 'cash' : 'player';
+
+    if (tabType === 'cash') {
+      const raw = String(req.body.cashLabel ?? '').trim();
+      const cashLabel = raw || 'Cash sale';
+      const tab = await Tab.create({
+        courtId:   req.courtId,
+        tabType:   'cash',
+        cashLabel,
+        player:    null,
+        items:     [],
+        total:     0,
+      });
+      await tab.populate('player', 'name level');
+      emitCourtEvent(req, 'billing:tab_updated', { action: 'opened', tabId: tab._id });
+      return res.status(201).json(tab);
+    }
+
+    const player = req.body.player;
+    if (!player) {
+      return res.status(400).json({ error: 'player is required for player tabs.' });
+    }
+
     const existing = await Tab.findOne({
       courtId: req.courtId,
-      player: req.body.player,
-       status: 'open' 
-      });
+      player,
+      status: 'open',
+      ...PLAYER_TAB_FILTER,
+    });
     if (existing) return res.status(400).json({ error: 'Player already has an open tab' });
-    const tab = await Tab.create({ courtId: req.courtId, player: req.body.player, items: [], total: 0 });
+
+    const tab = await Tab.create({
+      courtId: req.courtId,
+      tabType: 'player',
+      player,
+      items: [],
+      total: 0,
+    });
     await tab.populate('player', 'name level');
     emitCourtEvent(req, 'billing:tab_updated', { action: 'opened', tabId: tab._id });
     res.status(201).json(tab);
@@ -90,7 +124,12 @@ router.post('/', async (req, res) => {
 router.post('/:id/items', async (req, res) => {
   try {
     const { itemId, name, price, quantity = 1 } = req.body;
-    const newItem = { item: itemId, name, price, quantity, addedAt: new Date() };
+    let costEach = 0;
+    if (itemId) {
+      const catalogItem = await Item.findOne({ _id: itemId, courtId: req.courtId }).lean();
+      if (catalogItem) costEach = Number(catalogItem.costPrice ?? 0);
+    }
+    const newItem = { item: itemId, name, price, quantity, costEach, addedAt: new Date() };
     const lineTotal = price * quantity;
 
     const tab = await Tab.findOneAndUpdate(
@@ -118,10 +157,19 @@ router.post('/split', async (req, res) => {
       return res.status(400).json({ error: 'At least 1 player is required.' });
     }
 
+    let splitCostEach = 0;
+    if (itemId) {
+      const catalogItem = await Item.findOne({ _id: itemId, courtId: req.courtId }).lean();
+      if (catalogItem) splitCostEach = Number(catalogItem.costPrice ?? 0);
+    }
+
     const isSplit    = playerIds.length > 1;
     const chargeAmt  = isSplit
       ? Math.round((price / playerIds.length) * 100) / 100
       : price;
+    const costPortion = isSplit
+      ? Math.round((splitCostEach / playerIds.length) * 100) / 100
+      : splitCostEach;
     const itemLabel  = isSplit
       ? `${name} (split ÷${playerIds.length})`
       : name; // full charge — keep original name
@@ -129,16 +177,27 @@ router.post('/split', async (req, res) => {
     const results = [];
 
     for (const playerId of playerIds) {
-      // Find open tab for this player (must exist — frontend only shows open tabs)
-      let tab = await Tab.findOne({ courtId: req.courtId, player: playerId, status: 'open' });
+      let tab = await Tab.findOne({
+        courtId: req.courtId,
+        player: playerId,
+        status: 'open',
+        ...PLAYER_TAB_FILTER,
+      });
       if (!tab) {
-        tab = await Tab.create({ courtId: req.courtId, player: playerId, items: [], total: 0 });
+        tab = await Tab.create({
+          courtId: req.courtId,
+          tabType: 'player',
+          player: playerId,
+          items: [],
+          total: 0,
+        });
       }
 
       const newItem = {
         item:     itemId || undefined,
         name:     itemLabel,
         price:    chargeAmt,
+        costEach: costPortion,
         quantity: 1,
         addedAt:  new Date(),
       };

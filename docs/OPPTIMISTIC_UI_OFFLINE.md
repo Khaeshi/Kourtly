@@ -82,3 +82,7 @@ And crucially: **changes propagate across pages (and even other tabs)** while of
 - **Backend**: `DELETE /api/superadmin/courts/:id/subscription` in `backend/src/routes/superadminRoutes.js` — sets subscription to **expired**, clears billing-related fields, sets **`isPublic: false`** (court document is **not** deleted; **Reactivate** via existing PATCH still applies).
 - **Frontend**: **“End subscription”** on the super-admin **Dashboard** courts table and on the **Courts** page expanded **Subscription actions** (proxied as `DELETE` through `frontend/src/app/api/proxy/[...path]/route.ts`).
 
+### **Cash tabs + line cost snapshot (offline cache)**
+
+- **Cash tabs** (`tabType: 'cash'`, optional `cashLabel`, `player: null`) appear in **`openTabs`** the same way as player tabs. When you open a cash tab offline, the optimistic row should include `tabType`, `cashLabel`, and `player: null` (or omitted) so **Billing** renders consistently after reload from IndexedDB.
+- **Tab line items** include **`costEach`** (snapshot of catalog unit cost at sale time). Optimistic **add-to-tab** updates should set `costEach` from the catalog item’s **`costPrice`** when known, so cached `openTabs` stay aligned with server analytics and profit views after sync.
