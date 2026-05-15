@@ -115,6 +115,19 @@ export default function CourtsPage() {
     finally { setActing(null); }
   };
 
+  const deleteCourtSubscription = async (courtId: string, courtName: string) => {
+    if (!confirm(
+      `End and remove ${courtName}'s subscription? This clears billing, unpublishes the court from the directory, and blocks admin tools until you reactivate.`
+    )) return;
+    setActing(courtId);
+    try {
+      const res = await fetch(`/api/proxy/superadmin/courts/${courtId}/subscription`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Failed');
+      await load();
+    } catch { alert('Action failed'); }
+    finally { setActing(null); }
+  };
+
   const filtered = courts.filter(c => {
     const q = search.toLowerCase();
     const matchSearch =
@@ -145,13 +158,13 @@ export default function CourtsPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex gap-3 flex-wrap">
+      <div className="flex gap-3 flex-wrap w-full">
         <input
-          className="bg-white border border-gray-200 rounded-md px-3 py-2 text-[0.82rem] text-gray-900 outline-none focus:border-green-400 transition-colors w-[240px]"
+          className="bg-white border border-gray-200 rounded-md px-3 py-2 text-[0.82rem] text-gray-900 outline-none focus:border-green-400 transition-colors w-full min-w-0 sm:w-[240px] sm:max-w-[320px]"
           placeholder="Search by name, email, city..."
           value={search} onChange={e => setSearch(e.target.value)}
         />
-        <div className="flex gap-1.5">
+        <div className="flex gap-1.5 flex-wrap">
           {['all', 'active', 'trial', 'expired', 'suspended'].map(f => (
             <button key={f} onClick={() => setFilter(f)}
               className={`px-3 py-1.5 rounded-md text-[0.72rem] font-medium border transition-colors cursor-pointer capitalize ${
@@ -316,7 +329,7 @@ export default function CourtsPage() {
                         <div className="flex flex-col gap-0.5">
                           <span className="text-[0.62rem] font-semibold tracking-[0.08em] uppercase text-gray-400">Admin</span>
                           {editingEmail === court._id ? (
-                            <div className="flex gap-2 items-center mt-0.5">
+                            <div className="flex flex-col gap-2 sm:flex-row sm:items-center mt-0.5 w-full max-w-md">
                               <input
                                 autoFocus
                                 value={newEmail}
@@ -326,7 +339,7 @@ export default function CourtsPage() {
                                   if (e.key === 'Escape') { setEditingEmail(null); setNewEmail(''); }
                                 }}
                                 placeholder={court.adminEmail}
-                                className="bg-white border border-gray-300 rounded px-2 py-1 text-[0.78rem] text-gray-900 outline-none focus:border-green-400 transition-colors w-[200px]"
+                                className="bg-white border border-gray-300 rounded px-2 py-1 text-[0.78rem] text-gray-900 outline-none focus:border-green-400 transition-colors w-full min-w-0 sm:w-[200px]"
                               />
                               <button
                                 onClick={() => handleEmailUpdate(court._id)}
@@ -384,6 +397,14 @@ export default function CourtsPage() {
                       {(court.subscription.status === 'suspended' || court.subscription.status === 'expired') && (
                         <ActionBtn label="Reactivate" color="green" loading={acting === court._id}
                           onClick={() => { if (confirm(`Reactivate ${court.name}?`)) updateSubscription(court._id, { status: 'active', plan: court.subscription.plan }); }} />
+                      )}
+                      {(court.subscription.status === 'trial' || court.subscription.status === 'active' || court.subscription.status === 'suspended') && (
+                        <ActionBtn
+                          label="End subscription"
+                          color="gray"
+                          loading={acting === court._id}
+                          onClick={() => deleteCourtSubscription(court._id, court.name)}
+                        />
                       )}
                     </div>
                   </div>

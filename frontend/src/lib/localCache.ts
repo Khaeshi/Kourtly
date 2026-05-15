@@ -1,8 +1,10 @@
 type CacheKey = 'players' | 'items' | 'openTabs';
 
 const DB_NAME = 'playkou';
-const DB_VERSION = 2;
+/** Keep in sync with `offlineOutbox.ts` — both modules must open the same version and create all stores. */
+const DB_VERSION = 3;
 const STORE = 'kv';
+const OUTBOX_STORE = 'outbox';
 
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -12,7 +14,11 @@ function openDb(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(STORE)) {
         db.createObjectStore(STORE, { keyPath: 'key' });
       }
-      // outbox store is created in v1 by offlineOutbox.ts
+      if (!db.objectStoreNames.contains(OUTBOX_STORE)) {
+        const ob = db.createObjectStore(OUTBOX_STORE, { keyPath: 'id', autoIncrement: true });
+        ob.createIndex('nextAttemptAt', 'nextAttemptAt', { unique: false });
+        ob.createIndex('createdAt', 'createdAt', { unique: false });
+      }
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);

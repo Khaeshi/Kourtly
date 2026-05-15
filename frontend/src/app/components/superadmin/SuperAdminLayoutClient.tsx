@@ -6,6 +6,7 @@ import { signOut } from 'next-auth/react';
 import Image from 'next/image';
 import { Toaster } from 'sileo';
 import { APP_NAME } from '@/lib/config';
+import { useIsMobile } from '@/hooks/useIsMobile';
 
 interface Props {
   children: React.ReactNode;
@@ -25,7 +26,7 @@ export default function SuperAdminLayoutClient({ children, user }: Props) {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [fsSupported, setFsSupported] = useState(false);
 
-  const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
+  const isMobile = useIsMobile();
 
   /**
    * @desc Check if fullscreen is supported (IOS safari not supported)

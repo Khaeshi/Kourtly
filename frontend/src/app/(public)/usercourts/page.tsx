@@ -7,6 +7,7 @@ import PublicNav from '@/app/components/public/PublicNav';
 interface Court {
   _id: string; name: string; slug: string; sports: string[];
   courtCount: number;
+  logoUrl?: string;
   location?: { city?: string; province?: string; address?: string };
 }
 
@@ -145,18 +146,36 @@ export default function CourtsPage() {
             <div className="grid gap-5" style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(300px,1fr))' }}>
               {filtered.map(court => (
                 <div key={court._id} className="court-card group">
-                  {/* Sport badges */}
-                  <div className="flex gap-2 mb-4">
-                    {(court.sports ?? []).map(s => (
-                      <span key={s} className={`text-[0.6rem] font-semibold tracking-[0.08em] uppercase px-2 py-0.5 rounded-md border ${SPORT_COLORS[s] ?? 'text-white/40 bg-white/5 border-white/10'}`}>
-                        {SPORT_LABELS[s] ?? s}
-                      </span>
-                    ))}
-                  </div>
+                  <div className="flex gap-3 mb-4">
+                    {court.logoUrl ? (
+                      <img
+                        src={court.logoUrl}
+                        alt={court.name}
+                        className="w-12 h-12 rounded-xl object-cover shrink-0 border border-white/10 bg-white/5"
+                      />
+                    ) : (
+                      <div
+                        className="w-12 h-12 rounded-xl shrink-0 border border-white/10 bg-white/5 flex items-center justify-center text-white/35 text-sm font-bold"
+                        aria-hidden
+                      >
+                        {(court.name || '?').trim().charAt(0).toUpperCase()}
+                      </div>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      {/* Sport badges */}
+                      <div className="flex gap-2 flex-wrap mb-2">
+                        {(court.sports ?? []).map(s => (
+                          <span key={s} className={`text-[0.6rem] font-semibold tracking-[0.08em] uppercase px-2 py-0.5 rounded-md border ${SPORT_COLORS[s] ?? 'text-white/40 bg-white/5 border-white/10'}`}>
+                            {SPORT_LABELS[s] ?? s}
+                          </span>
+                        ))}
+                      </div>
 
-                  <h3 className="font-semibold text-white text-[1rem] mb-1.5 group-hover:text-blue-400 transition-colors">
-                    {court.name}
-                  </h3>
+                      <h3 className="font-semibold text-white text-[1rem] mb-1.5 group-hover:text-blue-400 transition-colors leading-snug">
+                        {court.name}
+                      </h3>
+                    </div>
+                  </div>
 
                   {(court.location?.city || court.location?.province) && (
                     <p className="text-[0.75rem] text-white/35 flex items-center gap-1.5 mb-5">

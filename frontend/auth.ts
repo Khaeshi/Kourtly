@@ -87,7 +87,7 @@ export const authOptions: NextAuthOptions = {
         session.user.role    = token.role    as string;
         session.user.dbId    = token.dbId    as string;
         session.user.courtId = token.courtId as string | null;
-        session.user.court   = token.court   as { name: string; slug?: string } | null;
+        session.user.court   = token.court   as { name: string; slug?: string; logoUrl?: string } | null;
       }
       return session;
     },

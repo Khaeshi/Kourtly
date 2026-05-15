@@ -78,16 +78,18 @@ export default function UsersPage() {
           <p className="text-[0.72rem] font-medium tracking-[0.05em] uppercase text-gray-400 mb-1">Management</p>
           <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Users</h1>
         </div>
-        <div className="flex gap-6 items-center">
-          <div className="text-right">
-            <div className="text-[0.65rem] font-semibold tracking-[0.1em] uppercase text-gray-400">Total</div>
-            <div className="font-mono text-xl text-gray-900 font-semibold">{users.length}</div>
+        <div className="flex flex-wrap items-center gap-4 sm:gap-6 w-full sm:w-auto justify-between sm:justify-end">
+          <div className="flex gap-6">
+            <div className="text-right">
+              <div className="text-[0.65rem] font-semibold tracking-[0.1em] uppercase text-gray-400">Total</div>
+              <div className="font-mono text-xl text-gray-900 font-semibold">{users.length}</div>
+            </div>
+            <div className="text-right">
+              <div className="text-[0.65rem] font-semibold tracking-[0.1em] uppercase text-gray-400">Admins</div>
+              <div className="font-mono text-xl text-green-700 font-semibold">{users.filter(u => u.role === 'admin').length}</div>
+            </div>
           </div>
-          <div className="text-right">
-            <div className="text-[0.65rem] font-semibold tracking-[0.1em] uppercase text-gray-400">Admins</div>
-            <div className="font-mono text-xl text-green-700 font-semibold">{users.filter(u => u.role === 'admin').length}</div>
-          </div>
-          <button onClick={load} className="text-[0.72rem] text-gray-400 border border-gray-200 rounded-md px-3 py-1.5 hover:border-gray-300 hover:text-gray-600 transition-colors bg-white cursor-pointer">
+          <button onClick={load} className="text-[0.72rem] text-gray-400 border border-gray-200 rounded-md px-3 py-1.5 hover:border-gray-300 hover:text-gray-600 transition-colors bg-white cursor-pointer shrink-0">
             ↻ Refresh
           </button>
         </div>
@@ -95,7 +97,7 @@ export default function UsersPage() {
 
       {/* Search */}
       <input
-        className="w-full max-w-[280px] bg-white border border-gray-200 rounded-md px-3 py-2 text-[0.82rem] text-gray-900 outline-none focus:border-green-400 mb-5 transition-colors"
+        className="w-full max-w-full sm:max-w-[280px] bg-white border border-gray-200 rounded-md px-3 py-2 text-[0.82rem] text-gray-900 outline-none focus:border-green-400 mb-5 transition-colors"
         placeholder="Search by name or email..."
         value={search}
         onChange={e => setSearch(e.target.value)}
@@ -164,8 +166,8 @@ function UserGroup({ title, users, toggling, onToggle, onDelete }: {
         users.map((user, i) => (
           <div
             key={user._id}
-            className="grid items-center gap-4 px-5 py-3 transition-colors hover:bg-gray-50"
-            style={{ gridTemplateColumns: '1fr auto', borderBottom: i < users.length - 1 ? '1px solid #f9fafb' : 'none' }}
+            className="flex flex-col gap-3 min-[420px]:grid min-[420px]:grid-cols-[1fr_auto] min-[420px]:gap-4 px-5 py-3 transition-colors hover:bg-gray-50"
+            style={{ borderBottom: i < users.length - 1 ? '1px solid #f9fafb' : 'none' }}
           >
             {/* User info */}
             <div className="flex items-center gap-3 min-w-0">
@@ -191,7 +193,7 @@ function UserGroup({ title, users, toggling, onToggle, onDelete }: {
             </div>
 
             {/* Actions */}
-            <div className="flex gap-1.5 shrink-0">
+            <div className="flex gap-1.5 shrink-0 min-[420px]:justify-end">
               <button
                 onClick={() => onToggle(user)}
                 disabled={toggling === user._id}

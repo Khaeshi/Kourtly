@@ -76,6 +76,35 @@ router.patch('/courts/:id/subscription', async (req, res) => {
   }
 });
 
+/**
+ * DELETE /api/superadmin/courts/:id/subscription
+ * Ends billing access: status expired, clears schedule fields, unpublishes from directory.
+ */
+router.delete('/courts/:id/subscription', async (req, res) => {
+  try {
+    const court = await Court.findByIdAndUpdate(
+      req.params.id,
+      {
+        $set: {
+          isPublic: false,
+          'subscription.status': 'expired',
+          'subscription.plan': 'monthly',
+          'subscription.amount': 0,
+          'subscription.trialEnds': new Date(),
+          'subscription.startDate': null,
+          'subscription.nextBilling': null,
+          'subscription.paymentRef': '',
+        },
+      },
+      { new: true, runValidators: true }
+    );
+    if (!court) return res.status(404).json({ error: 'Court not found.' });
+    res.json(court);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 router.post('/courts', async (req, res) => {
   try {
     const { name, slug, adminEmail, sports = ['badminton'], courtCount = 4 } = req.body;

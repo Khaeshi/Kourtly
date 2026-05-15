@@ -1,10 +1,17 @@
 'use client';
 import { useEffect, useState } from 'react';
+import { usePathname } from 'next/navigation';
 import { subscribeOutboxCount } from '@/lib/offlineOutbox';
 import { flushQueuedActions } from '@/lib/api';
 import { emitLocalEvent } from '@/lib/localEvents';
 
+/** Offline banner + outbox UI only for court admin (`/admin/*`). Super-admin and public routes stay clean. */
+function isCourtAdminPath(pathname: string | null) {
+  return Boolean(pathname?.startsWith('/admin'));
+}
+
 export default function PWAInit() {
+  const pathname = usePathname();
   const [online, setOnline] = useState(true); // assume online for SSR
   const [mounted, setMounted] = useState(false);
   const [pending, setPending] = useState(0);
@@ -63,6 +70,7 @@ export default function PWAInit() {
 
   // Don't render anything until mounted — prevents SSR/client mismatch
   if (!mounted) return null;
+  if (!isCourtAdminPath(pathname)) return null;
   if (online && pending === 0) return null;
 
   const text = !online

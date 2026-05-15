@@ -7,6 +7,7 @@ import { Suspense } from 'react';
 import AdminSidebar from './AdminSidebar';
 import AdminSplash from './AdminSplash';
 import { disconnectSocket, getSocket } from '@/lib/socket';
+import { useIsMobile } from '@/hooks/useIsMobile';
 
 interface Props {
   children: React.ReactNode;
@@ -18,8 +19,8 @@ export default function AdminLayoutClient({ children, user }: Props) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [fsSupported, setFsSupported] = useState(false);
-  
-  const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
+
+  const isMobile = useIsMobile();
 
   /**
    * @desc Check if fullscreen is supported (iOS Safari not supported)

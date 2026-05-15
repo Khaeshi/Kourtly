@@ -83,6 +83,25 @@ export default function SuperAdminDashboard() {
     finally { setActing(null); }
   };
 
+  const deleteCourtSubscription = async (courtId: string, courtName: string) => {
+    if (!confirm(
+      `End and remove ${courtName}'s subscription? This clears billing, unpublishes the court from the directory, and blocks admin tools until you reactivate.`
+    )) return;
+    setActing(courtId);
+    try {
+      const res = await fetch(`/api/proxy/superadmin/courts/${courtId}/subscription`, { method: 'DELETE' });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(j.error || 'Failed');
+      }
+      await load();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Action failed');
+    } finally {
+      setActing(null);
+    }
+  };
+
   const handleCreateCourt = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormLoading(true); setFormError(null);
@@ -115,13 +134,13 @@ export default function SuperAdminDashboard() {
           <p className="text-[0.72rem] font-medium tracking-[0.05em] uppercase text-gray-400 mb-1">Platform</p>
           <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Dashboard</h1>
         </div>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-2 sm:gap-3 w-full sm:w-auto">
           <button onClick={() => setShowForm(true)}
-            className="text-[0.78rem] font-medium bg-gray-900 text-white px-3.5 py-1.5 rounded-md hover:bg-gray-700 transition-colors cursor-pointer">
+            className="text-[0.78rem] font-medium bg-gray-900 text-white px-3.5 py-1.5 rounded-md hover:bg-gray-700 transition-colors cursor-pointer grow sm:grow-0">
             + Onboard Court
           </button>
           <button onClick={load}
-            className="text-[0.72rem] text-gray-400 border border-gray-200 rounded-md px-3 py-1.5 hover:border-gray-300 hover:text-gray-600 transition-colors bg-white cursor-pointer">
+            className="text-[0.72rem] text-gray-400 border border-gray-200 rounded-md px-3 py-1.5 hover:border-gray-300 hover:text-gray-600 transition-colors bg-white cursor-pointer shrink-0">
             ↻ Refresh
           </button>
         </div>
@@ -213,10 +232,10 @@ export default function SuperAdminDashboard() {
 
       {/* Courts table */}
       <div>
-        <div className="flex gap-3 flex-wrap mb-4">
-          <input className="bg-white border border-gray-200 rounded-md px-3 py-2 text-[0.82rem] text-gray-900 outline-none focus:border-green-400 transition-colors w-[220px]"
+        <div className="flex gap-3 flex-wrap mb-4 w-full">
+          <input className="bg-white border border-gray-200 rounded-md px-3 py-2 text-[0.82rem] text-gray-900 outline-none focus:border-green-400 transition-colors w-full min-w-0 sm:w-[220px] sm:max-w-[280px]"
             placeholder="Search courts..." value={search} onChange={e => setSearch(e.target.value)} />
-          <div className="flex gap-1.5">
+          <div className="flex gap-1.5 flex-wrap">
             {['all','active','trial','expired','suspended'].map(f => (
               <button key={f} onClick={() => setFilter(f)}
                 className={`px-3 py-1.5 rounded-md text-[0.72rem] font-medium border transition-colors cursor-pointer capitalize ${
@@ -241,7 +260,7 @@ export default function SuperAdminDashboard() {
               <div className="min-w-[760px]">
                 <div
                   className="grid px-5 py-2.5 border-b border-gray-100 bg-gray-50 text-[0.65rem] font-semibold tracking-[0.08em] uppercase text-gray-400"
-                  style={{ gridTemplateColumns: '1fr 140px 110px 70px 180px' }}
+                  style={{ gridTemplateColumns: '1fr 140px 110px 70px 220px' }}
                 >
                   <span>Court</span><span>Admin</span><span>Plan</span><span>Courts</span><span>Actions</span>
                 </div>
@@ -252,7 +271,7 @@ export default function SuperAdminDashboard() {
                     key={court._id}
                     className="grid items-center gap-4 px-5 py-3.5 hover:bg-gray-50 transition-colors"
                     style={{
-                      gridTemplateColumns: '1fr 140px 110px 70px 180px',
+                      gridTemplateColumns: '1fr 140px 110px 70px 220px',
                       borderBottom: i < filtered.length - 1 ? '1px solid #f9fafb' : 'none',
                     }}
                   >
@@ -297,6 +316,17 @@ export default function SuperAdminDashboard() {
                           {acting === court._id ? '...' : 'Reactivate'}
                         </button>
                       )}
+                      {(court.subscription.status === 'trial' || court.subscription.status === 'active' || court.subscription.status === 'suspended') && (
+                        <button
+                          type="button"
+                          onClick={() => deleteCourtSubscription(court._id, court.name)}
+                          disabled={acting === court._id}
+                          className="px-2.5 py-1 rounded-md text-[0.68rem] font-medium border cursor-pointer transition-all border-gray-300 bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50"
+                          title="Remove subscription and billing"
+                        >
+                          {acting === court._id ? '...' : 'End subscription'}
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -307,7 +337,7 @@ export default function SuperAdminDashboard() {
       </div>
 
       <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-        <div className="px-5 py-3 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
+        <div className="px-5 py-3 border-b border-gray-100 bg-gray-50 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <span className="text-[0.75rem] font-semibold tracking-[0.08em] uppercase text-gray-500">Recent Payout Transfers</span>
           <div className="flex items-center gap-2">
             <span className="text-[0.68rem] text-gray-400">{payoutTransfers.length} records</span>
@@ -324,13 +354,18 @@ export default function SuperAdminDashboard() {
         ) : (
           <div className="divide-y divide-gray-50">
             {payoutTransfers.slice(0, 20).map((t: any) => (
-              <div key={t._id} className="px-5 py-3 text-xs flex items-center justify-between gap-3">
-                <span className="text-gray-700">{t.courtId?.name || 'Unknown court'}</span>
-                <span className="font-mono text-gray-500">{new Date(t.createdAt).toLocaleString()}</span>
-                <span className="font-mono text-gray-800">₱{Number(t.amount || 0).toFixed(2)}</span>
-                <span className={t.status === 'succeeded' ? 'text-green-600' : t.status === 'failed' ? 'text-red-600' : 'text-amber-600'}>
-                  {t.status}
-                </span>
+              <div
+                key={t._id}
+                className="px-5 py-3 text-xs flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3"
+              >
+                <span className="text-gray-700 font-medium break-words">{t.courtId?.name || 'Unknown court'}</span>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.7rem] sm:justify-end sm:text-xs">
+                  <span className="font-mono text-gray-500 whitespace-nowrap">{new Date(t.createdAt).toLocaleString()}</span>
+                  <span className="font-mono text-gray-800 whitespace-nowrap">₱{Number(t.amount || 0).toFixed(2)}</span>
+                  <span className={`font-semibold uppercase tracking-wide ${t.status === 'succeeded' ? 'text-green-600' : t.status === 'failed' ? 'text-red-600' : 'text-amber-600'}`}>
+                    {t.status}
+                  </span>
+                </div>
               </div>
             ))}
           </div>

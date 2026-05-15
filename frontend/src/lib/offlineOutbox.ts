@@ -26,8 +26,10 @@ export class OfflineQueuedError extends Error {
 }
 
 const DB_NAME = 'playkou';
-const DB_VERSION = 1;
+/** Must match `localCache.ts` — single DB with kv + outbox for offline queue + entity cache. */
+const DB_VERSION = 3;
 const STORE = 'outbox';
+const KV_STORE = 'kv';
 
 let flushInFlight: Promise<{ flushed: number; remaining: number }> | null = null;
 let listeners: Array<(count: number) => void> = [];
@@ -37,6 +39,9 @@ function openDb(): Promise<IDBDatabase> {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
     req.onupgradeneeded = () => {
       const db = req.result;
+      if (!db.objectStoreNames.contains(KV_STORE)) {
+        db.createObjectStore(KV_STORE, { keyPath: 'key' });
+      }
       if (!db.objectStoreNames.contains(STORE)) {
         const store = db.createObjectStore(STORE, { keyPath: 'id', autoIncrement: true });
         store.createIndex('nextAttemptAt', 'nextAttemptAt', { unique: false });
