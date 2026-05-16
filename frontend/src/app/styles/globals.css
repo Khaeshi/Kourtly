@@ -263,6 +263,19 @@ html, body {
   box-sizing: border-box;
 }
 
+/* Super-admin: stack court rows on small screens (no horizontal scroll) */
+@media (max-width: 767px) {
+  .superadmin-court-summary {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 0.75rem !important;
+  }
+  .superadmin-court-summary > *:last-child {
+    align-self: flex-end;
+  }
+}
+
 
 /* ══════════════════════════════════════════
    QUEUE PAGE

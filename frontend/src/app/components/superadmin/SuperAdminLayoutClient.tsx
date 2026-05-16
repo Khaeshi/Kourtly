@@ -121,7 +121,7 @@ export default function SuperAdminLayoutClient({ children, user }: Props) {
 
       {sidebarOpen && <div className="sidebar-backdrop" onClick={() => setSidebarOpen(false)} />}
 
-      <div className="flex min-h-screen bg-gray-100 font-sans">
+      <div className="flex min-h-screen bg-gray-100 font-sans overflow-x-hidden">
         <aside className={`admin-sidebar-aside ${sidebarOpen ? 'open' : ''}`}>
           {/* Brand */}
           <div className="px-5 py-5 pb-4 border-b border-gray-100">
@@ -203,7 +203,7 @@ export default function SuperAdminLayoutClient({ children, user }: Props) {
           </div>
         </aside>
 
-        <main className="admin-main flex-1 px-[clamp(1rem,3vw,2rem)] pb-[clamp(1rem,3vw,2rem)] pt-[clamp(1rem,3vw,2rem)] md:pt-[clamp(1rem,3vw,2rem)]">
+        <main className="admin-main flex-1 min-w-0 px-[clamp(1rem,3vw,2rem)] pb-[clamp(1rem,3vw,2rem)] pt-[clamp(1rem,3vw,2rem)] md:pt-[clamp(1rem,3vw,2rem)]">
           {children}
         </main>
       </div>

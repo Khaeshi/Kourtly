@@ -1,9 +1,9 @@
 /* eslint-disable no-restricted-globals */
-const SW_VERSION = "v2";
-const APP_SHELL  = `app-shell-${SW_VERSION}`;
+const SW_VERSION = "v3";
+const APP_SHELL = `app-shell-${SW_VERSION}`;
 const PUBLIC_DATA = `public-data-${SW_VERSION}`;
 
-// Pre-cache these on install — admin routes included
+// Pre-cache on install — court admin shell (visit once online to refresh)
 const SHELL_URLS = [
   "/",
   "/offline",
@@ -16,18 +16,23 @@ const SHELL_URLS = [
   "/admin/schedule",
   "/admin/reservation",
   "/admin/settings",
-  "/admin/users",
 ];
 
-// How long to wait for network before giving up (ms)
 const NETWORK_TIMEOUT_MS = 3000;
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches
-      .open(APP_SHELL)
-      .then((cache) => cache.addAll(SHELL_URLS))
-      .then(() => self.skipWaiting())
+    caches.open(APP_SHELL).then(async (cache) => {
+      await Promise.all(
+        SHELL_URLS.map(async (path) => {
+          try {
+            await cache.add(path);
+          } catch {
+            // Ignore failed precache (e.g. offline install)
+          }
+        })
+      );
+    }).then(() => self.skipWaiting())
   );
 });
 
@@ -46,13 +51,18 @@ self.addEventListener("activate", (event) => {
   );
 });
 
-// Race: network vs timeout — whichever wins first
 function fetchWithTimeout(request, ms) {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error("SW timeout")), ms);
     fetch(request)
-      .then((res) => { clearTimeout(timer); resolve(res); })
-      .catch((err) => { clearTimeout(timer); reject(err); });
+      .then((res) => {
+        clearTimeout(timer);
+        resolve(res);
+      })
+      .catch((err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
   });
 }
 
@@ -67,6 +77,64 @@ function isPublicCourtsList(url) {
   return url.pathname === "/api/public/courts";
 }
 
+function isAdminAppPath(pathname) {
+  return pathname.startsWith("/admin") && !pathname.startsWith("/api/");
+}
+
+function isAdminAppRequest(url, request) {
+  if (!isAdminAppPath(url.pathname)) return false;
+  if (request.mode === "navigate") return true;
+  if (url.searchParams.has("_rsc")) return true;
+  const accept = request.headers.get("Accept") || "";
+  if (accept.includes("text/x-component")) return true;
+  if (request.headers.get("RSC") === "1") return true;
+  if (request.headers.get("Next-Router-Prefetch")) return true;
+  return false;
+}
+
+async function matchAdminFallback(url) {
+  const pathOnly = await caches.match(url.pathname);
+  if (pathOnly) return pathOnly;
+  for (const shell of SHELL_URLS) {
+    if (!shell.startsWith("/admin")) continue;
+    if (url.pathname === shell || url.pathname.startsWith(`${shell}/`)) {
+      const hit = await caches.match(shell);
+      if (hit) return hit;
+    }
+  }
+  return caches.match("/admin");
+}
+
+function adminCacheFirst(request, url) {
+  return caches.match(request).then(async (cached) => {
+    const networkUpdate = fetch(request)
+      .then((response) => {
+        if (response.ok) {
+          const copy = response.clone();
+          caches.open(APP_SHELL).then((cache) => {
+            cache.put(request, copy);
+            if (url.search) cache.put(url.pathname, copy);
+          });
+        }
+        return response;
+      })
+      .catch(() => null);
+
+    if (cached) {
+      networkUpdate.catch(() => {});
+      return cached;
+    }
+
+    const fresh = await networkUpdate;
+    if (fresh) return fresh;
+
+    const fallback = await matchAdminFallback(url);
+    if (fallback) return fallback;
+
+    return caches.match("/offline");
+  });
+}
+
 self.addEventListener("fetch", (event) => {
   const request = event.request;
   const url = new URL(request.url);
@@ -74,7 +142,6 @@ self.addEventListener("fetch", (event) => {
   if (request.method !== "GET") return;
   if (url.origin !== self.location.origin) return;
 
-  // Static assets: cache first
   if (
     request.destination === "style" ||
     request.destination === "script" ||
@@ -94,7 +161,6 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Public courts list: stale-while-revalidate (unchanged)
   if (isPublicCourtsList(url)) {
     event.respondWith(
       caches.match(request).then((cached) => {
@@ -111,7 +177,6 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Public API: network first, fallback cache (unchanged)
   if (isPublicGetApi(url)) {
     event.respondWith(
       fetch(request)
@@ -125,40 +190,26 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Navigation: cache first for admin, timeout-race for others
-  if (request.mode === "navigate") {
-    const isAdmin = url.pathname.startsWith("/admin");
-
-    if (isAdmin) {
-      // Admin routes: serve cache IMMEDIATELY, revalidate in background
-      event.respondWith(
-        caches.match(request).then((cached) => {
-          const networkUpdate = fetch(request).then((response) => {
-            const copy = response.clone();
-            caches.open(APP_SHELL).then((cache) => cache.put(request, copy));
-            return response;
-          });
-          // Return cache instantly if available, otherwise wait for network
-          return cached || networkUpdate;
-        }).catch(() => caches.match("/offline"))
-      );
-    } else {
-      // Non-admin: try network with timeout, fall back to cache then offline
-      event.respondWith(
-        fetchWithTimeout(request, NETWORK_TIMEOUT_MS)
-          .then((response) => {
-            const copy = response.clone();
-            caches.open(APP_SHELL).then((cache) => cache.put(request, copy));
-            return response;
-          })
-          .catch(async () => {
-            return (
-              (await caches.match(request)) ||
-              (await caches.match("/offline"))
-            );
-          })
-      );
-    }
+  // Court admin: full document + Next.js client navigations (_rsc, prefetch)
+  if (isAdminAppRequest(url, request)) {
+    event.respondWith(adminCacheFirst(request, url));
     return;
+  }
+
+  if (request.mode === "navigate") {
+    event.respondWith(
+      fetchWithTimeout(request, NETWORK_TIMEOUT_MS)
+        .then((response) => {
+          const copy = response.clone();
+          caches.open(APP_SHELL).then((cache) => cache.put(request, copy));
+          return response;
+        })
+        .catch(async () => {
+          return (
+            (await caches.match(request)) ||
+            (await caches.match("/offline"))
+          );
+        })
+    );
   }
 });

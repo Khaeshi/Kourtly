@@ -140,7 +140,7 @@ export default function CourtsPage() {
   });
 
   return (
-    <div className="max-w-[1100px] font-sans space-y-6">
+    <div className="w-full max-w-[1100px] min-w-0 font-sans space-y-6">
 
       {/* Header */}
       <div className="flex items-end justify-between flex-wrap gap-4 pb-5 border-b border-gray-100">
@@ -204,9 +204,8 @@ export default function CourtsPage() {
                 className="bg-white border border-gray-200 rounded-lg overflow-hidden transition-shadow hover:shadow-sm">
 
                 {/* Court row — always visible */}
-                <div className="overflow-x-auto">
-                  <div
-                    className="grid items-center gap-4 px-5 py-4 cursor-pointer min-w-[760px]"
+                <div
+                    className="superadmin-court-summary grid items-center gap-4 px-5 py-4 cursor-pointer"
                     style={{ gridTemplateColumns: '1fr 160px 120px 120px auto' }}
                     onClick={() => setExpanded(isExpanded ? null : court._id)}
                   >
@@ -268,7 +267,6 @@ export default function CourtsPage() {
                       <path d="M6 9l6 6 6-6"/>
                     </svg>
                   </div>
-                </div>
                 </div>
 
                 {/* Expanded detail */}

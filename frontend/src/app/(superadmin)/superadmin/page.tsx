@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
+import { CourtListRows, type SuperAdminCourtRow } from '@/app/components/superadmin/CourtListRows';
 
 interface Stats {
   total: number; active: number; trials: number;
@@ -19,6 +20,17 @@ const STATUS_STYLES: Record<string, string> = {
   expired:   'text-red-600 bg-red-50 border-red-200',
   suspended: 'text-gray-500 bg-gray-100 border-gray-200',
 };
+
+function toCourtRow(c: Court): SuperAdminCourtRow {
+  return {
+    _id: c._id,
+    name: c.name,
+    slug: c.slug,
+    adminEmail: c.adminEmail,
+    courtCount: c.courtCount,
+    subscription: c.subscription,
+  };
+}
 
 export default function SuperAdminDashboard() {
   const [stats,   setStats]   = useState<Stats | null>(null);
@@ -126,7 +138,7 @@ export default function SuperAdminDashboard() {
   });
 
   return (
-    <div className="max-w-[1100px] font-sans space-y-8">
+    <div className="w-full max-w-[1100px] min-w-0 font-sans space-y-8">
 
       {/* Header */}
       <div className="flex items-end justify-between flex-wrap gap-4 pb-5 border-b border-gray-100">
@@ -256,8 +268,28 @@ export default function SuperAdminDashboard() {
           <div className="py-12 text-center text-gray-400 text-sm">Loading courts...</div>
         ) : (
           <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-            <div className="overflow-x-auto">
-              <div className="min-w-[760px]">
+            <CourtListRows
+              mode="mobile"
+              courts={filtered.map(toCourtRow)}
+              acting={acting}
+              onActivate={(court) => {
+                if (confirm(`Activate ${court.name}?`)) {
+                  updateSubscription(court._id, { status: 'active', plan: court.subscription.plan });
+                }
+              }}
+              onExtendTrial={(courtId) => updateSubscription(courtId, { extendTrialDays: 7 })}
+              onSuspend={(court) => {
+                if (confirm(`Suspend ${court.name}?`)) updateSubscription(court._id, { status: 'suspended' });
+              }}
+              onReactivate={(court) => {
+                if (confirm(`Reactivate ${court.name}?`)) {
+                  updateSubscription(court._id, { status: 'active', plan: court.subscription.plan });
+                }
+              }}
+              onEndSubscription={(court) => deleteCourtSubscription(court._id, court.name)}
+            />
+            <div className="hidden md:block overflow-x-auto">
+              <div className="min-w-[720px]">
                 <div
                   className="grid px-5 py-2.5 border-b border-gray-100 bg-gray-50 text-[0.65rem] font-semibold tracking-[0.08em] uppercase text-gray-400"
                   style={{ gridTemplateColumns: '1fr 140px 110px 70px 220px' }}

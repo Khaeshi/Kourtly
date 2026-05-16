@@ -70,7 +70,7 @@ export default function UsersPage() {
   const regular = filtered.filter(u => u.role === 'user');
 
   return (
-    <div className="max-w-[900px] font-sans">
+    <div className="w-full max-w-[900px] min-w-0 font-sans">
 
       {/* Header */}
       <div className="flex items-end justify-between flex-wrap gap-4 mb-6 pb-5 border-b border-gray-100">
