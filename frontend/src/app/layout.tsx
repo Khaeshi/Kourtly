@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Anton, Manrope, JetBrains_Mono, Geist, Geist_Mono } from "next/font/google";
 import Providers from './components/Providers';
 import { Analytics } from "@vercel/analytics/next"
 import { APP_NAME } from "@/lib/config"
@@ -15,13 +15,31 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const manrope = Manrope({
+  variable: "--font-manrope",
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700", "800"],
+});
+
+const anton = Anton({
+  variable: "--font-anton",
+  subsets: ["latin"],
+  weight: "400",
+});
+
+const jetbrainsMono = JetBrains_Mono({
+  variable: "--font-jetbrains-mono",
+  subsets: ["latin"],
+  weight: ["400", "500", "700"],
+});
+
 export const metadata: Metadata = {
   title: APP_NAME,
   description: `Find the nearest and recommended courts near you! PlayKou offers a conbenient place
   to see available courts near you and book right away your reservations! Or if you are a court owner,
   you found the right system to manage your court, subscribe now! `,
   manifest: '/manifest.webmanifest',
-  themeColor: '#3b82f6',
+  themeColor: '#0B3D3A',
   icons: {
     icon: '/Playkoubg.png',
     apple: '/Playkoubg.png',
@@ -36,7 +54,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} ${manrope.variable} ${anton.variable} ${jetbrainsMono.variable} antialiased`}
       >
         <Analytics/>
           <Providers>

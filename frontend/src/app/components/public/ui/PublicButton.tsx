@@ -10,11 +10,11 @@ interface PublicButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement
 
 const VARIANT_CLASS: Record<Variant, string> = {
   primary:
-    'bg-[var(--public-accent)] text-[#0b1208] border-[var(--public-accent)] hover:bg-[var(--public-accent-strong)] hover:border-[var(--public-accent-strong)]',
+    'bg-[var(--amber)] text-[var(--ink)] border-[var(--amber)] hover:brightness-110',
   secondary:
-    'bg-[var(--public-accent-soft)] text-[var(--public-accent)] border-[rgba(var(--public-accent-rgb),0.36)] hover:bg-[rgba(var(--public-accent-rgb),0.24)]',
+    'bg-[var(--public-accent-soft)] text-[var(--line)] border-[var(--divider)] hover:bg-[rgba(232,163,61,0.22)]',
   ghost:
-    'bg-transparent text-[var(--public-text-muted)] border-transparent hover:text-[var(--public-text)]',
+    'bg-transparent text-[var(--line-dim)] border-transparent hover:text-[var(--line)]',
 };
 
 export function PublicButton({
@@ -30,7 +30,8 @@ export function PublicButton({
   return (
     <button
       disabled={isDisabled}
-      className={`inline-flex items-center justify-center gap-2 rounded-[10px] border px-5 py-2.5 text-[0.78rem] tracking-[0.05em] transition-all duration-200 cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed ${VARIANT_CLASS[variant]} ${className}`}
+      className={`inline-flex items-center justify-center gap-2 border px-5 py-2.5 text-[0.78rem] font-bold tracking-[0.02em] transition-all duration-200 cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed whitespace-nowrap ${VARIANT_CLASS[variant]} ${className}`}
+      style={{ borderRadius: 'var(--r-pill)' }}
       {...props}
     >
       {loading ? 'Loading...' : children}

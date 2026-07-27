@@ -14,7 +14,7 @@ interface Props {
 
 const NAV = [
   { href: '/superadmin', label: 'Dashboard', exact: true },
-  { href: '/courts', label: 'Courts' },
+  { href: '/superadmin/courts', label: 'Courts' },
   { href: '/users', label: 'Users' },
 ];
 

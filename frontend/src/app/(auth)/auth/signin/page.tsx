@@ -9,38 +9,35 @@ import { InlineNotice, PublicButton, PublicCard } from '@/app/components/public/
 
 function SignInContent() {
   const searchParams = useSearchParams();
-  const router       = useRouter();
+  const router = useRouter();
   const { data: session, status } = useSession();
-  const callbackUrl  = searchParams.get('callbackUrl') || null;
-  const error        = searchParams.get('error');
+  const callbackUrl = searchParams.get('callbackUrl') || null;
+  const error = searchParams.get('error');
   const [loading, setLoading] = useState(false);
 
-  // Once session loads after OAuth return, redirect based on role
   useEffect(() => {
     if (status !== 'authenticated' || !session) return;
 
     if (session.user.role === 'admin') {
-      // Admin: honour callbackUrl if it's an admin route, else go to /admin
       router.replace(callbackUrl?.startsWith('/admin') ? callbackUrl : '/admin');
     } else {
-      // Regular user: always go back to landing page
       router.replace('/');
     }
   }, [status, session, callbackUrl, router]);
 
   const handleGoogleSignIn = async () => {
     setLoading(true);
-    // Use a neutral callbackUrl — the useEffect above handles final redirect
     await signIn('google', { callbackUrl: '/auth/signin' });
   };
 
-  // Show loading state while session resolves after OAuth return
   if (status === 'loading' || status === 'authenticated') {
     return (
       <div className="public-root min-h-screen flex items-center justify-center">
         <div className="text-center">
-          <div className="w-7 h-7 border-2 border-[rgba(59,130,246,0.2)] border-t-[var(--public-accent)] rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-sm text-white/40">
+          <div
+            className="w-7 h-7 border-2 border-[var(--divider)] border-t-[var(--amber)] rounded-full pk-spin mx-auto mb-4"
+          />
+          <p className="text-sm text-[var(--line-dim)]">
             {status === 'authenticated' ? 'Redirecting...' : 'Loading...'}
           </p>
         </div>
@@ -49,10 +46,7 @@ function SignInContent() {
   }
 
   return (
-    <div className="public-root min-h-screen flex items-center justify-center p-6 font-sans">
-      <div className="fixed top-0 left-1/2 -translate-x-1/2 w-[520px] h-[260px] rounded-full pointer-events-none opacity-35"
-        style={{ background: 'radial-gradient(ellipse, rgba(59,130,246,0.2) 0%, transparent 70%)', filter: 'blur(46px)' }} />
-
+    <div className="public-root min-h-screen flex items-center justify-center p-6">
       <div className="w-full max-w-[390px] relative">
         <div className="text-center mb-10">
           <div className="inline-flex items-center gap-2.5 mb-6">
@@ -62,12 +56,13 @@ function SignInContent() {
               width={28}
               height={28}
               priority
-              className="w-7 h-7 rounded-full object-cover border border-[rgba(59,130,246,0.35)]"
+              className="w-7 h-7 object-cover"
+              style={{ borderRadius: 'var(--r-block)' }}
             />
-            <span className="font-semibold text-base text-white">{APP_NAME}</span>
+            <span className="font-display text-base text-[var(--line)]">{APP_NAME.toUpperCase()}</span>
           </div>
-          <h1 className="text-3xl font-semibold text-white mb-2">Welcome back</h1>
-          <p className="text-sm text-white/45">Sign in to access your account</p>
+          <h1 className="font-display text-[clamp(1.8rem,4vw,2.2rem)] text-[var(--line)] mb-2">Welcome back</h1>
+          <p className="text-sm text-[var(--line-dim)]">Sign in to access your account</p>
         </div>
 
         <PublicCard className="p-8">
@@ -81,7 +76,7 @@ function SignInContent() {
             </InlineNotice>
           )}
 
-          <PublicButton variant="secondary" className="w-full py-3 text-sm" onClick={handleGoogleSignIn} disabled={loading}>
+          <PublicButton variant="primary" className="w-full py-3 text-sm" onClick={handleGoogleSignIn} disabled={loading}>
             <svg width="18" height="18" viewBox="0 0 24 24">
               <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
               <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
@@ -91,14 +86,14 @@ function SignInContent() {
             {loading ? 'Signing in...' : 'Continue with Google'}
           </PublicButton>
 
-          <p className="text-[0.72rem] text-white/25 text-center mt-5 leading-relaxed">
+          <p className="text-[0.72rem] text-[var(--line-faint)] text-center mt-5 leading-relaxed">
             By signing in you agree to our terms of service.
             <br />Admin access is granted by the club manager.
           </p>
         </PublicCard>
 
         <div className="text-center mt-6">
-          <Link href="/" className="text-sm text-white/30 no-underline hover:text-[var(--public-accent)] transition-colors">
+          <Link href="/" className="text-sm text-[var(--line-dim)] no-underline hover:text-[var(--amber)] transition-colors">
             ← Back to site
           </Link>
         </div>

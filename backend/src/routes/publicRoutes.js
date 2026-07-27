@@ -24,7 +24,7 @@ router.get('/courts', async (req, res) => {
     const courts = await Court.find({
       isActive: true,
       'subscription.status': { $in: ['active', 'trial'] },
-    }).select('name slug sports courtCount location contact description logoUrl amenities').lean();
+    }).select('name slug sports courtCount location contact description logoUrl amenities settings.hourlyRate settings.currency').lean();
     res.json(courts);
   } catch (err) {
     if (String(err.message || '').includes('Invalid reservation status transition') ||
