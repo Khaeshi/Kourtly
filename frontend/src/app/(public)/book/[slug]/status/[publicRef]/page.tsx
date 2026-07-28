@@ -2,6 +2,9 @@
 
 import Link from 'next/link';
 import { use, useCallback, useEffect, useState } from 'react';
+import PublicNav from '@/app/components/public/PublicNav';
+import PublicFooter from '@/app/components/public/PublicFooter';
+import { InlineNotice, KeyValueSummary } from '@/app/components/public/ui';
 
 type StatusData = {
   publicRef: string;
@@ -51,45 +54,75 @@ export default function ReservationStatusPage({
     return () => clearInterval(id);
   }, [load]);
 
-  if (loading) return <div className="min-h-screen bg-[#080c04] text-white/60 p-8">Loading reservation status...</div>;
-  if (error || !data) return <div className="min-h-screen bg-[#080c04] text-red-400 p-8">{error || 'Not found'}</div>;
+  if (loading) {
+    return (
+      <>
+        <PublicNav />
+        <div className="flex-1 booking-grid-bg flex items-center justify-center min-h-[50vh]">
+          <p className="font-mono-data text-[var(--line-faint)]">Loading reservation status...</p>
+        </div>
+      </>
+    );
+  }
+
+  if (error || !data) {
+    return (
+      <>
+        <PublicNav />
+        <div className="flex-1 booking-grid-bg flex items-center justify-center min-h-[50vh] p-8">
+          <InlineNotice variant="error">{error || 'Not found'}</InlineNotice>
+        </div>
+        <PublicFooter compact />
+      </>
+    );
+  }
 
   const showPay = data.status === 'approved_waiting_payment' && data.paymentStatus === 'awaiting_payment' && !!data.paymentUrl;
 
   return (
-    <div className="min-h-screen bg-[#080c04] text-white p-6">
-      <div className="max-w-xl mx-auto border border-white/10 rounded-xl bg-white/5 p-6">
-        <p className="text-xs text-white/40 mb-2">Reservation Ref: {data.publicRef}</p>
-        <h1 className="text-2xl mb-2">Reservation Status</h1>
-        <p className="text-white/70 mb-4">Court {data.court} · {data.date} · {data.timeSlot}</p>
+    <>
+      <PublicNav />
 
-        <div className="space-y-1 text-sm mb-5">
-          <p>Status: <span className="text-[#60a5fa]">{data.status}</span></p>
-          <p>Payment: <span className="text-[#60a5fa]">{data.paymentStatus}</span></p>
-          <p>Reservation Fee: ₱{Number(data.reservationFeeAmount || 0).toFixed(2)}</p>
-          <p>Paid Online: ₱{Number(data.amountPaidOnline || 0).toFixed(2)}</p>
-          <p>Remaining Balance: ₱{Number(data.remainingBalanceAmount || 0).toFixed(2)}</p>
+      <div className="flex-1 booking-grid-bg">
+        <div className="max-w-xl mx-auto px-[clamp(1.25rem,5vw,3rem)] py-10 sm:py-16 booking-safe-bottom">
+          <p className="section-head eyebrow mb-2">Reservation Ref: {data.publicRef}</p>
+          <h1 className="font-display text-[clamp(1.8rem,4vw,2.4rem)] text-[var(--line)] mb-2">Reservation Status</h1>
+          <p className="text-[var(--line-dim)] mb-6 font-mono-data text-sm">
+            Court {data.court} · {data.date} · {data.timeSlot}
+          </p>
+
+          <KeyValueSummary
+            className="mb-6"
+            rows={[
+              ['Status', data.status],
+              ['Payment', data.paymentStatus],
+              ['Reservation Fee', `₱${Number(data.reservationFeeAmount || 0).toFixed(2)}`],
+              ['Paid Online', `₱${Number(data.amountPaidOnline || 0).toFixed(2)}`],
+              ['Remaining Balance', `₱${Number(data.remainingBalanceAmount || 0).toFixed(2)}`],
+            ]}
+          />
+
+          {showPay && (
+            <a
+              href={data.paymentUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="pub-cta pub-cta-primary no-underline mb-6"
+            >
+              Open Payment QR
+            </a>
+          )}
+
+          {(data.status === 'cancelled' || data.status === 'expired') && (
+            <div className="flex flex-wrap gap-3">
+              <Link href={`/book/${slug}`} className="pub-cta pub-cta-primary no-underline">Book again</Link>
+              <Link href="/usercourts" className="pub-cta pub-cta-ghost no-underline">Find courts</Link>
+            </div>
+          )}
         </div>
-
-        {showPay && (
-          <a
-            href={data.paymentUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-block px-4 py-2 rounded bg-blue-500 text-black font-semibold no-underline"
-          >
-            Open Payment QR
-          </a>
-        )}
-
-        {(data.status === 'cancelled' || data.status === 'expired') && (
-          <div className="mt-4 flex gap-2">
-            <Link href={`/book/${slug}`} className="px-4 py-2 rounded border border-white/20 text-white no-underline">Book again</Link>
-            <Link href="/" className="px-4 py-2 rounded border border-white/20 text-white no-underline">OK</Link>
-          </div>
-        )}
       </div>
-    </div>
+
+      <PublicFooter compact />
+    </>
   );
 }
-

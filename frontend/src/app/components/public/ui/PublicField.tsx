@@ -9,9 +9,9 @@ interface PublicFieldProps {
 export function PublicField({ label, hint, children }: PublicFieldProps) {
   return (
     <div className="flex flex-col gap-2">
-      <label className="text-[0.62rem] tracking-widest uppercase text-white/30">{label}</label>
+      <label className="font-mono-data text-[0.62rem] tracking-widest uppercase text-[var(--line-faint)]">{label}</label>
       {children}
-      {hint ? <p className="text-[0.68rem] text-white/25">{hint}</p> : null}
+      {hint ? <p className="text-[0.68rem] text-[var(--line-faint)]">{hint}</p> : null}
     </div>
   );
 }
