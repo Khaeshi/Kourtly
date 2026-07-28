@@ -7,6 +7,18 @@ import Image from 'next/image';
 import { APP_NAME } from '@/lib/config';
 import { InlineNotice, PublicButton, PublicCard } from '@/app/components/public/ui';
 
+function SignInSpinner({ label }: { label: string }) {
+  return (
+    <div className="text-center">
+      <div
+        className="mx-auto mb-4 h-7 w-7 rounded-full border-2 border-[var(--divider)] border-t-[var(--amber)] pk-spin"
+        aria-hidden
+      />
+      <p className="text-sm text-[var(--line-dim)]">{label}</p>
+    </div>
+  );
+}
+
 function SignInContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -14,6 +26,11 @@ function SignInContent() {
   const callbackUrl = searchParams.get('callbackUrl') || null;
   const error = searchParams.get('error');
   const [loading, setLoading] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     if (status !== 'authenticated' || !session) return;
@@ -30,17 +47,19 @@ function SignInContent() {
     await signIn('google', { callbackUrl: '/auth/signin' });
   };
 
+  // Session state differs between SSR and client — wait for mount before branching.
+  if (!mounted) {
+    return (
+      <div className="public-root min-h-screen flex items-center justify-center">
+        <SignInSpinner label="Loading..." />
+      </div>
+    );
+  }
+
   if (status === 'loading' || status === 'authenticated') {
     return (
       <div className="public-root min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div
-            className="w-7 h-7 border-2 border-[var(--divider)] border-t-[var(--amber)] rounded-full pk-spin mx-auto mb-4"
-          />
-          <p className="text-sm text-[var(--line-dim)]">
-            {status === 'authenticated' ? 'Redirecting...' : 'Loading...'}
-          </p>
-        </div>
+        <SignInSpinner label={status === 'authenticated' ? 'Redirecting...' : 'Loading...'} />
       </div>
     );
   }

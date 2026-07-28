@@ -272,6 +272,28 @@ body {
 .court-row:last-child { border-bottom: 1px solid var(--divider); }
 .court-row:hover { opacity: 0.88; }
 
+/* MapLibre controls — keep attribution subtle on public pages */
+.public-root .maplibregl-ctrl-attrib {
+  font-size: 9px !important;
+  line-height: 1.2;
+  max-width: min(180px, 40vw);
+  background: rgba(11, 61, 58, 0.72) !important;
+  color: var(--line-faint) !important;
+  border-radius: 4px;
+  padding: 2px 4px !important;
+  margin: 0 !important;
+}
+.public-root .maplibregl-ctrl-attrib a {
+  color: var(--line-dim) !important;
+}
+.public-root .maplibregl-ctrl-bottom-right {
+  bottom: 6px;
+  right: 6px;
+}
+.public-root .maplibregl-ctrl-bottom-right .maplibregl-ctrl {
+  margin: 0 6px 6px 0;
+}
+
 /* Feature list rows */
 .feature-row {
   padding: 1.4rem 0;

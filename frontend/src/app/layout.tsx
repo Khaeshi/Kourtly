@@ -39,12 +39,15 @@ export const metadata: Metadata = {
   to see available courts near you and book right away your reservations! Or if you are a court owner,
   you found the right system to manage your court, subscribe now! `,
   manifest: '/manifest.webmanifest',
-  themeColor: '#0B3D3A',
   icons: {
     icon: '/Playkoubg.png',
     apple: '/Playkoubg.png',
   },
 };
+
+export const viewport = {
+  themeColor: '#0B3D3A',
+}
 
 export default function RootLayout({
   children,

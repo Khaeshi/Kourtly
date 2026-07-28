@@ -1,5 +1,5 @@
 /* eslint-disable no-restricted-globals */
-const SW_VERSION = "v1";
+const SW_VERSION = "v2";
 const APP_SHELL = `app-shell-${SW_VERSION}`;
 const PUBLIC_DATA = `public-data-${SW_VERSION}`;
 
@@ -31,11 +31,11 @@ self.addEventListener("fetch", (event) => {
   const request = event.request;
   const url = new URL(request.url);
 
-  if (request.method !== "GET") {
-    return;
-  }
+  if (request.method !== "GET") return;
+  if (url.origin !== self.location.origin) return;
 
-  if (url.origin !== self.location.origin) {
+  // Never intercept Next's own asset pipeline or auth routes
+  if (url.pathname.startsWith("/_next/") || url.pathname.startsWith("/auth") || url.pathname.startsWith("/api/auth")) {
     return;
   }
 

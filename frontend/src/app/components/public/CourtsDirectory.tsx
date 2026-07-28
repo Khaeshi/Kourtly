@@ -145,7 +145,7 @@ export default function CourtsDirectory() {
       </section>
 
       {/* Globe map — desktop only */}
-      <section className="public-wrap pb-8 hidden min-[800px]:block">
+      <section className="public-wrap pb-4 hidden min-[800px]:block">
         <h2 className="font-display text-[clamp(1.2rem,2.5vw,1.6rem)] text-[var(--line)] mb-1">
           Court map
         </h2>

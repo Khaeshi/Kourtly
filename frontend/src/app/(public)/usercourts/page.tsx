@@ -6,7 +6,9 @@ export default function UserCourtsPage() {
   return (
     <>
       <PublicNav alwaysVisible />
-      <CourtsDirectory />
+      <main className="flex-1">
+        <CourtsDirectory />
+      </main>
       <PublicFooter compact />
     </>
   );
