@@ -16,6 +16,7 @@ interface Props {
 export default function PublicNav({ links = [], alwaysVisible = true }: Props) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [dropOpen, setDropOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
   const dropRef = useRef<HTMLDivElement>(null);
 
   const { data: session, status } = useSession();
@@ -36,12 +37,28 @@ export default function PublicNav({ links = [], alwaysVisible = true }: Props) {
     return () => document.removeEventListener('mousedown', h);
   }, []);
 
+  useEffect(() => {
+    const handleScroll = () => setScrolled(window.scrollY > 8);
+    handleScroll();
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
   const navLinkClass =
     'text-[0.9rem] font-semibold text-[var(--line-dim)] no-underline opacity-75 hover:opacity-100 transition-opacity';
 
   return (
     <>
-      <nav className="public-nav">
+      <nav
+        className="public-nav"
+        style={{
+          background: scrolled ? 'rgba(11, 61, 58, 0.86)' : 'transparent',
+          backdropFilter: scrolled ? 'blur(10px)' : 'none',
+          WebkitBackdropFilter: scrolled ? 'blur(10px)' : 'none',
+          borderBottomColor: scrolled ? 'var(--divider)' : 'transparent',
+          transition: 'background 0.3s ease, border-color 0.3s ease, backdrop-filter 0.3s ease',
+        }}
+      >
         <Link href="/" className="flex items-center gap-2.5 min-w-0 no-underline">
           <Image
             src="/Playkoubg.png"

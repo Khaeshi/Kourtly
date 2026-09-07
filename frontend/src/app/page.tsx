@@ -6,6 +6,7 @@ import Timeline from './components/public/Timeline';
 import AsymmetricFeaturePanel from './components/public/AsymmetricFeaturePanel';
 import FactRow from './components/public/FactRow';
 import PublicFooter from './components/public/PublicFooter';
+import ProblemSection from './components/public/ProblemSection';
 
 const BOOKING_STEPS = [
   {
@@ -78,6 +79,7 @@ export default function SplashPage() {
 
         <SplitHero />
       </section>
+      <ProblemSection />
 
       <section className="py-[clamp(3.5rem,7vw,5.5rem)] max-[480px]:py-[2.6rem]">
         <div className="public-wrap">

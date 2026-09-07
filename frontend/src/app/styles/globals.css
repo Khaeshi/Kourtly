@@ -13,6 +13,8 @@
   --color-muted-foreground: var(--muted-foreground);
   --color-border: var(--border);
   --color-accent: var(--accent);
+  --color-danger: var(--public-danger);
+  --color-danger-soft: var(--public-danger-soft);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -35,13 +37,16 @@ body {
 ══════════════════════════════════════════ */
 
 :root {
-  --teal-deep: #0B3D3A;
-  --teal-mid: #12524D;
-  --teal-light: #1D7268;
+  --teal-deep: #10241F;
+  --teal-mid: #2F6E58;
+  --teal-light: #2F6E58;
+  --coral: #E2574A;
+  --public-danger: var(--coral);
+  --public-danger-soft: rgba(226, 87, 74, 0.14);
   --line: #F5F1E8;
   --line-dim: rgba(245, 241, 232, 0.62);
   --line-faint: rgba(245, 241, 232, 0.34);
-  --amber: #E8A33D;
+  --amber: #F0A93E;
   --ink: #0A1614;
   --divider: rgba(245, 241, 232, 0.16);
   --r-pill: 999px;
@@ -78,6 +83,7 @@ body {
   background: var(--teal-deep);
   color: var(--line);
   font-family: var(--font-manrope), 'Manrope', sans-serif;
+  overflow-x: clip;
 }
 
 .font-display {
@@ -727,8 +733,8 @@ input:focus, select:focus {
   text-align: left;
 }
 .drop-item:hover        { background: rgba(255,255,255,0.06); color: var(--line); }
-.drop-item.danger       { color: rgba(248, 113, 113, 0.8); }
-.drop-item.danger:hover { background: rgba(239, 68, 68, 0.08); color: #f87171; }
+.drop-item.danger       {  color: var(--public-danger); }
+.drop-item.danger:hover { background: var(--public-danger-soft); color: var(--public-danger); }
 .drop-item.muted        { opacity: 0.4; cursor: default; pointer-events: none; }
 
 .avatar-skeleton {
