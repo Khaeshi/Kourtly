@@ -1,4 +1,4 @@
-# PlayKou External QA Checklist
+# Kourtly External QA Checklist
 
 Last updated: April 2026  
 Scope baseline: Phases 1–5 shipped (Phase 6 optional/experimental)

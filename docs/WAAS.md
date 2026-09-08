@@ -1,4 +1,4 @@
-## PlayKou — WAAS (Working Agreement & Architecture Spec)
+## Kourtly — WAAS (Working Agreement & Architecture Spec)
 
 Living document for **current architecture**, **what’s shipped**, and the **future roadmap** (including an experimental Phase 6 spec).
 
@@ -279,9 +279,9 @@ Many courts and players use Facebook Pages + Messenger as the default inquiry ch
 ### Proposed flow (end-to-end)
 
 1. Player messages the court’s Facebook Page.
-2. Meta webhook posts event to PlayKou.
-3. PlayKou verifies signature + maps Page → Court.
-4. PlayKou pulls **allowed** context (never admin-only):
+2. Meta webhook posts event to Kourtly.
+3. Kourtly verifies signature + maps Page → Court.
+4. Kourtly pulls **allowed** context (never admin-only):
    - booking link (`/book/[slug]`)
    - operating hours
    - schedule blocks / next available windows (only if already modeled)

@@ -14,12 +14,6 @@ const SPORT_LABELS: Record<string, string> = {
   tennis: 'Tennis',
 };
 
-const SPORT_THEME: Record<Sport, string> = {
-  all: 'transparent',
-  badminton: '#2e2410',
-  pickleball: '#132a38',
-  tennis: '#123420',
-};
 
 const SPORT_COPY: Record<Sport, { eyebrow: string; heading: string; description: string }> = {
   all: {
@@ -79,7 +73,7 @@ export default function CourtsDirectory() {
   const copy = SPORT_COPY[sport];
 
   return (
-    <div style={{ backgroundColor: SPORT_THEME[sport], transition: 'background-color 0.4s ease' }}>
+    <div style={{ transition: 'background-color 0.4s ease' }}>
       <style>{`
         @keyframes pkSlideInRight { from { opacity: 0; transform: translateX(28px); } to { opacity: 1; transform: translateX(0); } }
         @keyframes pkSlideInLeft { from { opacity: 0; transform: translateX(-28px); } to { opacity: 1; transform: translateX(0); } }
@@ -198,7 +192,7 @@ export default function CourtsDirectory() {
 
       {/* Shared map instance — receives updated `filtered` props on every tab switch, never unmounts/remounts */}
       <section className="public-wrap pb-4 hidden min-[800px]:block">
-        <h2 className="font-display text-[clamp(1.2rem,2.5vw,1.6rem)] text-[var(--line)] mb-1">Court map</h2>
+        <h2 className="font-display text-[clamp(1.2rem,2.5vw,1.6rem)] text-[var(--line)] mb-1 mt-6">Court map</h2>
         <p className="text-[var(--line-dim)] text-[0.88rem] mb-4">Click a pin to view rates and book.</p>
         <CourtsGlobeMap courts={filtered} />
       </section>

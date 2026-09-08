@@ -1,4 +1,5 @@
 'use client';
+
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -6,63 +7,128 @@ import { signOut } from 'next-auth/react';
 import Image from 'next/image';
 import { Toaster } from 'sileo';
 import { APP_NAME } from '@/lib/config';
+import {
+  LayoutDashboard,
+  Users,
+  ListOrdered,
+  Menu,
+  X,
+  Maximize,
+  Minimize,
+  LogOut,
+  ArrowLeft,
+} from 'lucide-react';
 
 interface Props {
   children: React.ReactNode;
-  user: { name: string; email: string; image: string };
+  user: {
+    name: string;
+    email: string;
+    image: string;
+  };
 }
 
 const NAV = [
-  { href: '/superadmin', label: 'Dashboard', exact: true },
-  { href: '/superadmin/courts', label: 'Courts' },
-  { href: '/users', label: 'Users' },
+  {
+    href: '/superadmin',
+    label: 'Dashboard',
+    exact: true,
+    icon: LayoutDashboard,
+  },
+  {
+    href: '/superadmin/courts',
+    label: 'Courts',
+    icon: ListOrdered,
+  },
+  {
+    href: '/users',
+    label: 'Users',
+    icon: Users,
+  },
 ];
 
 export default function SuperAdminLayoutClient({ children, user }: Props) {
   const pathname = usePathname();
+
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [fsSupported, setFsSupported] = useState(false);
 
-  const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
-
-  /**
-   * @desc Check if fullscreen is supported (IOS safari not supported)
-   */
+  /* --------------------------------
+     Fullscreen support
+  -------------------------------- */
   useEffect(() => {
-    setFsSupported(!!document.documentElement.requestFullscreen);
+    setFsSupported(
+      typeof document !== 'undefined' &&
+        !!document.documentElement.requestFullscreen
+    );
   }, []);
 
+  /* --------------------------------
+     Track fullscreen state
+  -------------------------------- */
   useEffect(() => {
-    const handler = () => setIsFullscreen(!!document.fullscreenElement);
+    const handler = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+
     document.addEventListener('fullscreenchange', handler);
-    return () => document.removeEventListener('fullscreenchange', handler);
+
+    return () => {
+      document.removeEventListener('fullscreenchange', handler);
+    };
   }, []);
 
-  // Auto-enter fullscreen when layout mounts (best-effort; browser may block it)
+  /* --------------------------------
+     Close sidebar after navigation
+  -------------------------------- */
   useEffect(() => {
-    if (!document.documentElement.requestFullscreen) return;
-    const timer = setTimeout(() => {
-      if (!document.fullscreenElement) {
-        document.documentElement.requestFullscreen().catch(() => {});
-      }
-    }, 300);
-    return () => clearTimeout(timer);
-  }, []);
+    setSidebarOpen(false);
+  }, [pathname]);
 
+  /* --------------------------------
+     Prevent background scroll on mobile
+  -------------------------------- */
+  useEffect(() => {
+    if (sidebarOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [sidebarOpen]);
+
+  /* Fullscreen toggle */
   const toggleFullscreen = useCallback(() => {
     if (!document.fullscreenElement) {
       document.documentElement.requestFullscreen().catch(console.warn);
     } else {
-      document.exitFullscreen();
+      document.exitFullscreen().catch(console.warn);
     }
   }, []);
 
+  /* --------------------------------
+     Sign out
+  -------------------------------- */
+  const handleSignOut = async () => {
+    setSigningOut(true);
+
+    await signOut({
+      callbackUrl: '/',
+    });
+  };
+
   return (
     <>
+      {/* =================================
+          TOASTER
+      ================================= */}
       <Toaster
-        position={isMobile ? 'bottom-center' : 'top-right'}
+        position="top-right"
         options={{
           fill: '#171717',
           styles: {
@@ -73,137 +139,180 @@ export default function SuperAdminLayoutClient({ children, user }: Props) {
         }}
       />
 
-      {/* Mobile top bar + slide-in sidebar (same as Admin layout). */}
-      <div className="mobile-topbar">
+      {/* =================================
+          MOBILE TOP BAR
+      ================================= */}
+      <header className="fixed left-0 right-0 top-0 z-50 flex h-14 items-center border-b border-gray-200 bg-white px-4 shadow-sm sm:hidden">
         <button
-          onClick={() => setSidebarOpen((o) => !o)}
-          aria-label="Toggle menu"
-          className="flex flex-col gap-1 p-1.5 rounded-md border-none bg-transparent cursor-pointer"
+          type="button"
+          onClick={() => setSidebarOpen((open) => !open)}
+          aria-label={sidebarOpen ? 'Close menu' : 'Open menu'}
+          className="flex h-9 w-9 items-center justify-center rounded-lg text-gray-600 transition-colors hover:bg-gray-100"
         >
-          <span
-            className={`block w-[18px] h-[2px] bg-gray-700 rounded-sm transition-all duration-200 ${
-              sidebarOpen ? 'rotate-45 translate-x-1 translate-y-1' : ''
-            }`}
-          />
-          <span
-            className={`block w-[18px] h-[2px] bg-gray-700 rounded-sm transition-all duration-200 ${
-              sidebarOpen ? 'opacity-0' : 'opacity-100'
-            }`}
-          />
-          <span
-            className={`block w-[18px] h-[2px] bg-gray-700 rounded-sm transition-all duration-200 ${
-              sidebarOpen ? '-rotate-45 translate-x-1 -translate-y-1' : ''
-            }`}
-          />
+          {sidebarOpen ? (
+            <X className="h-5 w-5" />
+          ) : (
+            <Menu className="h-5 w-5" />
+          )}
         </button>
 
-        <span className="font-bold text-sm text-gray-900 tracking-tight">{APP_NAME}</span>
+        <span className="ml-3 truncate text-sm font-bold tracking-tight text-gray-900">
+          {APP_NAME}
+        </span>
 
         {fsSupported && (
           <button
+            type="button"
             onClick={toggleFullscreen}
-            title={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
-            className="ml-auto w-8 h-8 flex items-center justify-center rounded-md text-gray-400 hover:text-gray-600 transition-colors"
+            aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+            className="ml-auto flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100"
           >
             {isFullscreen ? (
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 0 2-2h3M3 16h3a2 2 0 0 0 2 2v3" />
-              </svg>
+              <Minimize className="h-4 w-4" />
             ) : (
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
-              </svg>
+              <Maximize className="h-4 w-4" />
             )}
           </button>
         )}
-      </div>
+      </header>
 
-      {sidebarOpen && <div className="sidebar-backdrop" onClick={() => setSidebarOpen(false)} />}
+      {/* =================================
+          MOBILE BACKDROP
+      ================================= */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/30 sm:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
 
-      <div className="flex min-h-screen bg-gray-100 font-sans">
-        <aside className={`admin-sidebar-aside ${sidebarOpen ? 'open' : ''}`}>
+      {/* =================================
+          PAGE
+      ================================= */}
+      <div className="min-h-screen bg-gray-100 font-sans">
+        {/* =================================
+            SIDEBAR
+        ================================= */}
+        <aside
+          className={`fixed inset-y-0 left-0 z-50 flex w-[260px] flex-col border-r border-gray-200 bg-white transition-transform duration-300 ease-in-out sm:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}
+        >
           {/* Brand */}
-          <div className="px-5 py-5 pb-4 border-b border-gray-100">
+          <div className="flex min-h-[76px] items-center border-b border-gray-100 px-5">
             <Link
               href="/"
-              className="no-underline flex items-center gap-2.5"
               onClick={() => setSidebarOpen(false)}
+              className="flex items-center gap-2.5 no-underline"
             >
-              <div className="w-7 h-7 rounded-lg bg-purple-700 flex items-center justify-center shrink-0">
-                <div className="w-2.5 h-2.5 rounded-full bg-white opacity-90" />
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-purple-700">
+                <div className="h-2.5 w-2.5 rounded-full bg-white opacity-90" />
               </div>
-              <span className="font-bold text-sm text-gray-900 tracking-tight">Super Admin</span>
+
+              <span className="text-sm font-bold tracking-tight text-gray-900">
+                Super Admin
+              </span>
             </Link>
+
+            {/* Mobile close button */}
+            <button
+              type="button"
+              onClick={() => setSidebarOpen(false)}
+              aria-label="Close sidebar"
+              className="ml-auto flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 sm:hidden"
+            >
+              <X className="h-4 w-4" />
+            </button>
           </div>
 
-          {/* Nav */}
-          <nav className="px-3 py-3 flex-1 flex flex-col gap-0.5">
-            <p className="text-[0.65rem] font-semibold tracking-widest uppercase text-gray-400 px-3.5 mb-1">
+          {/* Navigation */}
+          <nav className="flex-1 overflow-y-auto px-3 py-4">
+            <p className="mb-2 px-3.5 text-[0.65rem] font-semibold uppercase tracking-widest text-gray-400">
               Platform
             </p>
-            {NAV.map((item) => {
-              const active = item.exact ? pathname === item.href : pathname.startsWith(item.href);
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  onClick={() => setSidebarOpen(false)}
-                  className={`sidebar-item ${active ? 'active' : ''}`}
-                >
-                  <span
-                    className={`w-1.5 h-1.5 rounded-full shrink-0 transition-colors ${
-                      active ? 'bg-purple-700' : 'bg-gray-300'
-                    }`}
-                  />
-                  {item.label}
-                </Link>
-              );
-            })}
+
+            <div className="space-y-1">
+              {NAV.map((item) => {
+                const active = item.exact
+                  ? pathname === item.href
+                  : pathname.startsWith(item.href);
+
+                const Icon = item.icon;
+
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={() => setSidebarOpen(false)}
+                    className={`flex items-center gap-3 rounded-lg px-3.5 py-2.5 text-sm font-medium no-underline transition-colors ${active ? 'bg-green-50 text-green-700' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}
+                  >
+                    <Icon
+                      className={`h-4 w-4 shrink-0 ${active ? 'text-green-700' : 'text-gray-400'}`}
+                    />
+                    <span>{item.label}</span>
+                  </Link>
+                );
+              })}
+            </div>
           </nav>
 
           {/* Footer */}
-          <div className="px-3 py-4 border-t border-gray-100 flex flex-col gap-2">
+          <div className="space-y-2 border-t border-gray-100 p-3">
+            {/* User */}
             <div className="flex items-center gap-2.5 px-3.5 py-2">
               {user.image ? (
-                <Image src={user.image} alt={user.name} width={26} height={26} className="rounded-full shrink-0" />
+                <Image
+                  src={user.image}
+                  alt={user.name}
+                  width={28}
+                  height={28}
+                  className="h-7 w-7 shrink-0 rounded-full object-cover"
+                />
               ) : (
-                <div className="w-[26px] h-[26px] rounded-full bg-purple-50 border border-purple-200 flex items-center justify-center shrink-0">
-                  <span className="text-[0.65rem] font-semibold text-purple-700">
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-purple-200 bg-purple-50">
+                  <span className="text-xs font-semibold text-purple-700">
                     {user.name?.[0]?.toUpperCase() ?? '?'}
                   </span>
                 </div>
               )}
+
               <div className="min-w-0">
-                <p className="text-xs font-semibold text-gray-800 truncate leading-tight">{user.name}</p>
-                <p className="text-[0.58rem] font-semibold text-purple-500 uppercase tracking-wide">Super Admin</p>
+                <p className="truncate text-xs font-semibold text-gray-800">
+                  {user.name}
+                </p>
+
+                <p className="text-[0.58rem] font-semibold uppercase tracking-wide text-purple-500">
+                  Super Admin
+                </p>
               </div>
             </div>
 
+            {/* Sign out */}
             <button
-              onClick={() => {
-                setSigningOut(true);
-                signOut({ callbackUrl: '/' });
-              }}
+              type="button"
+              onClick={handleSignOut}
               disabled={signingOut}
-              className="flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs text-red-500 border border-red-100 bg-transparent cursor-pointer transition-colors hover:bg-red-50 disabled:opacity-50 w-full font-medium"
-              style={{ fontFamily: 'inherit' }}
+              className="flex w-full items-center gap-2 rounded-lg border border-red-100 px-3.5 py-2.5 text-xs font-medium text-red-500 transition-colors hover:bg-red-50 disabled:opacity-50"
             >
-              <span>↪</span>
+              <LogOut className="h-4 w-4" />
               {signingOut ? 'Signing out...' : 'Sign Out'}
             </button>
 
+            {/* View site */}
             <Link
               href="/"
               onClick={() => setSidebarOpen(false)}
-              className="flex items-center gap-2 px-3.5 py-2 rounded-lg no-underline text-gray-500 text-xs hover:bg-gray-100 transition-colors"
+              className="flex items-center gap-2 rounded-lg px-3.5 py-2.5 text-xs text-gray-500 no-underline transition-colors hover:bg-gray-100"
             >
-              ← View Site
+              <ArrowLeft className="h-4 w-4" />
+              View Site
             </Link>
           </div>
         </aside>
 
-        <main className="admin-main flex-1 px-[clamp(1rem,3vw,2rem)] pb-[clamp(1rem,3vw,2rem)] pt-[clamp(1rem,3vw,2rem)] md:pt-[clamp(1rem,3vw,2rem)]">
-          {children}
+        {/* MAIN CONTENT */}
+        <main className="min-h-screen px-4 pb-6 pt-20 sm:ml-[260px] sm:px-6 sm:pb-8 sm:pt-6 lg:px-8">
+          <div className="mx-auto w-full max-w-[1600px]">
+            {children}
+          </div>
         </main>
       </div>
     </>

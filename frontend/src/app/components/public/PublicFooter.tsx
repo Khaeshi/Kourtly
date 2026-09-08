@@ -14,7 +14,7 @@ export default function PublicFooter({ compact = false }: PublicFooterProps) {
             Manage less.
           </p>
           <p className="text-[0.78rem] tracking-[0.08em] text-[var(--line-faint)] shrink-0">
-            Playkou
+            Kourtly
           </p>
         </div>
       )}
@@ -26,7 +26,7 @@ export default function PublicFooter({ compact = false }: PublicFooterProps) {
             : 'py-5 gap-3 text-[0.78rem] max-[480px]:gap-1'
         }`}
       >
-        <div>&copy; {new Date().getFullYear()} Playkou, built for badminton communities.</div>
+        <div>&copy; {new Date().getFullYear()} Kourtly, built for badminton communities.</div>
         <div className={compact ? 'text-[var(--line-faint)]' : undefined}>Muntinlupa &ndash; Laguna, Philippines</div>
       </div>
     </footer>

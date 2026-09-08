@@ -18,7 +18,7 @@ const ONBOARDING_STEPS = [
   },
   {
     title: 'Go live',
-    description: 'Your court appears on the Playkou directory. Bookings start coming in.',
+    description: 'Your court appears on the Kourtly directory. Bookings start coming in.',
   },
 ];
 
@@ -67,10 +67,10 @@ export default function ForCourtsPage() {
             Run your court online
           </h1>
           <p className="text-[var(--line-dim)] text-[clamp(0.98rem,1.5vw,1.08rem)] max-w-[480px] mb-8">
-            Playkou gives your court an online presence, booking, queue management, and billing on one flat rate.
+            Kourtly gives your court an online presence, booking, queue management, and billing on one flat rate.
           </p>
           <Link href="/register-court" className="pub-cta pub-cta-primary">
-            Start with Playkou
+            Start with Kourtly
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-[15px] h-[15px]">
               <path d="M5 12h14M13 6l6 6-6 6" />
             </svg>
@@ -105,7 +105,7 @@ export default function ForCourtsPage() {
                 'Public court listing',
                 '14-day free trial, no credit card',
               ],
-              ctaLabel: 'Start with Playkou',
+              ctaLabel: 'Start with Kourtly',
               ctaHref: '/register-court',
             }}
             features={SIDE_FEATURES}
@@ -127,7 +127,7 @@ export default function ForCourtsPage() {
           Register your court today and have your booking system live within minutes. Free for the first 14 days.
         </p>
         <div className="final-ctas flex gap-3.5 justify-center flex-wrap">
-          <Link href="/register-court" className="pub-cta pub-cta-primary">Start with Playkou</Link>
+          <Link href="/register-court" className="pub-cta pub-cta-primary">Start with Kourtly</Link>
           <Link href="/courts" className="pub-cta pub-cta-ghost">Find Courts</Link>
         </div>
       </div>

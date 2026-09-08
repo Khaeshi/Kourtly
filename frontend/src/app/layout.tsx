@@ -35,7 +35,7 @@ const jetbrainsMono = JetBrains_Mono({
 
 export const metadata: Metadata = {
   title: APP_NAME,
-  description: `Find the nearest and recommended courts near you! PlayKou offers a conbenient place
+  description: `Find the nearest and recommended courts near you! Kourtly offers a conbenient place
   to see available courts near you and book right away your reservations! Or if you are a court owner,
   you found the right system to manage your court, subscribe now! `,
   manifest: '/manifest.webmanifest',

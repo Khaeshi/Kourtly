@@ -109,7 +109,7 @@ export default function SplashPage() {
                 'Analytics across every court you run',
                 '14-day free trial, no credit card',
               ],
-              ctaLabel: 'Start with Playkou',
+              ctaLabel: 'Start with Kourtly',
               ctaHref: '/for-courts',
             }}
             features={OWNER_FEATURES}
@@ -126,11 +126,11 @@ export default function SplashPage() {
       <div className="text-center py-[clamp(3.5rem,8vw,5.5rem)] px-6 max-[480px]:py-[2.6rem] max-[480px]:px-[1.1rem]">
         <h3 className="font-display text-[clamp(1.8rem,4vw,2.7rem)] mb-3 text-[var(--line)]">Choose your path.</h3>
         <p className="text-[var(--line-dim)] max-w-[440px] mx-auto mb-7 text-[0.95rem]">
-          Whichever side of the court you&apos;re on, Playkou takes you to the right place.
+          Whichever side of the court you&apos;re on, Kourtly takes you to the right place.
         </p>
         <div className="final-ctas flex gap-3.5 justify-center flex-wrap">
           <Link href="/usercourts" className="pub-cta pub-cta-primary">Let&apos;s get started</Link>
-          <Link href="/for-courts" className="pub-cta pub-cta-ghost">Start with Playkou</Link>
+          <Link href="/for-courts" className="pub-cta pub-cta-ghost">Start with Kourtly</Link>
         </div>
       </div>
 

@@ -83,7 +83,7 @@ export default function SplitHero() {
             Manage bookings, queues, billing, and analytics. Start with a 14-day free trial, no credit card needed.
           </p>
           <Link href="/for-courts" className="pub-cta pub-cta-ghost mt-1">
-            Start with Playkou
+            Start with Kourtly
             <ArrowIcon />
           </Link>
           <div className="flex gap-5 flex-wrap mt-1 max-[480px]:gap-4">
