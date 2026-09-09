@@ -9,6 +9,7 @@ import {
   resolveSchedule, getBlockedSlots,
 } from '../utils/scheduleUtils.js';
 import { transitionReservationPayment } from '../lib/reservationStateMachine.js';
+import { hasModule, MODULES } from '../lib/moduleEntitlements.js';
 
 const router = express.Router();
 
@@ -24,8 +25,8 @@ router.get('/courts', async (req, res) => {
     const courts = await Court.find({
       isActive: true,
       'subscription.status': { $in: ['active', 'trial'] },
-    }).select('name slug sports courtCount location contact description logoUrl amenities settings.hourlyRate settings.currency').lean();
-    res.json(courts);
+    }).select('name slug sports courtCount location contact description logoUrl amenities settings.hourlyRate settings.currency subscription.tier subscription.modules').lean();
+    res.json(courts.filter(court => hasModule(court, MODULES.BOOKING)));
   } catch (err) {
     if (String(err.message || '').includes('Invalid reservation status transition') ||
         String(err.message || '').includes('Invalid payment status transition')) {
@@ -50,7 +51,7 @@ router.get('/courts/id/:id', async (req, res) => {
 router.get('/courts/:slug', async (req, res) => {
   try {
     const court = await Court.findOne({ slug: req.params.slug, isActive: true })
-      .select('name slug sports courtCount location contact description logoUrl amenities settings')
+      .select('name slug sports courtCount location contact description logoUrl amenities settings subscription.tier subscription.modules')
       .lean();
     if (!court) return res.status(404).json({ error: 'Court not found.' });
     res.json(court);
@@ -67,6 +68,9 @@ router.get('/courts/:slug/availability', async (req, res) => {
 
     const court = await Court.findOne({ slug: req.params.slug, isActive: true }).lean();
     if (!court) return res.status(404).json({ error: 'Court not found.' });
+    if (!hasModule(court, MODULES.BOOKING)) {
+      return res.status(403).json({ code: 'MODULE_NOT_ENABLED', module: MODULES.BOOKING, error: 'Booking is not enabled for this court.' });
+    }
 
     const courtId     = court._id;
     const durationHrs = Math.max(1, parseInt(duration, 10));
@@ -139,6 +143,9 @@ router.post('/courts/:slug/reserve', async (req, res) => {
   try {
     const court = await Court.findOne({ slug: req.params.slug, isActive: true }).lean();
     if (!court) return res.status(404).json({ error: 'Court not found.' });
+    if (!hasModule(court, MODULES.BOOKING)) {
+      return res.status(403).json({ code: 'MODULE_NOT_ENABLED', module: MODULES.BOOKING, error: 'Booking is not enabled for this court.' });
+    }
     if (['expired', 'suspended'].includes(court.subscription.status)) {
       return res.status(403).json({ error: 'This court is not accepting bookings.' });
     }

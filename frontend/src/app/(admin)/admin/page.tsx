@@ -6,6 +6,7 @@ import { format, parseISO } from 'date-fns';
 import { askAnalytics, getPlayers, getQueue } from '@/lib/api';
 import { API_BASE } from '@/lib/config';
 import type { Player, Match } from '@/lib/api';
+import { useCapabilities } from '@/lib/entitlements';
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
@@ -88,6 +89,7 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 export default function AdminDashboard() {
+    const capabilities = useCapabilities();
   // ── Live counts (existing) ─────────────────────────────────────────────────
   const [playerCount, setPlayerCount] = useState<number | string>('—');
   const [matchCount,  setMatchCount]  = useState<number | string>('—');
@@ -107,12 +109,14 @@ export default function AdminDashboard() {
   // Load live counts
   useEffect(() => {
     const load = async () => {
-      const [players, queue]: [Player[], Match[]] = await Promise.all([getPlayers(), getQueue()]);
-      setPlayerCount(players.length);
-      setMatchCount(queue.length);
+      if (capabilities.modules.queue) {
+        const [players, queue]: [Player[], Match[]] = await Promise.all([getPlayers(), getQueue()]);
+        setPlayerCount(players.length);
+        setMatchCount(queue.length);
+      }
     };
     load();
-  }, []);
+  }, [capabilities.modules.queue]);
 
   // Load analytics
   const loadAnalytics = useCallback(async () => {
@@ -132,11 +136,20 @@ export default function AdminDashboard() {
   useEffect(() => { loadAnalytics(); }, [loadAnalytics]);
 
   const loadPayoutTransfers = useCallback(() => {
+    if (!capabilities.modules.item_tabs) {
+      setPayoutTransfers([]);
+      return;
+    }
+
     fetch(`/api/proxy/payout-transfers?limit=10&status=${payoutStatusFilter}`)
-      .then(r => r.json())
+      .then(async response => {
+        if (!response.ok) return [];
+        const data = await response.json();
+        return Array.isArray(data) ? data : [];
+      })
       .then(setPayoutTransfers)
       .catch(() => setPayoutTransfers([]));
-  }, [payoutStatusFilter]);
+  }, [capabilities.modules.item_tabs, payoutStatusFilter]);
 
   useEffect(() => {
     loadPayoutTransfers();
@@ -491,7 +504,11 @@ export default function AdminDashboard() {
       <div className="bg-white border border-gray-200 rounded-xl px-6 py-5 mb-6">
         <p className="text-sm font-semibold text-gray-900 mb-4">Quick Actions</p>
         <div className="actions-grid grid grid-cols-4 gap-2.5">
-          {quickActions.map(a => (
+          {quickActions.filter(action => {
+            if (action.href.includes('queue') || action.href.includes('players')) return capabilities.modules.queue;
+            if (action.href.includes('billing')) return capabilities.modules.item_tabs;
+            return true;
+          }).map(a => (
             <Link key={a.label} href={a.href} className="qa-card">
               <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center">
                 <div className="w-3 h-3 rounded-sm bg-gray-300" />
@@ -502,6 +519,7 @@ export default function AdminDashboard() {
         </div>
       </div>
 
+      {capabilities.modules.item_tabs && (
       <div className="bg-white border border-gray-200 rounded-xl px-6 py-5 mb-6">
         <div className="flex items-center justify-between mb-3">
           <p className="text-sm font-semibold text-gray-900">Recent Payout Transfers</p>
@@ -545,14 +563,19 @@ export default function AdminDashboard() {
           </div>
         )}
       </div>
+      )}
 
       {/* ── Sections nav (existing) ── */}
       <div className="bg-white border border-gray-200 rounded-xl px-6 py-5">
         <p className="text-sm font-semibold text-gray-900 mb-3">Sections</p>
         <div>
-          {navLinks.map((n, i) => (
+          {navLinks.filter(link => {
+            if (link.href.includes('queue') || link.href.includes('players')) return capabilities.modules.queue;
+            if (link.href.includes('billing')) return capabilities.modules.item_tabs;
+            return true;
+          }).map((n, i, visibleLinks) => (
             <Link key={n.href} href={n.href} className="section-link"
-              style={{ borderBottom: i < navLinks.length - 1 ? '1px solid #f3f4f6' : 'none', borderRadius: 0 }}>
+              style={{ borderBottom: i < visibleLinks.length - 1 ? '1px solid #f3f4f6' : 'none', borderRadius: 0 }}>
               <div>
                 <p className="text-sm font-medium text-gray-700">{n.label}</p>
                 <p className="text-xs text-gray-400 mt-0.5">{n.desc}</p>

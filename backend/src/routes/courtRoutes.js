@@ -1,5 +1,8 @@
 import express from 'express';
 import Court from '../models/Court.js';
+import { resolveCapabilities } from '../lib/moduleEntitlements.js';
+import { createPaymentLink } from '../lib/payments/index.js';
+import { TIER_DETAILS, TIER_ORDER, TIERS } from '../lib/moduleEntitlements.js';
 
 const router = express.Router();
 
@@ -155,6 +158,83 @@ router.get('/me', async (req, res) => {
   const court = await Court.findById(req.courtId).lean();
   if (!court) return res.status(404).json({ error: 'Court not found.' });
   res.json(court);
+});
+
+// GET /api/court/me/capabilities
+router.get('/me/capabilities', async (req, res) => {
+  if (!req.court) return res.status(401).json({ error: 'Missing court context.' });
+  const capabilities = resolveCapabilities(req.court);
+  res.json({ ...capabilities, tierDetails: TIER_DETAILS[capabilities.tier] });
+});
+
+router.post('/me/subscription/upgrade', async (req, res) => {
+  try {
+    const { tier } = req.body;
+    if (!Object.values(TIERS).includes(tier)) return res.status(400).json({ error: 'Invalid subscription tier.' });
+
+    const court = await Court.findById(req.courtId).lean();
+    if (!court) return res.status(404).json({ error: 'Court not found.' });
+    const currentTier = court.subscription.tier || TIERS.BASIC;
+    if (currentTier === tier) return res.status(400).json({ error: 'This court is already on that tier.' });
+    if (TIER_ORDER.indexOf(tier) <= TIER_ORDER.indexOf(currentTier)) {
+      return res.status(400).json({ error: 'Use the scheduled downgrade flow for a lower tier.' });
+    }
+    if (court.subscription.status === 'expired' || court.subscription.status === 'suspended') {
+      return res.status(403).json({ error: 'Only active or trial subscriptions can be upgraded.' });
+    }
+
+    const target = TIER_DETAILS[tier];
+    if (!target.price) return res.status(400).json({ error: 'This tier requires a tailored quote. Please contact support.' });
+
+    const expiryDate = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const payment = await createPaymentLink({
+      amount: target.price,
+      description: `${target.label} subscription for ${court.name}`,
+      referenceId: `SUB-${court._id}-${Date.now()}`,
+      payerEmail: court.adminEmail,
+      successUrl: `${process.env.APP_BASE_URL || 'http://localhost:3000'}/admin/settings?upgrade=success`,
+      failureUrl: `${process.env.APP_BASE_URL || 'http://localhost:3000'}/admin/settings?upgrade=failed`,
+      expiryDate,
+      metadata: { type: 'subscription', courtId: String(court._id), tier },
+    });
+
+    res.json({ tier, paymentUrl: payment.payment_url || payment.checkout_url || '', paymentId: payment.id || payment.payment_id || '' });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.post('/me/subscription/downgrade', async (req, res) => {
+  try {
+    const { tier, confirmation } = req.body;
+    if (!Object.values(TIERS).includes(tier)) return res.status(400).json({ error: 'Invalid subscription tier.' });
+    if (confirmation !== TIER_DETAILS[tier].label) return res.status(400).json({ error: `Type ${TIER_DETAILS[tier].label} to confirm this downgrade.` });
+
+    const court = await Court.findById(req.courtId).lean();
+    if (!court) return res.status(404).json({ error: 'Court not found.' });
+    const currentTier = court.subscription.tier || TIERS.BASIC;
+    if (TIER_ORDER.indexOf(tier) >= TIER_ORDER.indexOf(currentTier)) {
+      return res.status(400).json({ error: 'Downgrade must target a lower tier.' });
+    }
+
+    const effectiveAt = court.subscription.status === 'trial'
+      ? new Date(court.subscription.trialEnds)
+      : new Date(court.subscription.nextBilling || Date.now() + 30 * 24 * 60 * 60 * 1000);
+    const updated = await Court.findByIdAndUpdate(
+      req.courtId,
+      { $set: { 'subscription.pendingTier': tier, 'subscription.pendingTierEffectiveAt': effectiveAt } },
+      { new: true, runValidators: true },
+    ).lean();
+    res.json({
+      tier: currentTier,
+      pendingTier: tier,
+      pendingTierEffectiveAt: effectiveAt,
+      message: `Your ${TIER_DETAILS[tier].label} tier will begin on ${effectiveAt.toISOString()}.`,
+      subscription: updated.subscription,
+    });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
 });
 
 // PATCH /api/court/me

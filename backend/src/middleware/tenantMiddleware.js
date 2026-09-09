@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import Court from '../models/Court.js';
+import { getAuthenticatedUser } from '../lib/internalAuth.js';
 
 export async function tenantMiddleware(req, res, next) {
   const path = req.path;
@@ -22,13 +23,20 @@ export async function tenantMiddleware(req, res, next) {
     return next();
   }
 
-  const courtId = req.headers['x-court-id'];
-  const role = req.headers['x-user-role'];
+  const user = await getAuthenticatedUser(req);
+
+  if (!user) {
+    return res.status(401).json({ error: 'Invalid or missing authenticated identity.' });
+  }
+
+  const courtId = user.courtId;
+  const role = user.role;
 
   // Superadmin bypass
   if (role === 'superadmin') {
     req.courtId = null;
     req.userRole = 'superadmin';
+    req.user = user;
     return next();
   }
 
@@ -53,6 +61,8 @@ export async function tenantMiddleware(req, res, next) {
   }
 
   req.courtId = courtId;
+  req.court = court;
   req.userRole = role ?? 'user';
+  req.user = user;
   next();
 }

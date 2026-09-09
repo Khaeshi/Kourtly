@@ -1,7 +1,19 @@
 import express from 'express';
 import User from '../models/User.js';
+import { getAuthenticatedUser } from '../lib/internalAuth.js';
 
 const router = express.Router();
+
+async function requireSuperAdmin(req, res, next) {
+  if (req.path === '/upsert' || req.path.startsWith('/by-email/')) return next();
+  req.user = await getAuthenticatedUser(req);
+  if (req.user?.role !== 'superadmin') {
+    return res.status(403).json({ error: 'Superadmin access required.' });
+  }
+  next();
+}
+
+router.use(requireSuperAdmin);
 
 // GET all users (admin panel - user management page)
 router.get('/', async (req, res) => {

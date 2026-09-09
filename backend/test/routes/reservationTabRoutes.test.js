@@ -10,7 +10,7 @@ async function makeCourt() {
     slug: `rt-court-${Date.now()}`,
     adminEmail: 'rt@court.com',
     isActive: true,
-    subscription: { status: 'active' },
+    subscription: { status: 'active', tier: 'premium' },
     courtCount: 4,
   });
 }

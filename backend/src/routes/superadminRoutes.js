@@ -2,11 +2,15 @@ import express from 'express';
 import Court from '../models/Court.js';
 import User  from '../models/User.js';
 import PayoutTransfer from '../models/PayoutTransfer.js';
+import { MODULES, MODULE_LABELS, resolveCapabilities, TIER_DETAILS, TIERS } from '../lib/moduleEntitlements.js';
+import { getAuthenticatedUser } from '../lib/internalAuth.js';
 
 const router = express.Router();
 
-function requireSuperAdmin(req, res, next) {
-  if (req.headers['x-user-role'] !== 'superadmin') {
+async function requireSuperAdmin(req, res, next) {
+  req.user = await getAuthenticatedUser(req);
+  req.userRole = req.user?.role;
+  if (req.userRole !== 'superadmin') {
     return res.status(403).json({ error: 'Superadmin access required.' });
   }
   next();
@@ -17,9 +21,62 @@ router.use(requireSuperAdmin);
 router.get('/courts', async (req, res) => {
   try {
     const courts = await Court.find().sort({ createdAt: -1 }).lean();
-    res.json(courts);
+    res.json(courts.map(court => ({ ...court, capabilities: resolveCapabilities(court) })));
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/courts/:id/entitlements', async (req, res) => {
+  try {
+    const court = await Court.findById(req.params.id).select('name subscription').lean();
+    if (!court) return res.status(404).json({ error: 'Court not found.' });
+    res.json({
+      courtId: court._id,
+      tier: resolveCapabilities(court).tier,
+      modules: resolveCapabilities(court).modules,
+      tierDetails: TIER_DETAILS[resolveCapabilities(court).tier],
+      availableModules: Object.entries(MODULE_LABELS).map(([key, label]) => ({ key, label })),
+    });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.patch('/courts/:id/entitlements', async (req, res) => {
+  try {
+    const { tier, overrides = [] } = req.body;
+    if (tier && !Object.values(TIERS).includes(tier)) {
+      return res.status(400).json({ error: 'Invalid subscription tier.' });
+    }
+    if (!Array.isArray(overrides)) {
+      return res.status(400).json({ error: 'overrides must be an array.' });
+    }
+    const validOverrides = overrides.map(override => ({
+      key: override.key,
+      enabled: Boolean(override.enabled),
+      source: 'override',
+      expiresAt: override.expiresAt || null,
+    }));
+    if (validOverrides.some(override => !Object.values(MODULES).includes(override.key))) {
+      return res.status(400).json({ error: 'Invalid module key.' });
+    }
+
+    const update = {
+      'subscription.modules': validOverrides,
+      'subscription.pendingTier': null,
+      'subscription.pendingTierEffectiveAt': null,
+    };
+    if (tier) update['subscription.tier'] = tier;
+    const court = await Court.findByIdAndUpdate(
+      req.params.id,
+      { $set: update },
+      { new: true, runValidators: true },
+    ).lean();
+    if (!court) return res.status(404).json({ error: 'Court not found.' });
+    res.json({ ...court, capabilities: resolveCapabilities(court) });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
   }
 });
 

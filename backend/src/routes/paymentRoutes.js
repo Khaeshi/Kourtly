@@ -6,6 +6,7 @@ import PayoutTransfer from '../models/PayoutTransfer.js';
 import PaymentWebhookEvent from '../models/PaymentWebhookEvent.js';
 import { verifyWebhookSignature } from '../lib/payments/index.js';
 import { transitionReservationPayment } from '../lib/reservationStateMachine.js';
+import { TIER_DETAILS } from '../lib/moduleEntitlements.js';
 
 const router = express.Router();
 
@@ -45,6 +46,10 @@ router.post('/cocoart/webhook', async (req, res) => {
           {
             $set: {
               'subscription.status': 'active',
+              ...(metadata.tier ? { 'subscription.tier': metadata.tier } : {}),
+              ...(metadata.tier && TIER_DETAILS[metadata.tier]?.price ? { 'subscription.amount': TIER_DETAILS[metadata.tier].price } : {}),
+              'subscription.pendingTier': null,
+              'subscription.pendingTierEffectiveAt': null,
               'subscription.startDate': now,
               'subscription.nextBilling': nextBilling,
             },

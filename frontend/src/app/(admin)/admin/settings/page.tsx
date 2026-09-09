@@ -3,10 +3,18 @@ import { useState, useEffect, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import { sileo } from 'sileo';
 import { Upload, X } from 'lucide-react';
+import { useCapabilities } from '@/lib/entitlements';
 
 const SPORTS    = ['badminton', 'pickleball', 'tennis'];
 const AMENITIES = ['parking', 'shower', 'locker', 'cafeteria', 'wifi', 'aircon'];
 const INPUT     = "w-full bg-white border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-900 outline-none focus:border-green-400 transition-colors";
+const TIER_ORDER = ['basic', 'standard', 'premium', 'elite'] as const;
+const TIER_INFO: Record<string, { label: string; description: string }> = {
+  basic:    { label: 'Basic',    description: 'Reservations and court schedule blocking.' },
+  standard: { label: 'Standard', description: 'Basic plus players and live queue management.' },
+  premium:  { label: 'Premium',  description: 'Standard plus items, tabs, and billing.' },
+  elite:    { label: 'Elite',    description: 'Premium plus priority support and future capabilities.' },
+};
 
 interface Court {
   _id: string; name: string; slug: string; description: string;
@@ -14,7 +22,7 @@ interface Court {
   amenities: string[];
   location: { address: string; city: string; province: string; };
   contact:  { phone: string; email: string; facebook: string; instagram: string; website: string; };
-  subscription: { status: string; plan: string; amount: number; trialEnds: string; nextBilling: string | null; };
+  subscription: { status: string; plan: string; amount: number; tier?: string; trialEnds: string; nextBilling: string | null; };
   settings: { timezone: string; currency: string; reservationFee?: number; hourlyRate?: number; weeklySummary?: boolean; };
   payout?: {
     recipientCode: string;
@@ -82,10 +90,20 @@ async function uploadImageToCloudinary(file: File): Promise<string> {
 
 export default function SettingsPage() {
   const { update: updateSession } = useSession();
+  const capabilities = useCapabilities();
+  const reportedTier = capabilities.currentTier ?? capabilities.tier;
+  const activeTier = TIER_ORDER.includes(reportedTier as typeof TIER_ORDER[number])
+    ? reportedTier as typeof TIER_ORDER[number]
+    : 'basic';
   const [court,   setCourt]   = useState<Court | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving,  setSaving]  = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [upgradeTier, setUpgradeTier] = useState<string | null>(null);
+  const [upgradeLoading, setUpgradeLoading] = useState(false);
+  const [downgradeTier, setDowngradeTier] = useState<string | null>(null);
+  const [downgradeConfirmation, setDowngradeConfirmation] = useState('');
+  const [downgradeStep, setDowngradeStep] = useState<1 | 2>(1);
   const logoInputRef  = useRef<HTMLInputElement>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
 
@@ -178,6 +196,49 @@ export default function SettingsPage() {
       sileo.error({ title: 'Failed to save settings' });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const startUpgrade = async () => {
+    if (!upgradeTier) return;
+    setUpgradeLoading(true);
+    try {
+      const response = await fetch('/api/proxy/court/me/subscription/upgrade', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tier: upgradeTier }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Could not start upgrade.');
+      if (!data.paymentUrl) throw new Error('Payment provider did not return a checkout link.');
+      window.location.assign(data.paymentUrl);
+    } catch (err) {
+      sileo.error({ title: 'Upgrade failed', description: err instanceof Error ? err.message : 'Could not start upgrade.' });
+    } finally {
+      setUpgradeLoading(false);
+    }
+  };
+
+  const scheduleDowngrade = async () => {
+    if (!downgradeTier) return;
+    setUpgradeLoading(true);
+    try {
+      const response = await fetch('/api/proxy/court/me/subscription/downgrade', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tier: downgradeTier, confirmation: downgradeConfirmation }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Could not schedule downgrade.');
+      sileo.success({ title: 'Downgrade scheduled', description: `Your current tier stays active until ${new Date(data.pendingTierEffectiveAt).toLocaleDateString()}.` });
+      setDowngradeTier(null);
+      setDowngradeConfirmation('');
+      setDowngradeStep(1);
+      window.location.reload();
+    } catch (err) {
+      sileo.error({ title: 'Downgrade failed', description: err instanceof Error ? err.message : 'Could not schedule downgrade.' });
+    } finally {
+      setUpgradeLoading(false);
     }
   };
 
@@ -435,15 +496,15 @@ export default function SettingsPage() {
         </div>
       </Section>
 
-      {/* Subscription — read only */}
+      {/* Subscription */}
       {court && (
         <Section title="Subscription">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             {[
               { label: 'Status',      value: court.subscription?.status ?? '—' },
               { label: 'Plan',        value: court.subscription?.plan ?? '—' },
+              { label: 'Tier',        value: TIER_INFO[activeTier]?.label ?? 'Basic' },
               { label: 'Amount',      value: court.subscription?.amount ? `₱${court.subscription.amount.toLocaleString()}` : '—' },
-              { label: 'Trial ends',  value: court.subscription?.trialEnds ? new Date(court.subscription.trialEnds).toLocaleDateString() : '—' },
             ].map(s => (
               <div key={s.label}>
                 <p className="text-[0.65rem] font-semibold uppercase tracking-[0.08em] text-gray-400 mb-1">{s.label}</p>
@@ -451,8 +512,92 @@ export default function SettingsPage() {
               </div>
             ))}
           </div>
-          <p className="text-[0.72rem] text-gray-400">Contact support to change your subscription plan.</p>
+          <p className="text-[0.78rem] text-gray-500">{TIER_INFO[activeTier]?.description}</p>
+          {capabilities.pendingTier && capabilities.pendingTierEffectiveAt && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              Downgrade scheduled: {TIER_INFO[capabilities.pendingTier]?.label} starts on {new Date(capabilities.pendingTierEffectiveAt).toLocaleDateString()}. Your current tier remains active until then.
+            </div>
+          )}
+          <div className="border-t border-gray-100 pt-4">
+            <p className="text-[0.65rem] font-semibold uppercase tracking-[0.08em] text-gray-400 mb-3">Enabled modules</p>
+            <div className="flex flex-wrap gap-2">
+              {[
+                ['booking', 'Booking & scheduling'],
+                ['queue', 'Queue management'],
+                ['item_tabs', 'Item tabs'],
+              ].map(([key, label]) => (
+                <span key={key} className={`text-xs px-2.5 py-1 rounded-full border ${capabilities.modules[key as keyof typeof capabilities.modules] ? 'text-green-700 bg-green-50 border-green-200' : 'text-gray-400 bg-gray-50 border-gray-200'}`}>
+                  {capabilities.modules[key as keyof typeof capabilities.modules] ? 'Enabled' : 'Locked'} · {label}
+                </span>
+              ))}
+            </div>
+          </div>
+          <div className="border-t border-gray-100 pt-4">
+            <p className="text-[0.65rem] font-semibold uppercase tracking-[0.08em] text-gray-400 mb-3">Manage your tier</p>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              {TIER_ORDER.map(tier => {
+                const currentIndex = TIER_ORDER.indexOf(activeTier as typeof TIER_ORDER[number]);
+                const tierIndex = TIER_ORDER.indexOf(tier);
+                const isCurrent = tier === activeTier;
+                const isPending = tier === capabilities.pendingTier;
+                return (
+                <button key={tier} type="button" disabled={isCurrent || isPending} onClick={() => tierIndex > currentIndex ? setUpgradeTier(tier) : setDowngradeTier(tier)} className={`text-left p-3 rounded-lg border transition-colors ${isCurrent ? 'border-gray-200 bg-gray-100 text-gray-500 cursor-not-allowed' : isPending ? 'border-amber-200 bg-amber-50 text-amber-700 cursor-not-allowed' : tierIndex > currentIndex ? 'border-gray-200 bg-white hover:border-green-300 hover:bg-green-50' : 'border-gray-200 bg-white hover:border-amber-300 hover:bg-amber-50'}`}>
+                  <span className="block text-sm font-semibold text-gray-800">{TIER_INFO[tier].label}</span>
+                  <span className="block text-xs text-gray-500 mt-1">{TIER_INFO[tier].description}</span>
+                  <span className={`block text-xs font-semibold mt-2 ${isCurrent ? 'text-gray-500' : isPending ? 'text-amber-700' : tierIndex > currentIndex ? 'text-green-700' : 'text-amber-700'}`}>
+                    {isCurrent ? 'Current tier' : isPending ? 'Downgrade scheduled' : tierIndex > currentIndex ? 'Upgrade' : `Revert to ${TIER_INFO[tier].label}`}
+                  </span>
+                </button>
+                );
+              })}
+            </div>
+            {TIER_ORDER.indexOf(activeTier as typeof TIER_ORDER[number]) === TIER_ORDER.length - 1 && <p className="text-xs text-gray-400">You are on the highest available tier.</p>}
+          </div>
         </Section>
+      )}
+      {upgradeTier && (
+        <div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/40 px-4" role="dialog" aria-modal="true">
+          <div className="w-full max-w-md bg-white rounded-xl border border-gray-200 shadow-xl p-6">
+            <p className="text-[0.65rem] font-semibold uppercase tracking-[0.08em] text-gray-400 mb-2">Upgrade confirmation</p>
+            <h2 className="text-xl font-semibold text-gray-900">Move to {TIER_INFO[upgradeTier].label}?</h2>
+            <p className="text-sm text-gray-500 mt-2">{TIER_INFO[upgradeTier].description}</p>
+            <p className="text-sm text-gray-600 mt-4">You will be redirected to secure payment checkout. Your tier and modules change after payment is confirmed.</p>
+            <div className="flex justify-end gap-2 mt-6">
+              <button type="button" onClick={() => setUpgradeTier(null)} className="px-3 py-2 text-sm text-gray-500 border border-gray-200 rounded-lg">Cancel</button>
+              <button type="button" onClick={startUpgrade} disabled={upgradeLoading} className="px-3 py-2 text-sm font-semibold text-white bg-gray-900 rounded-lg disabled:opacity-50">
+                {upgradeLoading ? 'Preparing checkout...' : 'Continue to payment'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {downgradeTier && (
+        <div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/40 px-4" role="dialog" aria-modal="true">
+          <div className="w-full max-w-md bg-white rounded-xl border border-gray-200 shadow-xl p-6">
+            {downgradeStep === 1 ? (
+              <>
+                <p className="text-[0.65rem] font-semibold uppercase tracking-[0.08em] text-amber-700 mb-2">Downgrade confirmation</p>
+                <h2 className="text-xl font-semibold text-gray-900">Revert to {TIER_INFO[downgradeTier].label}?</h2>
+                <p className="text-sm text-gray-600 mt-3">Your current {TIER_INFO[activeTier].label} access stays active until the end of your current billing period. The downgrade starts afterward.</p>
+                <div className="flex justify-end gap-2 mt-6">
+                  <button type="button" onClick={() => setDowngradeTier(null)} className="px-3 py-2 text-sm text-gray-500 border border-gray-200 rounded-lg">Cancel</button>
+                  <button type="button" onClick={() => setDowngradeStep(2)} className="px-3 py-2 text-sm font-semibold text-white bg-gray-900 rounded-lg">Continue</button>
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="text-[0.65rem] font-semibold uppercase tracking-[0.08em] text-amber-700 mb-2">Final confirmation</p>
+                <h2 className="text-xl font-semibold text-gray-900">Schedule {TIER_INFO[downgradeTier].label}</h2>
+                <p className="text-sm text-gray-600 mt-3">Type <strong>{TIER_INFO[downgradeTier].label}</strong> below to confirm this scheduled downgrade.</p>
+                <input value={downgradeConfirmation} onChange={e => setDowngradeConfirmation(e.target.value)} placeholder={TIER_INFO[downgradeTier].label} className="w-full mt-4 border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-amber-400" />
+                <div className="flex justify-end gap-2 mt-6">
+                  <button type="button" onClick={() => { setDowngradeTier(null); setDowngradeConfirmation(''); setDowngradeStep(1); }} className="px-3 py-2 text-sm text-gray-500 border border-gray-200 rounded-lg">Cancel</button>
+                  <button type="button" onClick={scheduleDowngrade} disabled={upgradeLoading || downgradeConfirmation !== TIER_INFO[downgradeTier].label} className="px-3 py-2 text-sm font-semibold text-white bg-amber-700 rounded-lg disabled:opacity-50">{upgradeLoading ? 'Scheduling...' : 'Confirm downgrade'}</button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
       )}
       <div className="flex justify-end pb-8">
         <button onClick={save} disabled={saving}

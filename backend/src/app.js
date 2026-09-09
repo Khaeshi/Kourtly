@@ -16,6 +16,7 @@ import publicRoutes from './routes/publicRoutes.js';
 import paymentRoutes from './routes/paymentRoutes.js';
 import payoutTransferRoutes from './routes/payoutTransferRoutes.js';
 import { tenantMiddleware } from './middleware/tenantMiddleware.js';
+import { requireModule, MODULES } from './lib/moduleEntitlements.js';
 import { notFound, errorHandler } from './middleware/errorMiddleware.js';
 
 const app = express();
@@ -42,15 +43,15 @@ app.use('/api/superadmin', superadminRoutes);
 app.use('/api/court', tenantMiddleware, courtRoutes);
 
 // Tenant-scoped admin routes
-app.use('/api/players', tenantMiddleware, playerRoutes);
-app.use('/api/queue', tenantMiddleware, queueRoutes);
-app.use('/api/items', tenantMiddleware, itemRoutes);
-app.use('/api/tabs', tenantMiddleware, tabRoutes);
-app.use('/api/reservations', tenantMiddleware, reservationRoutes);
-app.use('/api/schedule', tenantMiddleware, scheduleRoutes);
+app.use('/api/players', tenantMiddleware, requireModule(MODULES.QUEUE), playerRoutes);
+app.use('/api/queue', tenantMiddleware, requireModule(MODULES.QUEUE), queueRoutes);
+app.use('/api/items', tenantMiddleware, requireModule(MODULES.ITEM_TABS), itemRoutes);
+app.use('/api/tabs', tenantMiddleware, requireModule(MODULES.ITEM_TABS), tabRoutes);
+app.use('/api/reservations', tenantMiddleware, requireModule(MODULES.BOOKING), reservationRoutes);
+app.use('/api/schedule', tenantMiddleware, requireModule(MODULES.BOOKING), scheduleRoutes);
 app.use('/api/analytics', tenantMiddleware, analyticsRoutes);
-app.use('/api/reservation-tabs', tenantMiddleware, reservationTabRoutes);
-app.use('/api/payout-transfers', tenantMiddleware, payoutTransferRoutes);
+app.use('/api/reservation-tabs', tenantMiddleware, requireModule(MODULES.ITEM_TABS), reservationTabRoutes);
+app.use('/api/payout-transfers', tenantMiddleware, requireModule(MODULES.ITEM_TABS), payoutTransferRoutes);
 
 app.use(notFound);
 app.use(errorHandler);

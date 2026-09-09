@@ -10,7 +10,7 @@ async function makeCourt() {
     slug: `queue-court-${Date.now()}`,
     adminEmail: 'queue@court.com',
     isActive: true,
-    subscription: { status: 'active' },
+    subscription: { status: 'active', tier: 'standard' },
     courtCount: 4,
   });
 }

@@ -57,6 +57,15 @@ const CourtSchema = new mongoose.Schema({
   subscription: {
     status:     { type: String, enum: ['trial', 'active', 'expired', 'suspended'], default: 'trial' },
     plan:       { type: String, enum: ['monthly', 'annual'], default: 'monthly' },
+    tier:       { type: String, enum: ['basic', 'standard', 'premium', 'elite'], default: 'basic' },
+    pendingTier: { type: String, enum: ['basic', 'standard', 'premium', 'elite'], default: null },
+    pendingTierEffectiveAt: { type: Date, default: null },
+    modules: [{
+      key:       { type: String, enum: ['booking', 'queue', 'item_tabs'] },
+      enabled:   { type: Boolean, default: false },
+      source:    { type: String, enum: ['tier', 'override'], default: 'override' },
+      expiresAt: { type: Date, default: null },
+    }],
     amount:     { type: Number, default: 2000 },           // PHP
     trialEnds:  { type: Date, default: () => {
       const d = new Date(); d.setDate(d.getDate() + 14);  // 14-day trial

@@ -4,6 +4,7 @@ import { useSession } from 'next-auth/react';
 import { Toaster } from 'sileo';
 import { APP_NAME } from '@/lib/config';
 import AdminSidebar from './AdminSidebar';
+import { CapabilitiesProvider, CapabilityGate } from '@/lib/entitlements';
 import { disconnectSocket, getSocket } from '@/lib/socket';
 
 interface Props {
@@ -121,17 +122,18 @@ export default function AdminLayoutClient({ children, user }: Props) {
         <div className="sidebar-backdrop" onClick={() => setSidebarOpen(false)} />
       )}
 
-      <div className="flex min-h-screen bg-gray-100 font-sans">
-        {/* Pass session to AdminSidebar */}
-        <AdminSidebar 
-          isOpen={sidebarOpen} 
-          onClose={() => setSidebarOpen(false)}
-          user={user}
-        />
-        <main className="admin-main flex-1 px-[clamp(1rem,3vw,2rem)] pb-[clamp(1rem,3vw,2rem)] pt-[clamp(1rem,3vw,2rem)] md:pt-[clamp(1rem,3vw,2rem)]">
-          {children}
-        </main>
-      </div>
+      <CapabilitiesProvider>
+        <div className="flex min-h-screen bg-gray-100 font-sans">
+          <AdminSidebar
+            isOpen={sidebarOpen}
+            onClose={() => setSidebarOpen(false)}
+            user={user}
+          />
+          <main className="admin-main flex-1 px-[clamp(1rem,3vw,2rem)] pb-[clamp(1rem,3vw,2rem)] pt-[clamp(1rem,3vw,2rem)] md:pt-[clamp(1rem,3vw,2rem)]">
+            <CapabilityGate>{children}</CapabilityGate>
+          </main>
+        </div>
+      </CapabilitiesProvider>
     </>
   );
 }

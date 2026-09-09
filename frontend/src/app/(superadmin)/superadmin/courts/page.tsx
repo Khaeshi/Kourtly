@@ -8,9 +8,11 @@ interface Court {
   location: { address: string; city: string; province: string; country: string; };
   contact:  { phone: string; email: string; facebook: string; instagram: string; website: string; };
   subscription: {
-    status: string; plan: string; amount: number;
+    status: string; plan: string; amount: number; tier?: string;
+    modules?: { key: string; enabled: boolean; source: string; expiresAt?: string | null }[];
     trialEnds: string; startDate: string | null; nextBilling: string | null;
   };
+  capabilities?: { tier: string; modules: Record<string, boolean> };
 }
 
 const STATUS_STYLES: Record<string, string> = {
@@ -24,6 +26,10 @@ const SPORT_COLORS: Record<string, string> = {
   badminton:  'text-green-700 bg-green-50 border-green-200',
   pickleball: 'text-yellow-700 bg-yellow-50 border-yellow-200',
   tennis:     'text-blue-700 bg-blue-50 border-blue-200',
+};
+
+const TIER_LABELS: Record<string, string> = {
+  basic: 'Basic', standard: 'Standard', premium: 'Premium', elite: 'Elite',
 };
 
 function InfoRow({ label, value }: { label: string; value?: string | null }) {
@@ -115,6 +121,19 @@ export default function CourtsPage() {
     finally { setActing(null); }
   };
 
+  const updateTier = async (courtId: string, tier: string) => {
+    setActing(courtId);
+    try {
+      const res = await fetch(`/api/proxy/superadmin/courts/${courtId}/entitlements`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tier, overrides: [] }),
+      });
+      if (!res.ok) throw new Error('Failed');
+      await load();
+    } catch { alert('Tier update failed'); }
+    finally { setActing(null); }
+  };
+
   const filtered = courts.filter(c => {
     const q = search.toLowerCase();
     const matchSearch =
@@ -194,7 +213,7 @@ export default function CourtsPage() {
                 <div className="overflow-x-auto">
                   <div
                     className="grid items-center gap-4 px-5 py-4 cursor-pointer min-w-[760px]"
-                    style={{ gridTemplateColumns: '1fr 160px 120px 120px auto' }}
+                    style={{ gridTemplateColumns: '1fr 160px 120px 120px 120px auto' }}
                     onClick={() => setExpanded(isExpanded ? null : court._id)}
                   >
 
@@ -240,6 +259,11 @@ export default function CourtsPage() {
                         renews {new Date(court.subscription.nextBilling).toLocaleDateString()}
                       </span>
                     )}
+                  </div>
+
+                  {/* Plan + amount */}
+                  <div className="text-[0.7rem] text-gray-600 uppercase tracking-wide">
+                    {TIER_LABELS[court.capabilities?.tier ?? court.subscription.tier ?? 'basic'] ?? 'Basic'}
                   </div>
 
                   {/* Plan + amount */}
@@ -300,6 +324,7 @@ export default function CourtsPage() {
                         <p className="text-[0.65rem] font-bold tracking-[0.1em] uppercase text-gray-400">Subscription</p>
                         <InfoRow label="Status"      value={court.subscription.status} />
                         <InfoRow label="Plan"        value={court.subscription.plan} />
+                        <InfoRow label="Tier"        value={TIER_LABELS[court.capabilities?.tier ?? court.subscription.tier ?? 'basic'] ?? 'Basic'} />
                         <InfoRow label="Amount"      value={`₱${court.subscription.amount.toLocaleString()}`} />
                         <InfoRow label="Trial ends"  value={court.subscription.trialEnds ? new Date(court.subscription.trialEnds).toLocaleDateString() : null} />
                         <InfoRow label="Start date"  value={court.subscription.startDate ? new Date(court.subscription.startDate).toLocaleDateString() : null} />
@@ -355,6 +380,31 @@ export default function CourtsPage() {
                             </div>
                           )}
                         </div>
+                      </div>
+                    </div>
+
+                    {/* Product tier */}
+                    <div className="pt-2 border-t border-gray-200">
+                      <p className="text-[0.65rem] font-semibold tracking-[0.08em] uppercase text-gray-400 mb-2">Product tier</p>
+                      <div className="flex gap-2 flex-wrap">
+                        {[
+                          ['basic', 'Basic'],
+                          ['standard', 'Standard'],
+                          ['premium', 'Premium'],
+                          ['elite', 'Elite'],
+                        ].map(([tier, label]) => (
+                          <ActionBtn
+                            key={tier}
+                            label={label}
+                            color={(court.capabilities?.tier ?? court.subscription.tier ?? 'booking') === tier ? 'green' : 'gray'}
+                            loading={acting === court._id}
+                            onClick={() => {
+                              if (tier !== (court.capabilities?.tier ?? court.subscription.tier ?? 'booking') && confirm(`Set ${court.name} to the ${label} tier?`)) {
+                                updateTier(court._id, tier);
+                              }
+                            }}
+                          />
+                        ))}
                       </div>
                     </div>
 

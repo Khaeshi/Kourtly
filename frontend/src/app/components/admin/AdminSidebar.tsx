@@ -15,6 +15,7 @@ import {
   Settings,
 } from 'lucide-react';
 import Image from 'next/image';
+import { useCapabilities } from '@/lib/entitlements';
 
 interface Props {
   isOpen: boolean;
@@ -24,12 +25,12 @@ interface Props {
 
 const NAV = [
   { href: '/admin', label: 'Dashboard', exact: true, icon: ShieldUser },
-  { href: '/admin/players', label: 'Players', icon: Users },
-  { href: '/admin/queue', label: 'Queue', icon: ListOrdered },
-  { href: '/admin/billing', label: 'Billing', icon: CreditCard },
-  { href: '/admin/items', label: 'Items', icon: Package },
-  { href: '/admin/reservation', label: 'Reservation', icon: CalendarDays },
-  { href: '/admin/schedule', label: 'Scheduling', icon: CalendarClock },
+  { href: '/admin/players', label: 'Players', icon: Users, module: 'queue' as const },
+  { href: '/admin/queue', label: 'Queue', icon: ListOrdered, module: 'queue' as const },
+  { href: '/admin/billing', label: 'Billing', icon: CreditCard, module: 'item_tabs' as const },
+  { href: '/admin/items', label: 'Items', icon: Package, module: 'item_tabs' as const },
+  { href: '/admin/reservation', label: 'Reservation', icon: CalendarDays, module: 'booking' as const },
+  { href: '/admin/schedule', label: 'Scheduling', icon: CalendarClock, module: 'booking' as const },
   { href: '/admin/settings', label: 'Settings', icon: Settings },
 ];
 
@@ -41,6 +42,7 @@ export default function AdminSidebar({ isOpen, onClose, user }: Props) {
   const pathname = usePathname();
   const { data: session } = useSession();
   const isSuperAdmin = session?.user?.role === 'superadmin';
+  const capabilities = useCapabilities();
   const [signingOut, setSigningOut] = useState(false);
 
   // Court name + logo (API is source of truth; session carries logo after update())
@@ -125,7 +127,7 @@ export default function AdminSidebar({ isOpen, onClose, user }: Props) {
           Management
         </p>
 
-        {NAV.map((item) => {
+        {NAV.filter(item => !item.module || capabilities.modules[item.module]).map((item) => {
           const active = item.exact
             ? pathname === item.href
             : pathname.startsWith(item.href);

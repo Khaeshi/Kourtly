@@ -40,7 +40,7 @@ const SIDE_FEATURES = [
 const FACTS = [
   {
     label: 'Pricing',
-    description: '₱2,000 per month after a 14-day free trial. No credit card required to start.',
+    description: 'Start with Booking at ₱2,000 per month after a 14-day free trial. Queue and Item Tabs are available as upgrades.',
   },
   {
     label: 'Sports',
@@ -49,6 +49,45 @@ const FACTS = [
   {
     label: 'Support',
     description: 'Onboarding wizard walks you through court setup, staff, and pricing in one session.',
+  },
+];
+
+const TIERS = [
+  {
+    name: 'Basic',
+    eyebrow: 'Start here',
+    price: '₱2,000',
+    interval: '/ month',
+    description: 'Put your court online with reservations and schedule blocking.',
+    features: ['Public court listing', 'Online reservations', 'Court schedule blocking', 'Admin dashboard'],
+    tone: 'border-[var(--amber)]/60 bg-[rgba(232,163,61,0.08)]',
+  },
+  {
+    name: 'Standard',
+    eyebrow: 'For busy courts',
+    price: 'Custom',
+    interval: 'tailored pricing',
+    description: 'Add player registration and a fair, visible queue for walk-ins.',
+    features: ['Everything in Basic', 'Player directory', 'Queue and match generation', 'Live queue updates'],
+    tone: 'border-[var(--divider)] bg-[rgba(255,255,255,0.025)]',
+  },
+  {
+    name: 'Premium',
+    eyebrow: 'For full operations',
+    price: 'Custom',
+    interval: 'tailored pricing',
+    description: 'Run items and player tabs alongside court activity.',
+    features: ['Everything in Standard', 'Item catalog', 'Player and reservation tabs', 'Billing history'],
+    tone: 'border-[var(--divider)] bg-[rgba(255,255,255,0.025)]',
+  },
+  {
+    name: 'Elite',
+    eyebrow: 'For growing venues',
+    price: '₱7,500',
+    interval: '/ month',
+    description: 'Everything in Premium, plus priority support and future advanced capabilities.',
+    features: ['Everything in Premium', 'Priority support', 'Early access to new modules', 'Advanced operations roadmap'],
+    tone: 'border-[var(--divider)] bg-[rgba(255,255,255,0.025)]',
   },
 ];
 
@@ -67,7 +106,7 @@ export default function ForCourtsPage() {
             Run your court online
           </h1>
           <p className="text-[var(--line-dim)] text-[clamp(0.98rem,1.5vw,1.08rem)] max-w-[480px] mb-8">
-            Kourtly gives your court an online presence, booking, queue management, and billing on one flat rate.
+            Start with the operation you need today, then add the next layer as your court gets busier.
           </p>
           <Link href="/register-court" className="pub-cta pub-cta-primary">
             Start with Kourtly
@@ -77,6 +116,50 @@ export default function ForCourtsPage() {
           </Link>
         </div>
       </header>
+
+      {/* Tier guide */}
+      <section className="py-[clamp(3.5rem,7vw,5.5rem)] max-[480px]:py-[2.6rem]">
+        <div className="public-wrap">
+          <SectionHead
+            eyebrow="Choose your setup"
+            title="The right tools for the way your court runs"
+            description="Every tier keeps the dashboard accessible. Your subscription decides which operational tools appear for your team."
+          />
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-8 items-stretch">
+            {TIERS.map((tier, index) => (
+              <div
+                key={tier.name}
+                className={`flex flex-col gap-6 p-6 border ${tier.tone} ${index === 0 ? 'shadow-[0_12px_30px_rgba(0,0,0,0.14)]' : ''}`}
+                style={{ borderRadius: 'var(--r-block)' }}
+              >
+                <div>
+                  <span className="inline-block font-mono-data text-[0.68rem] tracking-[0.08em] uppercase text-[var(--amber)] border border-[rgba(232,163,61,0.35)] px-2.5 py-1 mb-4" style={{ borderRadius: 'var(--r-pill)' }}>
+                    {tier.eyebrow}
+                  </span>
+                  <h2 className="font-display text-[1.8rem] text-[var(--line)] mb-2">{tier.name}</h2>
+                  <p className="text-[var(--line-dim)] text-[0.9rem] min-h-[4.2rem]">{tier.description}</p>
+                  <div className="flex items-baseline gap-2 mt-5">
+                    <span className="font-display text-[2rem] text-[var(--line)]">{tier.price}</span>
+                    <span className="text-[var(--line-dim)] text-[0.75rem]">{tier.interval}</span>
+                  </div>
+                </div>
+                <ul className="flex flex-col gap-3 list-none border-t border-[var(--divider)] pt-5">
+                  {tier.features.map(feature => (
+                    <li key={feature} className="flex items-start gap-2.5 text-[0.88rem] text-[var(--line-dim)]">
+                      <span className="text-[var(--amber)]" aria-hidden="true">✓</span>
+                      {feature}
+                    </li>
+                  ))}
+                </ul>
+                <Link href="/register-court" className={`pub-cta ${index === 0 ? 'pub-cta-primary' : 'pub-cta-ghost'} mt-auto justify-center`}>
+                  {index === 0 ? 'Start free trial' : 'Talk through your setup'}
+                </Link>
+              </div>
+            ))}
+          </div>
+          <p className="text-[0.78rem] text-[var(--line-dim)] mt-4">All new courts start with a 14-day Basic trial. No credit card required.</p>
+        </div>
+      </section>
 
       {/* Timeline (onboarding sequence) */}
       <section className="py-[clamp(3.5rem,7vw,5.5rem)] max-[480px]:py-[2.6rem]">
@@ -95,14 +178,13 @@ export default function ForCourtsPage() {
         <div className="public-wrap">
           <AsymmetricFeaturePanel
             pricing={{
-              planName: 'Court Owner Plan',
-              description: 'Everything your court needs to run online, on one flat rate.',
+              planName: 'Basic tier',
+              description: 'The essential foundation for putting your court online.',
               price: '₱2,000',
               features: [
-                'Unlimited bookings and walk-in queue',
-                'Billing, tabs, and receipts',
-                'Analytics dashboard',
-                'Public court listing',
+                'Online reservations and public listing',
+                'Schedule blocking for court owners',
+                'Dashboard and court settings',
                 '14-day free trial, no credit card',
               ],
               ctaLabel: 'Start with Kourtly',
