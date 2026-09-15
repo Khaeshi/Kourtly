@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect, useCallback, use } from 'react';
-import { format, parseISO } from 'date-fns';
+import { addDays, format, getDay, parseISO } from 'date-fns';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import PublicNav from '@/app/components/public/PublicNav';
@@ -27,6 +27,7 @@ const ALL_SLOTS = [
 ];
 
 function todayStr() { return format(new Date(), 'yyyy-MM-dd'); }
+function bookingMaxDateStr() { return format(addDays(new Date(), 13), 'yyyy-MM-dd'); }
 function toMinutes(t: string) { const [h,m] = t.split(':').map(Number); return h*60+m; }
 function fmtMins(m: number) {
   const h = Math.floor(m/60), min = m%60, ampm = h>=12?'PM':'AM';
@@ -75,9 +76,10 @@ interface CourtAvailability {
 
 // ── Duration Step ─────────────────────────────────────────────────────────────
 
-function DurationStep({ duration, setDuration, date, courtNum, slug, onBack, onNext }: {
+function DurationStep({ duration, setDuration, date, courtNum, slug, schedule, onBack, onNext }: {
   duration: number; setDuration: (d: number) => void;
   date: string; courtNum: number; slug: string;
+  schedule: ScheduleRule[];
   onBack: () => void; onNext: () => void;
 }) {
   const [availMap, setAvailMap] = useState<Record<number, string[]>>({});
@@ -94,7 +96,7 @@ function DurationStep({ duration, setDuration, date, courtNum, slug, onBack, onN
     .finally(() => setLoading(false));
   }, [date, courtNum, slug]);
 
-  const selectedAvail = (availMap[duration] ?? []).filter(s => validSlotsForDuration(duration, date).includes(s));
+  const selectedAvail = (availMap[duration] ?? []).filter(s => validSlotsForSchedule(duration, date, schedule).includes(s));
   const hasSlots = selectedAvail.length > 0;
 
   return (
@@ -104,7 +106,8 @@ function DurationStep({ duration, setDuration, date, courtNum, slug, onBack, onN
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
         {[1,2,3,4].map(h => {
           const avail   = availMap[h] ?? [];
-          const noSlots = !loading && avail.length === 0;
+          const validAvail = avail.filter(s => validSlotsForSchedule(h, date, schedule).includes(s));
+          const noSlots = !loading && validAvail.length === 0;
           return (
             <button key={h} disabled={noSlots}
               className={`duration-btn ${duration===h ? 'selected' : ''} ${noSlots ? 'unavailable' : ''}`}
@@ -113,7 +116,7 @@ function DurationStep({ duration, setDuration, date, courtNum, slug, onBack, onN
               <span className="font-mono-data text-[0.65rem] tracking-widest uppercase opacity-60 block mb-2">{h===1?'hour':'hours'}</span>
               {loading ? <span className="block w-12 h-3 mx-auto rounded bg-[var(--public-surface-strong)] animate-pulse"/> :
                noSlots ? <span className="font-mono-data text-[0.6rem] tracking-widest uppercase text-red-400/60">No slots</span> :
-               <span className={`font-mono-data text-[0.6rem] tracking-widest uppercase ${duration===h?'text-[var(--amber)]/75':'text-[var(--line-faint)]'}`}>{avail.length} slot{avail.length!==1?'s':''}</span>}
+               <span className={`font-mono-data text-[0.6rem] tracking-widest uppercase ${duration===h?'text-[var(--amber)]/75':'text-[var(--line-faint)]'}`}>{validAvail.length} slot{validAvail.length!==1?'s':''}</span>}
             </button>
           );
         })}
@@ -146,8 +149,9 @@ function DurationStep({ duration, setDuration, date, courtNum, slug, onBack, onN
 
 // ── Time Step ─────────────────────────────────────────────────────────────────
 
-function TimeStep({ date, courtNum, duration, slug, timeSlot, setTimeSlot, onBack, onNext }: {
+function TimeStep({ date, courtNum, duration, slug, schedule, timeSlot, setTimeSlot, onBack, onNext }: {
   date: string; courtNum: number; duration: number; slug: string;
+  schedule: ScheduleRule[];
   timeSlot: string; setTimeSlot: (s: string) => void;
   onBack: () => void; onNext: () => void;
 }) {
@@ -168,8 +172,9 @@ function TimeStep({ date, courtNum, duration, slug, timeSlot, setTimeSlot, onBac
 
   useEffect(() => { load(); }, [load]);
 
-  const slots = validSlotsForDuration(duration, date);
+  const slots = validSlotsForSchedule(duration, date, schedule);
   const blockedSlots = availability?.blockedSlots ?? [];
+  const availableSlots = new Set(availability?.availableSlots ?? []);
 
   return (
     <div className="booking-anim">
@@ -189,7 +194,7 @@ function TimeStep({ date, courtNum, duration, slug, timeSlot, setTimeSlot, onBac
       ) : (
         <div className="space-y-2 mb-6">
           {slots.map(slot => {
-            const blocked  = blockedSlots.includes(slot);
+            const blocked  = !availableSlots.has(slot) || blockedSlots.includes(slot);
             const sel      = timeSlot === slot;
             return (
               <button key={slot} disabled={blocked}
@@ -298,7 +303,8 @@ export default function BookingPage({ params }: { params: Promise<{ slug: string
       if (!res.ok) throw new Error(data.error || 'Booking failed');
       setSuccess(true);
       if (data.publicRef) {
-        router.push(`/book/${slug}/status/${data.publicRef}`);
+        if (data.paymentUrl) window.location.assign(data.paymentUrl);
+        else router.push(`/book/${slug}/status/${data.publicRef}`);
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Booking failed. Please try again.';
@@ -348,7 +354,7 @@ export default function BookingPage({ params }: { params: Promise<{ slug: string
           <h2 className="booking-fade-up-2 font-display text-3xl sm:text-4xl text-[var(--line)] mb-3">Booking Received</h2>
           <p className="booking-fade-up-2 text-[var(--line-dim)] text-sm mb-2">at <span className="text-[var(--line)]">{court?.name}</span></p>
           <p className="booking-fade-up-2 text-[var(--line-faint)] text-sm mb-6 sm:mb-8 px-2">
-            We&apos;ll confirm your reservation shortly.{form.email ? ' A confirmation email will be sent once approved.' : ''}
+            Complete payment to secure your reservation. The court owner can cancel it if needed.
           </p>
           <KeyValueSummary
             className="booking-fade-up-3 mb-6 sm:mb-8 text-left"
@@ -416,8 +422,11 @@ export default function BookingPage({ params }: { params: Promise<{ slug: string
           {step === 1 && (
             <div className="booking-anim">
               <p className="section-head eyebrow mb-4">Select Date</p>
-              <PublicInput type="date" min={todayStr()} className="mb-4" value={date}
-                onChange={e => setDate(e.target.value)}/>
+              <PublicInput type="date" min={todayStr()} max={bookingMaxDateStr()} className="mb-4" value={date}
+                onChange={e => {
+                  const selectedDate = e.target.value;
+                  if (selectedDate >= todayStr() && selectedDate <= bookingMaxDateStr()) setDate(selectedDate);
+                }}/>
               {date && checkingSched && (
                 <InlineNotice className="mb-4">
                   <p className="text-xs">Checking schedule...</p>
@@ -465,7 +474,7 @@ export default function BookingPage({ params }: { params: Promise<{ slug: string
           {step === 3 && courtNum && (
             <DurationStep
               duration={duration} setDuration={setDuration}
-              date={date} courtNum={courtNum} slug={slug}
+              date={date} courtNum={courtNum} slug={slug} schedule={schedule}
               onBack={() => setStep(2)} onNext={() => setStep(4)}
             />
           )}
@@ -473,7 +482,7 @@ export default function BookingPage({ params }: { params: Promise<{ slug: string
           {/* Step 4 — Time */}
           {step === 4 && courtNum && (
             <TimeStep
-              date={date} courtNum={courtNum} duration={duration} slug={slug}
+              date={date} courtNum={courtNum} duration={duration} slug={slug} schedule={schedule}
               timeSlot={timeSlot} setTimeSlot={setTimeSlot}
               onBack={() => setStep(3)} onNext={() => setStep(5)}
             />
@@ -536,7 +545,7 @@ export default function BookingPage({ params }: { params: Promise<{ slug: string
                   {submitting ? 'Submitting...' : `Pay Full Amount (₱${totalFee.toFixed(2)}) + Fee`}
                 </PublicButton>
               </div>
-              <p className="font-mono-data text-[0.65rem] text-[var(--line-faint)] mt-4">Your booking will be reviewed by admin before confirmation.</p>
+              <p className="font-mono-data text-[0.65rem] text-[var(--line-faint)] mt-4">Payment opens next. Your time is held for 10 minutes.</p>
             </div>
           )}
         </div>
@@ -545,4 +554,15 @@ export default function BookingPage({ params }: { params: Promise<{ slug: string
       <PublicFooter compact />
     </>
   );
+}
+
+function validSlotsForSchedule(dur: number, date: string, rules: ScheduleRule[]) {
+  const rule = rules.find(r => r.dayOfWeek === getDay(parseISO(date)));
+  if (!rule || rule.isClosed) return [];
+  const openMins = toMinutes(rule.openTime);
+  const closeMins = toMinutes(rule.closeTime);
+  return validSlotsForDuration(dur, date).filter(slot => {
+    const start = toMinutes(slot.split('-')[0]);
+    return start >= openMins && start + dur * 60 <= closeMins;
+  });
 }

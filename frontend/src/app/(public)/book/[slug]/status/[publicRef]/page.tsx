@@ -21,6 +21,7 @@ type StatusData = {
   remainingBalanceAmount: number;
   paymentUrl: string;
   paymentExpiresAt: string | null;
+  mockPaymentAvailable: boolean;
 };
 
 export default function ReservationStatusPage({
@@ -32,6 +33,7 @@ export default function ReservationStatusPage({
   const [data, setData] = useState<StatusData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [mockPaying, setMockPaying] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -77,7 +79,22 @@ export default function ReservationStatusPage({
     );
   }
 
-  const showPay = data.status === 'approved_waiting_payment' && data.paymentStatus === 'awaiting_payment' && !!data.paymentUrl;
+  const showPay = ['approved_waiting_payment', 'pending_admin'].includes(data.status) && data.paymentStatus === 'awaiting_payment' && !!data.paymentUrl;
+  const showMockPay = data.mockPaymentAvailable && ['pending_admin', 'approved_waiting_payment'].includes(data.status);
+
+  const simulatePayment = async () => {
+    setMockPaying(true);
+    try {
+      const res = await fetch(`/api/public/courts/${slug}/reservations/${publicRef}/mock-pay`, { method: 'POST' });
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload.error || 'Simulation failed');
+      await load();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Simulation failed');
+    } finally {
+      setMockPaying(false);
+    }
+  };
 
   return (
     <>
@@ -111,6 +128,12 @@ export default function ReservationStatusPage({
             >
               Open Payment QR
             </a>
+          )}
+
+          {showMockPay && (
+            <button onClick={simulatePayment} disabled={mockPaying} className="pub-cta pub-cta-primary no-underline mb-6">
+              {mockPaying ? 'Processing test payment...' : 'Simulate Payment (Test)'}
+            </button>
           )}
 
           {(data.status === 'cancelled' || data.status === 'expired') && (

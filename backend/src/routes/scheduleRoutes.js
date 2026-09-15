@@ -1,7 +1,8 @@
 import express from 'express';
 import ScheduleRule  from '../models/ScheduleRule.js';
 import ScheduleBlock from '../models/ScheduleBlock.js';
-import { getDayOfWeek, resolveSchedule, ALL_SLOTS } from '../utils/scheduleUtils.js';
+import Reservation from '../models/Reservation.js';
+import { getDayOfWeek, resolveSchedule, ALL_SLOTS, toMinutes } from '../utils/scheduleUtils.js';
 import { emitCourtEvent } from '../lib/emitCourtEvent.js';
 
 const router = express.Router();
@@ -103,6 +104,27 @@ router.post('/blocks', async (req, res) => {
     if (!date) return res.status(400).json({ error: 'date is required.' });
     if (blockType === 'range' && (!startTime || !endTime)) {
       return res.status(400).json({ error: 'startTime and endTime required for range blocks.' });
+    }
+
+    const blockStart = blockType === 'day' ? 0 : toMinutes(startTime);
+    const blockEnd = blockType === 'day' ? 24 * 60 : toMinutes(endTime);
+    if (!Number.isInteger(blockStart) || !Number.isInteger(blockEnd) || blockStart >= blockEnd) {
+      return res.status(400).json({ error: 'Invalid block time range.' });
+    }
+
+    const activeReservations = await Reservation.find({
+      courtId: req.courtId,
+      date,
+      status: { $in: ['pending', 'pending_admin', 'approved_waiting_payment', 'payment_processing', 'payment_received', 'confirmed', 'completed'] },
+      ...(courts.length ? { court: { $in: courts } } : {}),
+    }).select('court timeSlot duration').lean();
+    const conflict = activeReservations.find(reservation => {
+      const reservationStart = toMinutes(reservation.timeSlot.split('-')[0]);
+      const reservationEnd = reservationStart + Number(reservation.duration || 1) * 60;
+      return reservationStart < blockEnd && reservationEnd > blockStart;
+    });
+    if (conflict) {
+      return res.status(409).json({ error: 'This block overlaps an existing reservation.' });
     }
 
     const block = await ScheduleBlock.create({ courtId: req.courtId, date, courts, blockType, startTime, endTime, reason });

@@ -3,6 +3,7 @@ import {
   getSlotsFromRule,
   getAdminBlockedSlots,
   getBlockedSlots,
+  getValidStartSlots,
   resolveSchedule,
 } from '../../src/utils/scheduleUtils.js';
 
@@ -39,6 +40,17 @@ describe('scheduleUtils', () => {
 
     const blocked = getBlockedSlots(existing, candidates, 1);
     expect(blocked).toEqual(['13:00-14:00', '14:00-15:00']);
+  });
+
+  test('getValidStartSlots requires the full duration to be open and unblocked', () => {
+    const baseSlots = ['09:00-10:00', '10:00-11:00', '11:00-12:00', '12:00-13:00', '13:00-14:00', '14:00-15:00', '15:00-16:00'];
+
+    expect(getValidStartSlots(baseSlots, 4)).toEqual([
+      '09:00-10:00', '10:00-11:00', '11:00-12:00', '12:00-13:00',
+    ]);
+    expect(getValidStartSlots(baseSlots, 2, ['11:00-12:00'])).toEqual([
+      '09:00-10:00', '12:00-13:00', '13:00-14:00', '14:00-15:00',
+    ]);
   });
 
   test('resolveSchedule marks fully closed when no slots', () => {

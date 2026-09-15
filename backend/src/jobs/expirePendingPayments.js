@@ -22,7 +22,7 @@ export function startExpirePendingPaymentsJob(io) {
           paymentStatus: 'awaiting_payment',
           paymentExpiresAt: { $lte: now },
         },
-        { $set: { status: 'expired', paymentStatus: 'expired' } },
+          { $set: { status: 'expired', paymentStatus: 'expired' }, $unset: { bookingSlots: 1 } },
         { new: true }
       ).lean();
 

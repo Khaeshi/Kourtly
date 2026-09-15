@@ -11,6 +11,7 @@ import {
   getDayOfWeek,
   resolveSchedule,
   getBlockedSlots,
+  getValidStartSlots,
 } from '../utils/scheduleUtils.js';
 import { createPaymentLink } from '../lib/payments/index.js';
 import { emitCourtEvent } from '../lib/emitCourtEvent.js';
@@ -122,7 +123,7 @@ router.get('/availability', async (req, res) => {
         isFullyClosed: false,
         availableSlots,
         blockedSlots: [
-          ...ALL_SLOTS.filter(s => !validBase.includes(s)), // outside open hours
+          ...ALL_SLOTS.filter(s => !openForThisCourt.includes(s)), // outside open hours or duration window
           ...adminBlocked,                                   // admin blocked
           ...reservationBlocked,                             // reserved
         ],
@@ -153,7 +154,11 @@ router.post('/', async (req, res) => {
     }
 
     const startMins = toMinutes(timeSlot.split('-')[0]);
-    const endMins   = startMins + Number(duration) * 60;
+    const durationHours = Number(duration);
+    const endMins   = startMins + durationHours * 60;
+    if (!Number.isInteger(durationHours) || durationHours < 1 || durationHours > 24 || !Number.isInteger(startMins) || startMins % 60 !== 0) {
+      return res.status(400).json({ error: 'Invalid booking time or duration.' });
+    }
     const dayOfWeek = getDayOfWeek(date);
 
     // Validate against schedule
@@ -173,19 +178,17 @@ router.post('/', async (req, res) => {
     const startHour = Math.floor(startMins / 60);
     const baseSlotKey = `${String(startHour).padStart(2,'0')}:00-${String(startHour+1).padStart(2,'0')}:00`;
 
-    if (!baseSlots.includes(baseSlotKey)) {
-      return res.status(403).json({ error: 'This time is outside the venue\'s open hours.' });
-    }
-
-    // Check admin blocks for this court
     const adminBlocked = perCourt[court].adminBlockedSlots;
-    if (adminBlocked.includes(baseSlotKey)) {
+    if (!getValidStartSlots(baseSlots, durationHours, adminBlocked).includes(baseSlotKey)) {
+      if (!baseSlots.includes(baseSlotKey)) {
+      return res.status(403).json({ error: 'This time is outside the venue\'s open hours.' });
+      }
       return res.status(403).json({ error: 'This time slot has been blocked by the venue.' });
     }
 
     // Check reservation overlaps
     const active = await Reservation
-      .find({ courtId: req.courtId, court, date, status: { $in: ['confirmed', 'completed'] } })
+      .find({ courtId: req.courtId, court, date, status: { $in: ['pending', 'pending_admin', 'approved_waiting_payment', 'payment_processing', 'payment_received', 'confirmed', 'completed'] } })
       .select('timeSlot duration').lean();
 
     const hasConflict = active.some(existing => {
@@ -206,6 +209,7 @@ router.post('/', async (req, res) => {
     const reservation = await Reservation.create({
       ...req.body,
       timeSlot: canonicalSlot,
+      bookingSlots: Array.from({ length: durationHours }, (_, offset) => String(startMins + offset * 60).padStart(4, '0')),
       duration: Number(duration),
     });
 
@@ -227,7 +231,10 @@ router.put('/:id', async (req, res) => {
   try {
     const { status, notes } = req.body;
     const update = {};
-    if (status !== undefined) update.status = status;
+    if (status !== undefined) {
+      update.status = status;
+      if (status === 'cancelled' || status === 'expired') update.$unset = { bookingSlots: 1 };
+    }
     if (notes  !== undefined) update.notes  = notes;
     if (Object.keys(update).length === 0) {
       return res.status(400).json({ error: 'Provide status or notes to update.' });
@@ -337,7 +344,7 @@ router.post('/:id/cancel-payment', async (req, res) => {
     transitionReservationPayment(existing, 'cancelled', 'cancelled');
     const reservation = await Reservation.findOneAndUpdate(
       { _id: req.params.id, courtId: req.courtId },
-      { status: existing.status, paymentStatus: existing.paymentStatus },
+      { status: existing.status, paymentStatus: existing.paymentStatus, $unset: { bookingSlots: 1 } },
       { new: true }
     );
     if (!reservation) return res.status(404).json({ error: 'Reservation not found.' });

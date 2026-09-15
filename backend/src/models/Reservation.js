@@ -8,6 +8,7 @@ const ReservationSchema = new mongoose.Schema({
   court:       { type: Number, required: true, min: 1 },  // physical court number
   date:        { type: String, required: true },           // "YYYY-MM-DD"
   timeSlot:    { type: String, required: true },           // "08:00-09:00"
+  bookingSlots: { type: [String], default: [] },           // one key per occupied hour, used to claim a payment hold
   duration:    { type: Number, default: 1 },
   playerCount: { type: Number, default: 2 },
   status: {
@@ -50,6 +51,10 @@ const ReservationSchema = new mongoose.Schema({
 
 ReservationSchema.index({ courtId: 1, date: 1, status: 1 });
 ReservationSchema.index({ courtId: 1, date: 1, court: 1 });
+ReservationSchema.index(
+  { courtId: 1, date: 1, court: 1, bookingSlots: 1 },
+  { unique: true, partialFilterExpression: { bookingSlots: { $type: 'array' } } }
+);
 ReservationSchema.index({ courtId: 1, createdAt: -1 });
 
 export default mongoose.models.Reservation ||

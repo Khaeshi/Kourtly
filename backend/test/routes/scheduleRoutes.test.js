@@ -1,6 +1,7 @@
 import request from 'supertest';
 import app from '../../src/app.js';
 import Court from '../../src/models/Court.js';
+import Reservation from '../../src/models/Reservation.js';
 
 describe('schedule routes', () => {
   test('GET /api/schedule/rules seeds defaults and returns 7 records', async () => {
@@ -57,5 +58,23 @@ describe('schedule routes', () => {
 
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/date is required/i);
+  });
+
+  test('POST /api/schedule/blocks rejects overlap with an active reservation', async () => {
+    const court = await Court.create({
+      name: 'Conflict Court', slug: 'conflict-court', adminEmail: 'conflict@court.com',
+      isActive: true, subscription: { status: 'active' }, courtCount: 1,
+    });
+    await Reservation.create({
+      courtId: court._id, court: 1, date: '2026-04-14', timeSlot: '13:00-15:00', duration: 2,
+      name: 'Existing', phone: '09170000000', status: 'pending_admin',
+    });
+
+    const res = await request(app).post('/api/schedule/blocks')
+      .set('x-court-id', String(court._id))
+      .send({ date: '2026-04-14', courts: [1], blockType: 'range', startTime: '14:00', endTime: '16:00' });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatch(/overlaps/i);
   });
 });

@@ -110,6 +110,22 @@ export function getBlockedSlots(existingBookings, candidateSlots, durationHours)
     });
   });
 }
+
+export function getValidStartSlots(baseSlots, durationHours, blockedSlots = []) {
+  const baseSet = new Set(baseSlots);
+  const blockedSet = new Set(blockedSlots);
+  const duration = Math.max(1, Number(durationHours));
+
+  return baseSlots.filter(slot => {
+    const start = toMinutes(slot.split('-')[0]);
+    for (let offset = 0; offset < duration; offset += 1) {
+      const hour = start + offset * 60;
+      const key = `${String(Math.floor(hour / 60)).padStart(2, '0')}:00-${String(Math.floor(hour / 60) + 1).padStart(2, '0')}:00`;
+      if (!baseSet.has(key) || blockedSet.has(key)) return false;
+    }
+    return true;
+  });
+}
   
   /**
    * Master resolver: given rule + blocks for a date, return per-court availability.

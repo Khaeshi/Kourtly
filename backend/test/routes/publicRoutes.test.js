@@ -87,4 +87,41 @@ describe('public routes', () => {
     expect(res.status).toBe(409);
     expect(res.body.error).toMatch(/already booked/i);
   });
+
+  test('POST /api/public/courts/:slug/reserve rejects a duration that exceeds closing time', async () => {
+    const court = await Court.create({
+      name: 'Hours Court',
+      slug: 'hours-court',
+      adminEmail: 'owner@hours.com',
+      courtCount: 1,
+      isActive: true,
+      subscription: { status: 'active' },
+    });
+    await ScheduleRule.create({ courtId: court._id, dayOfWeek: 2, isClosed: false, openTime: '09:00', closeTime: '16:00' });
+
+    const res = await request(app).post('/api/public/courts/hours-court/reserve').send({
+      courtNum: 1, date: '2026-04-14', timeSlot: '15:00-16:00', duration: 4,
+      name: 'New User', phone: '09179999999',
+    });
+
+    expect(res.status).toBe(403);
+    expect(res.body.error).toMatch(/outside open hours|blocked/i);
+  });
+
+  test('POST /api/public/courts/:slug/reserve treats pending reservations as conflicts', async () => {
+    const court = await Court.create({
+      name: 'Pending Court', slug: 'pending-court', adminEmail: 'owner@pending.com', courtCount: 1,
+      isActive: true, subscription: { status: 'active' },
+    });
+    await ScheduleRule.create({ courtId: court._id, dayOfWeek: 2, isClosed: false, openTime: '09:00', closeTime: '23:00' });
+    await Reservation.create({ courtId: court._id, court: 1, date: '2026-04-14', timeSlot: '13:00-14:00', duration: 1, name: 'Pending', phone: '09170000000', status: 'pending_admin' });
+
+    const res = await request(app).post('/api/public/courts/pending-court/reserve').send({
+      courtNum: 1, date: '2026-04-14', timeSlot: '13:00-14:00', duration: 1,
+      name: 'New User', phone: '09179999999',
+    });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatch(/already booked/i);
+  });
 });

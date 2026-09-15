@@ -1,15 +1,15 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 import { sileo } from 'sileo';
-import { getReservations, updateReservation, deleteReservation, approveReservationPayment, cancelReservationPayment } from '@/lib/api';
+import { getReservations, updateReservation, deleteReservation } from '@/lib/api';
 import type { Reservation } from '@/lib/api';
 import { Button } from '@/app/components/ui/Button';
 import { useSocketEvent } from '@/hooks/useSocketEvent';
 
 // ── Constants (unchanged) ─────────────────────────────────────────────────────
 const STATUS_STYLE: Record<string, { label: string; text: string }> = {
-  pending_admin: { label: 'bg-yellow-50 border-yellow-200 text-yellow-700', text: 'Pending Review' },
-  approved_waiting_payment: { label: 'bg-blue-50 border-blue-200 text-blue-700', text: 'Waiting Payment' },
+  pending_admin: { label: 'bg-blue-50 border-blue-200 text-blue-700', text: 'Awaiting Payment' },
+  approved_waiting_payment: { label: 'bg-blue-50 border-blue-200 text-blue-700', text: 'Awaiting Payment' },
   pending:   { label: 'bg-yellow-50 border-yellow-200 text-yellow-700', text: 'Pending'   },
   confirmed: { label: 'bg-green-50 border-green-200 text-green-700',    text: 'Confirmed' },
   cancelled: { label: 'bg-red-50 border-red-200 text-red-400',          text: 'Cancelled' },
@@ -110,18 +110,6 @@ function DetailModal({ r, onClose, onUpdate, onDeleteRequest }: {
     onUpdate(); onClose();
   };
 
-  const approveWithPayment = async () => {
-    await approveReservationPayment(r._id);
-    sileo.success({ title: 'Approved', description: 'Payment QR has been generated.' });
-    onUpdate(); onClose();
-  };
-
-  const cancelWaitingPayment = async () => {
-    await cancelReservationPayment(r._id);
-    sileo.success({ title: 'Cancelled', description: 'Payment request invalidated.' });
-    onUpdate(); onClose();
-  };
-
   const saveNotes = async () => {
     await updateReservation(r._id, { notes });
     sileo.success({ title: 'Notes saved' });
@@ -175,12 +163,6 @@ function DetailModal({ r, onClose, onUpdate, onDeleteRequest }: {
         </div>
         <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between flex-wrap gap-3">
           <div className="flex gap-1.5 flex-wrap">
-            {(r.status === 'pending_admin' || r.status === 'pending') && (
-              <Button v="primary" onClick={approveWithPayment}>Approve & Generate Payment</Button>
-            )}
-            {r.status === 'approved_waiting_payment' && (
-              <Button v="danger" onClick={cancelWaitingPayment}>Cancel Payment</Button>
-            )}
             {r.status !== 'completed' && <Button v="ghost"   onClick={() => setStatus('completed')}>Mark Done</Button>}
             {r.status !== 'cancelled' && <Button v="danger"  onClick={() => setStatus('cancelled')}>Cancel</Button>}
           </div>
@@ -228,7 +210,7 @@ export default function ReservationsPage() {
   }, {} as Record<string, Reservation[]>);
 
   const counts = {
-    pending:   reservations.filter(r => r.status === 'pending').length,
+    awaiting:  reservations.filter(r => ['pending', 'pending_admin', 'approved_waiting_payment'].includes(r.status)).length,
     confirmed: reservations.filter(r => r.status === 'confirmed').length,
   };
 
@@ -253,8 +235,8 @@ export default function ReservationsPage() {
           </div>
           <div className="flex items-center gap-5">
             <div className="text-right">
-              <div className="text-[0.65rem] font-semibold tracking-widest uppercase text-gray-400 mb-0.5">Pending</div>
-              <div className="font-mono text-xl text-yellow-600">{counts.pending}</div>
+              <div className="text-[0.65rem] font-semibold tracking-widest uppercase text-gray-400 mb-0.5">Awaiting Payment</div>
+              <div className="font-mono text-xl text-yellow-600">{counts.awaiting}</div>
             </div>
             <div className="text-right">
               <div className="text-[0.65rem] font-semibold tracking-widest uppercase text-gray-400 mb-0.5">Confirmed</div>
@@ -275,7 +257,7 @@ export default function ReservationsPage() {
             )}
           </div>
           <div className="flex gap-1 flex-wrap">
-            {['all', 'pending_admin', 'approved_waiting_payment', 'confirmed', 'cancelled', 'completed'].map(s => (
+            {['all', 'approved_waiting_payment', 'confirmed', 'cancelled', 'completed'].map(s => (
               <button key={s} onClick={() => setStatusFilter(s)}
                 className={`px-2.5 py-1.5 rounded-md text-xs font-medium border transition-all ${
                   statusFilter === s ? 'bg-gray-900 border-gray-900 text-white' : 'bg-white border-gray-200 text-gray-400 hover:text-gray-600'

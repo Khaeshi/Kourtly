@@ -6,9 +6,10 @@ import ScheduleBlock from '../models/ScheduleBlock.js';
 import User         from '../models/User.js';
 import {
   ALL_SLOTS, toMinutes, getDayOfWeek,
-  resolveSchedule, getBlockedSlots,
+  resolveSchedule, getBlockedSlots, getValidStartSlots,
 } from '../utils/scheduleUtils.js';
 import { transitionReservationPayment } from '../lib/reservationStateMachine.js';
+import { createPaymentLink, getPaymentProvider } from '../lib/payments/index.js';
 import { hasModule, MODULES } from '../lib/moduleEntitlements.js';
 
 const router = express.Router();
@@ -79,7 +80,7 @@ router.get('/courts/:slug/availability', async (req, res) => {
     const [rule, blocks, activeReservations] = await Promise.all([
       ScheduleRule.findOne({ courtId, dayOfWeek }).lean(),
       ScheduleBlock.find({ courtId, date }).lean(),
-      Reservation.find({ courtId, date, status: { $in: ['confirmed', 'completed'] } })
+      Reservation.find({ courtId, date, status: { $in: ['pending', 'pending_admin', 'approved_waiting_payment', 'payment_processing', 'payment_received', 'confirmed', 'completed'] } })
         .select('court timeSlot duration').lean(),
     ]);
 
@@ -102,7 +103,7 @@ router.get('/courts/:slug/availability', async (req, res) => {
     const result = courtNums.map(courtNum => {
       if (isFullyClosed) return { court: courtNum, isFullyClosed: true, availableSlots: [], blockedSlots: ALL_SLOTS };
       const adminBlocked       = perCourt[courtNum]?.adminBlockedSlots ?? [];
-      const openForThisCourt   = validBase.filter(s => !adminBlocked.includes(s));
+      const openForThisCourt   = getValidStartSlots(validBase, durationHrs, adminBlocked);
       const reservationBlocked = getBlockedSlots(
         activeReservations.filter(r => r.court === courtNum),
         openForThisCourt, durationHrs
@@ -112,7 +113,7 @@ router.get('/courts/:slug/availability', async (req, res) => {
         isFullyClosed: false,
         availableSlots: openForThisCourt.filter(s => !reservationBlocked.includes(s)),
         blockedSlots: [
-          ...ALL_SLOTS.filter(s => !validBase.includes(s)),
+          ...ALL_SLOTS.filter(s => !openForThisCourt.includes(s)),
           ...adminBlocked,
           ...reservationBlocked,
         ],
@@ -159,8 +160,12 @@ router.post('/courts/:slug/reserve', async (req, res) => {
     }
 
     const courtId   = court._id;
+    const durationHours = Number(duration);
     const startMins = toMinutes(timeSlot.split('-')[0]);
-    const endMins   = startMins + Number(duration) * 60;
+    const endMins   = startMins + durationHours * 60;
+    if (!Number.isInteger(durationHours) || durationHours < 1 || durationHours > 24 || !Number.isInteger(startMins) || startMins % 60 !== 0) {
+      return res.status(400).json({ error: 'Invalid booking time or duration.' });
+    }
     const dayOfWeek = getDayOfWeek(date);
 
     const [rule, blocks] = await Promise.all([
@@ -173,13 +178,14 @@ router.post('/courts/:slug/reserve', async (req, res) => {
 
     const startHour   = Math.floor(startMins / 60);
     const baseSlotKey = `${String(startHour).padStart(2,'0')}:00-${String(startHour+1).padStart(2,'0')}:00`;
-    if (!baseSlots.includes(baseSlotKey)) return res.status(403).json({ error: 'Outside open hours.' });
-    if (perCourt[courtNum]?.adminBlockedSlots?.includes(baseSlotKey)) {
+    const adminBlockedSlots = perCourt[courtNum]?.adminBlockedSlots ?? [];
+    if (!getValidStartSlots(baseSlots, durationHours, adminBlockedSlots).includes(baseSlotKey)) {
+      if (!baseSlots.includes(baseSlotKey)) return res.status(403).json({ error: 'Outside open hours.' });
       return res.status(403).json({ error: 'This slot has been blocked.' });
     }
 
     const active = await Reservation.find({
-      courtId, court: courtNum, date, status: { $in: ['confirmed', 'completed'] }
+      courtId, court: courtNum, date, status: { $in: ['pending', 'pending_admin', 'approved_waiting_payment', 'payment_processing', 'payment_received', 'confirmed', 'completed'] }
     }).select('timeSlot duration').lean();
 
     const hasConflict = active.some(e => {
@@ -200,8 +206,9 @@ router.post('/courts/:slug/reserve', async (req, res) => {
       court:       Number(courtNum),
       date, name, phone, email, playerCount, notes,
       timeSlot:    `${timeSlot.split('-')[0]}-${endHour}:${endMin}`,
+      bookingSlots: Array.from({ length: durationHours }, (_, offset) => String(startMins + offset * 60).padStart(4, '0')),
       duration:    Number(duration),
-      status:      'pending_admin',
+      status:      'approved_waiting_payment',
       publicRef:   buildPublicRef(),
       paymentOption: paymentOption === 'full' ? 'full' : 'downpayment',
       reservationFeeAmount,
@@ -210,12 +217,48 @@ router.post('/courts/:slug/reserve', async (req, res) => {
       remainingBalanceAmount: reservationFeeAmount,
     });
 
+    const reservationStart = new Date(`${date}T${timeSlot.split('-')[0]}:00+08:00`);
+    const holdExpiry = new Date(Date.now() + 10 * 60 * 1000);
+    const in24h = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const expiryDate = [reservationStart, holdExpiry, in24h]
+      .filter(d => !Number.isNaN(d.getTime()))
+      .sort((a, b) => a.getTime() - b.getTime())[0];
+    const payableBase = reservation.paymentOption === 'full' ? reservationFeeAmount : downpaymentAmount;
+    const amount = Number((payableBase + maintenanceFeeAmount).toFixed(2));
+    const appBase = process.env.APP_BASE_URL || 'http://localhost:3000';
+    const statusPath = `/book/${court.slug}/status/${reservation.publicRef}`;
+
+    try {
+      const paymentLink = await createPaymentLink({
+        referenceId: `${reservation._id}-${Date.now()}`,
+        amount,
+        description: `Reservation ${reservation.publicRef}`,
+        payerEmail: email,
+        successUrl: `${appBase}${statusPath}`,
+        failureUrl: `${appBase}${statusPath}`,
+        expiryDate,
+        metadata: { type: 'reservation', courtId: String(courtId), reservationId: String(reservation._id) },
+      });
+      transitionReservationPayment(reservation, 'approved_waiting_payment', 'awaiting_payment');
+      reservation.paymentLinkId = paymentLink.id || paymentLink.payment_id || '';
+      reservation.paymentUrl = paymentLink.payment_url || paymentLink.checkout_url || '';
+      reservation.paymentQrString = paymentLink.qr_string || '';
+      reservation.paymentExpiresAt = expiryDate;
+      await reservation.save();
+    } catch (paymentError) {
+      await Reservation.deleteOne({ _id: reservation._id });
+      throw paymentError;
+    }
+
     res.status(201).json({
       ...reservation.toObject(),
       amountDue:
         (reservation.paymentOption === 'full' ? reservationFeeAmount : downpaymentAmount) + maintenanceFeeAmount,
     });
   } catch (err) {
+    if (err?.code === 11000) {
+      return res.status(409).json({ error: 'This court time is currently being held for another payment session.' });
+    }
     res.status(400).json({ error: err.message });
   }
 });
@@ -262,9 +305,38 @@ router.get('/courts/:slug/reservations/:publicRef', async (req, res) => {
       remainingBalanceAmount: reservation.remainingBalanceAmount,
       paymentUrl: reservation.paymentUrl,
       paymentExpiresAt: reservation.paymentExpiresAt,
+      mockPaymentAvailable: getPaymentProvider() === 'mock',
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// Development-only payment simulation for local testing without a merchant account.
+router.post('/courts/:slug/reservations/:publicRef/mock-pay', async (req, res) => {
+  try {
+    if (getPaymentProvider() !== 'mock') return res.status(404).json({ error: 'Mock payments are disabled.' });
+    const court = await Court.findOne({ slug: req.params.slug, isActive: true }).lean();
+    if (!court) return res.status(404).json({ error: 'Court not found.' });
+    const reservation = await Reservation.findOne({ courtId: court._id, publicRef: req.params.publicRef });
+    if (!reservation) return res.status(404).json({ error: 'Reservation not found.' });
+    if (reservation.status === 'pending_admin') {
+      transitionReservationPayment(reservation, 'approved_waiting_payment', 'awaiting_payment');
+    }
+    if (reservation.status !== 'approved_waiting_payment' || reservation.paymentStatus !== 'awaiting_payment') {
+      return res.status(409).json({ error: 'This reservation is not awaiting payment.' });
+    }
+    const payableBase = reservation.paymentOption === 'full'
+      ? Number(reservation.reservationFeeAmount || 0)
+      : Number(reservation.downpaymentAmount || 0);
+    transitionReservationPayment(reservation, 'confirmed', 'paid');
+    reservation.amountPaidOnline = payableBase + Number(reservation.maintenanceFeeAmount || 0);
+    reservation.remainingBalanceAmount = Math.max(0, Number(reservation.reservationFeeAmount || 0) - payableBase);
+    reservation.paidAt = new Date();
+    await reservation.save();
+    res.json({ ok: true, status: reservation.status, paymentStatus: reservation.paymentStatus });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
   }
 });
 
