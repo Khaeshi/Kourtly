@@ -31,7 +31,10 @@ app.set('io', io);
 
 io.on('connection', (socket) => {
   const courtId = socket.handshake?.auth?.courtId;
+  console.log('[socket] connected:', socket.id, 'courtId:', courtId);
   if (courtId) socket.join(`court:${courtId}`);
+  const publicRef = socket.handshake?.auth?.publicRef;
+  if (publicRef) socket.join(`reservation:${publicRef}`);
 });
 
 startExpirePendingPaymentsJob(io);

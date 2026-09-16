@@ -303,8 +303,7 @@ export default function BookingPage({ params }: { params: Promise<{ slug: string
       if (!res.ok) throw new Error(data.error || 'Booking failed');
       setSuccess(true);
       if (data.publicRef) {
-        if (data.paymentUrl) window.location.assign(data.paymentUrl);
-        else router.push(`/book/${slug}/status/${data.publicRef}`);
+        router.push(`/book/${slug}/status/${data.publicRef}`);
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Booking failed. Please try again.';

@@ -21,7 +21,7 @@ function todayStr() {
 }
 
 describe('reservation tab routes', () => {
-  test('GET /api/reservation-tabs/today creates tabs for confirmed reservations', async () => {
+  test('POST /api/reservation-tabs/from-reservation creates a tab explicitly', async () => {
     const court = await makeCourt();
     const reservation = await Reservation.create({
       courtId: court._id,
@@ -32,15 +32,19 @@ describe('reservation tab routes', () => {
       timeSlot: '10:00-11:00',
       duration: 1,
       status: 'confirmed',
+      paymentStatus: 'paid',
+      reservationFeeAmount: 840,
+      amountPaidOnline: 428.4,
+      maintenanceFeeAmount: 8.4,
     });
 
     const res = await request(app)
-      .get('/api/reservation-tabs/today')
+      .post(`/api/reservation-tabs/from-reservation/${reservation._id}`)
       .set('x-court-id', String(court._id));
 
-    expect(res.status).toBe(200);
-    expect(res.body).toHaveLength(1);
-    expect(res.body[0].reservation.toString()).toBe(String(reservation._id));
+    expect(res.status).toBe(201);
+    expect(String(res.body.reservation)).toBe(String(reservation._id));
+    expect(res.body.total).toBe(420);
   });
 
   test('PUT /api/reservation-tabs/:id/pay marks linked reservation completed', async () => {

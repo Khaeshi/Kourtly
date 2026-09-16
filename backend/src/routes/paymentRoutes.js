@@ -1,6 +1,5 @@
 import express from 'express';
 import Reservation from '../models/Reservation.js';
-import ReservationTab from '../models/ReservationTab.js';
 import Court from '../models/Court.js';
 import PayoutTransfer from '../models/PayoutTransfer.js';
 import PaymentWebhookEvent from '../models/PaymentWebhookEvent.js';
@@ -14,6 +13,12 @@ function emitCourtEventById(req, courtId, event, payload = {}) {
   const io = req.app.get('io');
   if (!io || !courtId) return;
   io.to(`court:${courtId}`).emit(event, payload);
+}
+
+function emitReservationEvent(req, publicRef, payload = {}) {
+  const io = req.app.get('io');
+  if (!io || !publicRef) return;
+  io.to(`reservation:${publicRef}`).emit('reservation:updated', payload);
 }
 
 router.post('/cocoart/webhook', async (req, res) => {
@@ -88,32 +93,6 @@ router.post('/cocoart/webhook', async (req, res) => {
       reservation.paidAt = new Date();
       await reservation.save();
 
-      await ReservationTab.findOneAndUpdate(
-        { reservation: reservation._id },
-        {
-          $setOnInsert: {
-            reservation: reservation._id,
-          },
-          $set: {
-            courtId: reservation.courtId,
-            guestName: reservation.name,
-            court: reservation.court,
-            date: reservation.date,
-            timeSlot: reservation.timeSlot,
-            duration: reservation.duration,
-            total: remaining,
-            status: remaining === 0 ? 'paid' : 'open',
-            paymentSummary: {
-              reservationFee: Number(reservation.reservationFeeAmount || 0),
-              paidOnline: onlinePaid,
-              remainingBalance: remaining,
-              source: 'cocoart',
-            },
-          },
-        },
-        { upsert: true, new: true }
-      );
-
       const transfer = await PayoutTransfer.create({
         courtId: reservation.courtId,
         reservationId: reservation._id,
@@ -128,6 +107,7 @@ router.post('/cocoart/webhook', async (req, res) => {
         action: 'paid',
         reservationId: reservation._id,
       });
+      emitReservationEvent(req, reservation.publicRef, { action: 'paid', reservationId: reservation._id });
       emitCourtEventById(req, reservation.courtId, 'billing:tab_updated', {
         action: 'reservation_synced',
         reservationId: reservation._id,

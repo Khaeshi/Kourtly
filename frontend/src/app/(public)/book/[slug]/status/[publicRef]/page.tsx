@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { use, useCallback, useEffect, useState } from 'react';
+import { io } from 'socket.io-client';
 import PublicNav from '@/app/components/public/PublicNav';
 import PublicFooter from '@/app/components/public/PublicFooter';
 import { InlineNotice, KeyValueSummary } from '@/app/components/public/ui';
@@ -52,8 +53,15 @@ export default function ReservationStatusPage({
 
   useEffect(() => {
     load();
-    const id = setInterval(load, 10000);
-    return () => clearInterval(id);
+    const socket = io(process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000', {
+      auth: { publicRef },
+      transports: ['websocket'],
+    });
+    socket.on('reservation:updated', load);
+    return () => {
+      socket.off('reservation:updated', load);
+      socket.disconnect();
+    };
   }, [load]);
 
   if (loading) {
@@ -79,8 +87,9 @@ export default function ReservationStatusPage({
     );
   }
 
-  const showPay = ['approved_waiting_payment', 'pending_admin'].includes(data.status) && data.paymentStatus === 'awaiting_payment' && !!data.paymentUrl;
-  const showMockPay = data.mockPaymentAvailable && ['pending_admin', 'approved_waiting_payment'].includes(data.status);
+  const awaitingPayment = ['approved_waiting_payment', 'pending_admin'].includes(data.status) && data.paymentStatus === 'awaiting_payment';
+  const showPay = awaitingPayment && !data.mockPaymentAvailable && !!data.paymentUrl;
+  const showMockPay = data.mockPaymentAvailable && awaitingPayment;
 
   const simulatePayment = async () => {
     setMockPaying(true);
@@ -103,7 +112,9 @@ export default function ReservationStatusPage({
       <div className="flex-1 booking-grid-bg">
         <div className="max-w-xl mx-auto px-[clamp(1.25rem,5vw,3rem)] py-10 sm:py-16 booking-safe-bottom">
           <p className="section-head eyebrow mb-2">Reservation Ref: {data.publicRef}</p>
-          <h1 className="font-display text-[clamp(1.8rem,4vw,2.4rem)] text-[var(--line)] mb-2">Reservation Status</h1>
+          <h1 className="font-display text-[clamp(1.8rem,4vw,2.4rem)] text-[var(--line)] mb-2">
+            {data.status === 'confirmed' && data.paymentStatus === 'paid' ? 'Booking Received' : 'Reservation Status'}
+          </h1>
           <p className="text-[var(--line-dim)] mb-6 font-mono-data text-sm">
             Court {data.court} · {data.date} · {data.timeSlot}
           </p>

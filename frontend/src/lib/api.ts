@@ -163,6 +163,7 @@ export interface TabHistoryParams {
   page?:   number;
   limit?:  number;
 }
+
 export interface PaginatedTabs {
   tabs:       Tab[];
   pagination: { page:number; limit:number; total:number; totalPages:number; hasNext:boolean; hasPrev:boolean };
@@ -266,6 +267,10 @@ export async function cancelReservationPayment(id: string): Promise<Reservation>
   return req<Reservation>(`/reservations/${id}/cancel-payment`, { method: 'POST' });
 }
 
+export async function createReservationBillingTab(id: string): Promise<ReservationTab> {
+  return req<ReservationTab>(`/reservation-tabs/from-reservation/${id}`, { method: 'POST' });
+}
+
 export async function deleteReservation(id: string): Promise<void> {
   await fetch(`${API_BASE}/reservations/${id}`, { method: 'DELETE' });
 }
@@ -321,7 +326,7 @@ export const collectReservationBalance = (tabId: string) =>
   req<ReservationTab>(`/reservation-tabs/${tabId}/collect-balance`, { method: 'PUT' });
  
 export interface ResTabHistoryParams {
-  status?: 'paid' | 'unpaid' | 'all';
+  status?: 'paid' | 'unpaid' | 'open' | 'all';
   date?:   string;
   page?:   number;
   limit?:  number;

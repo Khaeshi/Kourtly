@@ -213,6 +213,11 @@ router.post('/', async (req, res) => {
       duration: Number(duration),
     });
 
+    emitCourtEvent(req, 'reservation:updated', { action: 'created', reservationId: reservation._id, status: reservation.status });
+    emitCourtEvent(req, 'analytics:refresh', { source: 'reservations' });
+
+    res.status(201).json(reservation);
+
     res.status(201).json(reservation);
   } catch (err) {
     if (String(err.message || '').includes('Invalid reservation status transition') ||
@@ -324,6 +329,7 @@ router.post('/:id/approve-payment', async (req, res) => {
     reservation.paymentExpiresAt = expiryDate;
     await reservation.save();
     emitCourtEvent(req, 'reservation:updated', { action: 'awaiting_payment', reservationId: reservation._id, status: reservation.status });
+    emitCourtEvent(req, 'analytics:refresh', { source: 'reservations' });
     res.json(reservation);
   } catch (err) {
     res.status(400).json({ error: err.message });

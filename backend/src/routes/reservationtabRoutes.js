@@ -26,9 +26,11 @@ async function ensureTab(reservation) {
     reservation.amountPaidOnline !== null &&
     Number(reservation.amountPaidOnline) > 0;
   const reservationFee = Number(reservation.reservationFeeAmount || 0);
+  const maintenanceFee = Number(reservation.maintenanceFeeAmount || 0);
   const paidOnline = hasOnlinePaymentData ? Number(reservation.amountPaidOnline || 0) : 0;
+  const paidCourtFee = Math.min(reservationFee, Math.max(0, paidOnline - maintenanceFee));
   const remainingBalance = hasOnlinePaymentData
-    ? Math.max(0, reservationFee - paidOnline)
+    ? Math.max(0, reservationFee - paidCourtFee)
     : 0;
 
   return ReservationTab.create({
@@ -41,10 +43,11 @@ async function ensureTab(reservation) {
     duration:    reservation.duration ?? 1,
     items:       [],
     total:       remainingBalance,
-    status:      hasOnlinePaymentData ? (remainingBalance === 0 ? 'paid' : 'open') : 'open',
+    status:      'open',
     paymentSummary: {
       reservationFee,
       paidOnline,
+      paidCourtFee,
       remainingBalance,
       source: 'cocoart',
     },
@@ -61,25 +64,29 @@ async function ensureTab(reservation) {
 router.get('/today', async (req, res) => {
   try {
     const today = todayStr();
-
-    // Find all confirmed reservations for today
-    const confirmed = await Reservation.find({
-      courtId: req.courtId,
-      date:   today,
-      status: 'confirmed',
-    }).lean();
-
-    // Ensure a tab exists for each
-    const tabs = await Promise.all(confirmed.map(r => ensureTab(r)));
-
-    // Return only open tabs (not paid ones)
-    const open = tabs.filter(t => t.status === 'open');
+    const open = await ReservationTab.find({ courtId: req.courtId, date: today, status: 'open' })
+      .sort({ timeSlot: 1 }).lean();
     res.json(open);
   } catch (err) {
     if (String(err.message || '').includes('Invalid reservation status transition')) {
       return res.status(409).json({ error: err.message });
     }
     res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/from-reservation/:reservationId', async (req, res) => {
+  try {
+    const reservation = await Reservation.findOne({ _id: req.params.reservationId, courtId: req.courtId }).lean();
+    if (!reservation) return res.status(404).json({ error: 'Reservation not found.' });
+    if (!['confirmed', 'completed'].includes(reservation.status)) {
+      return res.status(409).json({ error: 'Only confirmed reservations can create a billing tab.' });
+    }
+    const tab = await ensureTab(reservation);
+    emitCourtEvent(req, 'billing:tab_updated', { action: 'reservation_tab_created', tabId: tab._id, reservationId: reservation._id });
+    res.status(201).json(tab);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
   }
 });
 
@@ -98,7 +105,8 @@ router.get('/history', async (req, res) => {
     const query = { courtId: req.courtId };
     if (status === 'paid')        query.status = 'paid';
     else if (status === 'unpaid') query.status = 'unpaid';
-    else                          query.status = { $in: ['paid', 'unpaid'] };
+    else if (status === 'open'  ) query.status = 'open';
+    else                          query.status = { $in: ['open', 'paid', 'unpaid'] };
 
     if (date) query.date = date; // reservation date string YYYY-MM-DD
 
@@ -226,7 +234,7 @@ router.put('/:id/pay', async (req, res) => {
   try {
     const tab = await ReservationTab.findOneAndUpdate(
       {_id: req.params.id, courtId: req.courtId},
-      { status: 'paid' },
+      { status: 'paid', 'paymentSummary.remainingBalance': 0 },
       { new: true }
     );
     if (!tab) return res.status(404).json({ error: 'Tab not found' });
@@ -240,17 +248,16 @@ router.put('/:id/pay', async (req, res) => {
       await Reservation.findOneAndUpdate(
         tab.reservation,
         { status: 'completed' },
-        { new: true }
-      );
-    }
+        { new: true });
+      }
 
-    emitCourtEvent(req, 'billing:tab_paid', { action: 'reservation_paid', tabId: tab._id });
-    emitCourtEvent(req, 'reservation:updated', { action: 'completed_from_tab', reservationId: tab.reservation });
-    emitCourtEvent(req, 'analytics:refresh', { source: 'reservation_tabs' });
-    res.json(tab);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+      emitCourtEvent(req, 'billing:tab_paid', { action: 'reservation_paid', tabId: tab._id });
+      emitCourtEvent(req, 'reservation:updated', { action: 'completed_from_tab', reservationId: tab.reservation });
+      emitCourtEvent(req, 'analytics:refresh', { source: 'reservation_tabs' });
+      res.json(tab);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
 });
 
 /**

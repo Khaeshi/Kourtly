@@ -1,10 +1,11 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 import { sileo } from 'sileo';
-import { getReservations, updateReservation, deleteReservation } from '@/lib/api';
+import { createReservationBillingTab, getReservations, updateReservation, deleteReservation } from '@/lib/api';
 import type { Reservation } from '@/lib/api';
 import { Button } from '@/app/components/ui/Button';
 import { useSocketEvent } from '@/hooks/useSocketEvent';
+import { useCapabilities } from '@/lib/entitlements';
 
 // ── Constants (unchanged) ─────────────────────────────────────────────────────
 const STATUS_STYLE: Record<string, { label: string; text: string }> = {
@@ -98,10 +99,11 @@ function DeleteModal({ r, onClose, onDeleted }: { r: Reservation; onClose: () =>
 }
 
 // ── Detail modal (all logic unchanged) ───────────────────────────────────────
-function DetailModal({ r, onClose, onUpdate, onDeleteRequest }: {
-  r: Reservation; onClose: () => void; onUpdate: () => void; onDeleteRequest: (r: Reservation) => void;
+function DetailModal({ r, onClose, onUpdate, onDeleteRequest, canCreateBillingTab }: {
+  r: Reservation; onClose: () => void; onUpdate: () => void; onDeleteRequest: (r: Reservation) => void; canCreateBillingTab: boolean;
 }) {
   const [notes, setNotes] = useState(r.notes);
+  const [creatingBillingTab, setCreatingBillingTab] = useState(false);
   const s = STATUS_STYLE[r.status] ?? { label: 'bg-gray-100 border-gray-200 text-gray-500', text: r.status };
 
   const setStatus = async (status: Reservation['status']) => {
@@ -114,6 +116,19 @@ function DetailModal({ r, onClose, onUpdate, onDeleteRequest }: {
     await updateReservation(r._id, { notes });
     sileo.success({ title: 'Notes saved' });
     onUpdate(); onClose();
+  };
+
+  const createBillingTab = async () => {
+    setCreatingBillingTab(true);
+    try {
+      await createReservationBillingTab(r._id);
+      sileo.success({ title: 'Billing tab created', description: 'The remaining court fee is ready in Billing.' });
+      onUpdate(); onClose();
+    } catch (error) {
+      sileo.error({ title: 'Could not create billing tab', description: error instanceof Error ? error.message : 'Try again.' });
+    } finally {
+      setCreatingBillingTab(false);
+    }
   };
 
   return (
@@ -152,6 +167,26 @@ function DetailModal({ r, onClose, onUpdate, onDeleteRequest }: {
               <p className="text-sm text-gray-700">{r.duration}h</p>
             </div>
           </div>
+          <div className="bg-green-50 border border-green-100 rounded-lg p-4 grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-[0.65rem] font-semibold tracking-widest uppercase text-gray-400 mb-1">Payment Plan</p>
+              <p className="text-sm text-gray-700 font-medium">
+                {r.paymentOption === 'full' ? '100% Full Payment' : '50% Downpayment'}
+              </p>
+            </div>
+            <div>
+              <p className="text-[0.65rem] font-semibold tracking-widest uppercase text-gray-400 mb-1">Payment Status</p>
+              <p className="text-sm text-gray-700 font-medium">{r.paymentStatus === 'paid' ? 'Paid' : r.paymentStatus || 'Unpaid'}</p>
+            </div>
+            <div>
+              <p className="text-[0.65rem] font-semibold tracking-widest uppercase text-gray-400 mb-1">Paid Online</p>
+              <p className="text-sm text-green-700 font-mono">₱{Number(r.amountPaidOnline || 0).toFixed(2)}</p>
+            </div>
+            <div>
+              <p className="text-[0.65rem] font-semibold tracking-widest uppercase text-gray-400 mb-1">Court Fee Balance</p>
+              <p className="text-sm text-amber-700 font-mono">₱{Number(r.remainingBalanceAmount || 0).toFixed(2)}</p>
+            </div>
+          </div>
           <div>
             <p className="text-[0.65rem] font-semibold tracking-widest uppercase text-gray-300 mb-1.5">Notes</p>
             <textarea className="w-full bg-gray-50 border border-gray-200 rounded-md px-3 py-2 text-sm text-gray-700 outline-none focus:border-green-400 resize-none"
@@ -167,6 +202,9 @@ function DetailModal({ r, onClose, onUpdate, onDeleteRequest }: {
             {r.status !== 'cancelled' && <Button v="danger"  onClick={() => setStatus('cancelled')}>Cancel</Button>}
           </div>
           <div className="flex gap-1.5">
+            {canCreateBillingTab && ['confirmed','completed'].includes(r.status) && (
+              <Button v="primary" loading={creatingBillingTab} onClick={createBillingTab}>Create Billing Tab</Button>
+            )}
             <Button v="ghost"  onClick={saveNotes}>Save Notes</Button>
             <Button v="danger" onClick={() => { onClose(); onDeleteRequest(r); }}>Delete</Button>
           </div>
@@ -178,6 +216,7 @@ function DetailModal({ r, onClose, onUpdate, onDeleteRequest }: {
 
 // ── Main page (all logic unchanged) ──────────────────────────────────────────
 export default function ReservationsPage() {
+  const capabilities = useCapabilities();
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [loading,      setLoading]      = useState(true);
   const [selected,     setSelected]     = useState<Reservation | null>(null);
@@ -219,7 +258,8 @@ export default function ReservationsPage() {
       {selected && (
         <DetailModal r={selected} onClose={() => setSelected(null)}
           onUpdate={() => { load(); setSelected(null); }}
-          onDeleteRequest={r => setToDelete(r)} />
+          onDeleteRequest={r => setToDelete(r)}
+          canCreateBillingTab={capabilities.modules.item_tabs} />
       )}
       {toDelete && (
         <DeleteModal r={toDelete} onClose={() => setToDelete(null)}

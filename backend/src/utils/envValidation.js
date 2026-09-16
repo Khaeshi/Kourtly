@@ -23,8 +23,8 @@ export function validatePaymentEnv() {
   }
 
   const provider = (process.env.PAYMENT_PROVIDER || 'cocoart').toLowerCase();
-  if (provider !== 'cocoart') {
-    throw new Error(`Unsupported PAYMENT_PROVIDER "${provider}". Current supported provider: cocoart`);
+  if (provider !== 'cocoart' && !(provider === 'mock' && process.env.NODE_ENV !== 'production')) {
+    throw new Error(`Unsupported PAYMENT_PROVIDER "${provider}". Current supported provider: cocoart or mock for local development`);
   }
 
   const aiProvider = (process.env.AI_PROVIDER || 'anthropic').toLowerCase();

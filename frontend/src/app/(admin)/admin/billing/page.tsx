@@ -549,7 +549,7 @@ export default function BillingPage() {
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-semibold text-gray-900 truncate">{tab.guestName}</p>
                           <p className="text-[0.65rem] text-gray-400 font-mono truncate">
-                            {tab.timeSlot} · {tab.duration}h
+                            {tab.date} · {tab.timeSlot} · {tab.duration}h
                           </p>
                         </div>
                         <span className={`font-mono text-sm font-semibold shrink-0 ${tab.total > 0 ? 'text-yellow-900' : 'text-gray-300'}`}>
@@ -589,7 +589,7 @@ export default function BillingPage() {
 
                       {/* Actions */}
                       <div className="px-4 py-2 border-t border-gray-100 bg-gray-50/60 flex gap-1.5">
-                        {tab.items.length > 0 && (
+                        {tab.total > 0 && (
                           <button
                             onClick={async e => {
                               e.stopPropagation();
@@ -602,18 +602,6 @@ export default function BillingPage() {
                             }}
                             className="flex-1 py-1.5 rounded-md border border-yellow-200 bg-yellow-50 text-yellow-900 text-xs font-semibold cursor-pointer hover:bg-yellow-100 transition-all">
                             Pay {fmt(tab.total)}
-                          </button>
-                        )}
-                        {(tab.paymentSummary?.remainingBalance ?? 0) > 0 && (
-                          <button
-                            onClick={async e => {
-                              e.stopPropagation();
-                              await collectReservationBalance(tab._id);
-                              sileo.success({ title: 'Balance collected', description: `${tab.guestName}` });
-                              loadAll();
-                            }}
-                            className="flex-1 py-1.5 rounded-md border border-blue-200 bg-blue-50 text-blue-700 text-xs font-semibold cursor-pointer hover:bg-blue-100 transition-all">
-                            Collect Balance
                           </button>
                         )}
                         <button
@@ -862,7 +850,7 @@ export default function BillingPage() {
             </>
           )}
 
-          {/* ── Reservation History ── */}
+         {/* ── Reservation History ── */}
           {historyTab === 'reservations' && (
             <>
               <div className="hidden sm:block bg-white border border-blue-100 rounded-xl overflow-hidden">
@@ -879,7 +867,7 @@ export default function BillingPage() {
                     style={{ gridTemplateColumns: '1fr 70px 140px 90px 80px 90px', borderBottom: i < (resHistory?.tabs.length ?? 0) - 1 ? '1px solid #f0f4ff' : 'none' }}>
                     <div className="min-w-0">
                       <p className="text-sm font-medium text-gray-700 truncate">{tab.guestName}</p>
-                      <p className="text-[0.65rem] text-gray-400 font-mono">{tab.timeSlot} · {tab.duration}h</p>
+                      <p className="text-[0.65rem] text-gray-400 font-mono">{tab.date} · {tab.timeSlot} · {tab.duration}h</p>
                     </div>
                     <span className="text-xs font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded w-fit">C{tab.court}</span>
                     <div className="flex flex-wrap gap-1">
@@ -894,17 +882,29 @@ export default function BillingPage() {
                     <span className="font-mono text-sm font-semibold text-yellow-900">{fmt(tab.total)}</span>
                     <div>
                       {tab.status === 'unpaid' ? (
-                        <button onClick={async () => {
-                          await payReservationUnpaid(tab._id);
-                          sileo.success({ title: 'Paid', description: tab.guestName });
-                          loadHistory();
-                        }} className="text-[0.65rem] font-semibold px-2 py-0.5 rounded-full border border-orange-300 bg-orange-50 text-orange-600 cursor-pointer hover:bg-orange-100">
-                          Unpaid — Collect
-                        </button>
-                      ) : (
-                        <span className="text-[0.65rem] font-semibold text-green-600 bg-green-50 px-2 py-0.5 rounded-full border border-green-200">Paid</span>
-                      )}
-                    </div>
+                          <button onClick={async () => {
+                            await payReservationUnpaid(tab._id);
+                            sileo.success({ title: 'Paid', description: tab.guestName });
+                            loadHistory();
+                          }} className="text-[0.65rem] font-semibold px-2 py-0.5 rounded-full border border-orange-300 bg-orange-50 text-orange-600 cursor-pointer hover:bg-orange-100">
+                            Unpaid — Collect
+                          </button>
+                        ) : tab.status === 'open' ? (
+                          tab.total > 0 ? (
+                            <button onClick={async () => {
+                              await payReservationTab(tab._id);
+                              sileo.success({ title: 'Paid!', description: tab.guestName });
+                              loadHistory();
+                            }} className="text-[0.65rem] font-semibold px-2 py-0.5 rounded-full border border-blue-300 bg-blue-50 text-blue-700 cursor-pointer hover:bg-blue-100">
+                              Pay {fmt(tab.total)}
+                            </button>
+                          ) : (
+                            <span className="text-[0.65rem] font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200">Open</span>
+                          )
+                        ) : (
+                          <span className="text-[0.65rem] font-semibold text-green-600 bg-green-50 px-2 py-0.5 rounded-full border border-green-200">Paid</span>
+                        )}
+                      </div>
                     <span className="font-mono text-[0.65rem] text-gray-400">{tab.date}</span>
                   </div>
                 ))}

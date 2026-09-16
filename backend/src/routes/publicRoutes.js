@@ -11,8 +11,15 @@ import {
 import { transitionReservationPayment } from '../lib/reservationStateMachine.js';
 import { createPaymentLink, getPaymentProvider } from '../lib/payments/index.js';
 import { hasModule, MODULES } from '../lib/moduleEntitlements.js';
+import { emitCourtEvent } from '../lib/emitCourtEvent.js'; 
 
 const router = express.Router();
+
+function emitReservationEvent(req, publicRef, payload = {}) {
+  const io = req.app.get('io');
+  if (!io || !publicRef) return;
+  io.to(`reservation:${publicRef}`).emit('reservation:updated', payload);
+}
 
 function buildPublicRef() {
   return `RSV-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`.toUpperCase();
@@ -250,6 +257,10 @@ router.post('/courts/:slug/reserve', async (req, res) => {
       throw paymentError;
     }
 
+    req.courtId = String(courtId); 
+    emitCourtEvent(req, 'reservation:updated', { action: 'created', reservationId: reservation._id, status: reservation.status });
+    emitCourtEvent(req, 'analytics:refresh', { source: 'reservations' });
+
     res.status(201).json({
       ...reservation.toObject(),
       amountDue:
@@ -334,6 +345,10 @@ router.post('/courts/:slug/reservations/:publicRef/mock-pay', async (req, res) =
     reservation.remainingBalanceAmount = Math.max(0, Number(reservation.reservationFeeAmount || 0) - payableBase);
     reservation.paidAt = new Date();
     await reservation.save();
+    req.courtId = String(court._id);
+    emitReservationEvent(req, reservation.publicRef, { action: 'paid', reservationId: reservation._id });
+    emitCourtEvent(req, 'reservation:updated', { action: 'paid', reservationId: reservation._id, status: reservation.status });
+    emitCourtEvent(req, 'analytics:refresh', { source: 'reservations' });
     res.json({ ok: true, status: reservation.status, paymentStatus: reservation.paymentStatus });
   } catch (err) {
     res.status(400).json({ error: err.message });
