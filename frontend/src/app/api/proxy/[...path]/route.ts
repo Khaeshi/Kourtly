@@ -1,20 +1,10 @@
 import { auth } from '@/auth';
 import { NextRequest, NextResponse } from 'next/server';
-import crypto from 'node:crypto';
+import { createInternalAssertion } from '@/lib/internalAuthClient';
 
 export const dynamic = 'force-dynamic';
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
-
-function createInternalAssertion(user: { email?: string | null }) {
-  const secret = process.env.PLAYKOU_INTERNAL_AUTH_SECRET || process.env.NEXTAUTH_SECRET || process.env.AUTH_SECRET;
-  if (!secret || !user.email) throw new Error('Internal auth secret and user email are required.');
-
-  const now = Math.floor(Date.now() / 1000);
-  const payload = Buffer.from(JSON.stringify({ email: user.email.toLowerCase(), iat: now, exp: now + 300 })).toString('base64url');
-  const signature = crypto.createHmac('sha256', secret).update(payload).digest('base64url');
-  return `${payload}.${signature}`;
-}
 
 async function proxyRequest(req: NextRequest, params: Promise<{ path: string[] }>, method: string) {
   const session = await auth();
@@ -42,16 +32,19 @@ async function proxyRequest(req: NextRequest, params: Promise<{ path: string[] }
     return NextResponse.json({ error: 'Server authentication is not configured.' }, { status: 500 });
   }
 
-  const response = await fetch(url, {
-    method,
-    headers: {
-      'Content-Type': 'application/json',
-      'x-playkou-auth': internalAssertion,
-    },
-    body,
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json', 'x-playkou-auth': internalAssertion },
+      body,
+      signal: AbortSignal.timeout(10_000),
+    });
+  } catch (err) {
+    return NextResponse.json({ error: 'Upstream unavailable' }, { status: 502 });
+  }
 
-  // ✅ Safe JSON parse
+  // Safe JSON parse
   let data;
   try {
     data = await response.json();

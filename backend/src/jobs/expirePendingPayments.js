@@ -13,27 +13,38 @@ export function startExpirePendingPaymentsJob(io) {
     }).select('_id courtId');
 
     for (const reservation of expired) {
-      assertReservationTransition('approved_waiting_payment', 'expired');
-      assertPaymentTransition('awaiting_payment', 'expired');
-      const updated = await Reservation.findOneAndUpdate(
-        {
-          _id: reservation._id,
-          status: 'approved_waiting_payment',
-          paymentStatus: 'awaiting_payment',
-          paymentExpiresAt: { $lte: now },
-        },
-          { $set: { status: 'expired', paymentStatus: 'expired' }, $unset: { bookingSlots: 1 } },
-        { new: true }
-      ).lean();
+      try {
+        assertReservationTransition('approved_waiting_payment', 'expired');
+        assertPaymentTransition('awaiting_payment', 'expired');
 
-      if (!updated || !io) continue;
-      io.to(`court:${updated.courtId}`).emit('reservation:updated', {
-        action: 'expired',
-        reservationId: updated._id,
-      });
-      io.to(`court:${updated.courtId}`).emit('analytics:refresh', {
-        source: 'payments',
-      });
+        const updated = await Reservation.findOneAndUpdate(
+          {
+            _id: reservation._id,
+            status: 'approved_waiting_payment',
+            paymentStatus: 'awaiting_payment',
+            paymentExpiresAt: { $lte: now },
+          },
+          { $set: { status: 'expired', paymentStatus: 'expired' }, $unset: { bookingSlots: 1 } },
+          { new: true }
+        ).lean();
+
+        if (!updated || !io) continue;
+
+        io.to(`court:${updated.courtId}`).emit('reservation:updated', {
+          action: 'expired',
+          reservationId: updated._id,
+        });
+        io.to(`court:${updated.courtId}`).emit('analytics:refresh', {
+          source: 'payments',
+        });
+      } catch (err) {
+        console.error(
+          `[jobs] expirePendingPayments failed for reservation=${reservation._id}:`,
+          err.message
+        );
+        // No rethrow: this reservation stays in its current state and gets
+        // retried next interval, the rest of the batch still processes.
+      }
     }
   };
 
