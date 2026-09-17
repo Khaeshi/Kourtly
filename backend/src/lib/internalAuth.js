@@ -43,7 +43,10 @@ export async function getAuthenticatedUser(req) {
     return User.findOne({ email: assertion.email.toLowerCase() }).lean();
   }
 
-  if (process.env.NODE_ENV === 'test' && (req.headers['x-court-id'] || req.headers['x-user-role'] === 'superadmin')) {
+  const testBypassAllowed =
+    process.env.NODE_ENV === 'test' && process.env.ALLOW_TEST_AUTH_BYPASS === 'true';
+
+  if (testBypassAllowed && (req.headers['x-court-id'] || req.headers['x-user-role'] === 'superadmin')) {
     return {
       email: 'test@example.com',
       role: req.headers['x-user-role'] ?? 'user',

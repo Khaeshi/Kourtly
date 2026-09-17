@@ -6,6 +6,8 @@ import app from './src/app.js';
 import { validateCoreEnv, validatePaymentEnv } from './src/utils/envValidation.js';
 import { startExpirePendingPaymentsJob } from './src/jobs/expirePendingPayments.js';
 import { registerWeeklyReportCron } from './src/cron/weeklyReport.js';
+import { verifyInternalAssertion } from './src/lib/internalAuth.js';
+import User from './src/models/User.js';
 
 dotenv.config();
 validateCoreEnv();
@@ -29,12 +31,41 @@ const io = new Server(httpServer, {
 
 app.set('io', io);
 
+io.use(async (socket, next) => {
+  try {
+    const token = socket.handshake?.auth?.token;
+    const assertion = token ? verifyInternalAssertion(token) : null;
+
+    if (!assertion?.email) {
+      socket.data.verifiedCourtId = null;
+      return next();
+    }
+
+    const user = await User.findOne({ email: assertion.email.toLowerCase() }).lean();
+    if (!user) {
+      socket.data.verifiedCourtId = null;
+      return next();
+    }
+
+    socket.data.verifiedCourtId = user.role === 'superadmin' ? null : user.courtId ?? null;
+    socket.data.verifiedRole = user.role ?? 'user';
+    next();
+  } catch (err) {
+    next(err);
+  }
+});
+
 io.on('connection', (socket) => {
-  const courtId = socket.handshake?.auth?.courtId;
-  console.log('[socket] connected:', socket.id, 'courtId:', courtId);
-  if (courtId) socket.join(`court:${courtId}`);
+  console.log('[socket] connected:', socket.id, 'role:', socket.data.verifiedRole ?? 'anonymous');
+
+  if (socket.data.verifiedCourtId) {
+    socket.join(`court:${socket.data.verifiedCourtId}`);
+  }
+
   const publicRef = socket.handshake?.auth?.publicRef;
-  if (publicRef) socket.join(`reservation:${publicRef}`);
+  if (publicRef) {
+    socket.join(`reservation:${publicRef}`);
+  }
 });
 
 startExpirePendingPaymentsJob(io);

@@ -17,8 +17,8 @@ export async function tenantMiddleware(req, res, next) {
     '/api/users/me'          
   ];
 
-  if (skipTenantCheck.some(skipPath => req.path.startsWith(skipPath))) {
-    console.log('🔓 Skipping tenant for:', req.path);
+  if (skipTenantCheck.some(skipPath => req.path === skipPath || req.path.startsWith(skipPath + '/'))) {
+    console.log(' Skipping tenant for:', req.path);
     req.courtId = null;
     return next();
   }
