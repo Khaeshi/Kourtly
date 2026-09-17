@@ -42,8 +42,6 @@ export function startExpirePendingPaymentsJob(io) {
           `[jobs] expirePendingPayments failed for reservation=${reservation._id}:`,
           err.message
         );
-        // No rethrow: this reservation stays in its current state and gets
-        // retried next interval, the rest of the batch still processes.
       }
     }
   };

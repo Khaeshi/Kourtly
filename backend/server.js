@@ -2,6 +2,8 @@ import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import { createServer } from 'node:http';
 import { Server } from 'socket.io';
+import { createAdapter } from '@socket.io/redis-adapter'
+import { duplicateForPubSub } from './src/lib/redisClient.js';
 import app from './src/app.js';
 import { validateCoreEnv, validatePaymentEnv } from './src/utils/envValidation.js';
 import { startExpirePendingPaymentsJob } from './src/jobs/expirePendingPayments.js';
@@ -72,3 +74,7 @@ startExpirePendingPaymentsJob(io);
 registerWeeklyReportCron();
 
 httpServer.listen(PORT, '0.0.0.0', () => console.log(`Server running on port ${PORT}`));
+
+const pubClient = duplicateForPubSub('pub');
+const subClient = duplicateForPubSub('sub');
+io.adapter(createAdapter(pubClient, subClient));

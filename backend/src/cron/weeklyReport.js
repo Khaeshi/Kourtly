@@ -7,9 +7,6 @@ import {
 } from '../services/weeklySummary.js';
 
 async function processCourt(court, todayPHT) {
-  // Atomic claim: only one instance's update can match, since the condition
-  // requires lastSentDatePHT to NOT already be today. A second instance
-  // running the same query a moment later matches zero documents.
   const claimed = await Court.findOneAndUpdate(
     {
       _id: court._id,
@@ -25,7 +22,6 @@ async function processCourt(court, todayPHT) {
   );
 
   if (!claimed) {
-    // Another instance already claimed (or already sent) this court today.
     return;
   }
 
@@ -43,8 +39,6 @@ async function processCourt(court, todayPHT) {
       }
     );
   } catch (err) {
-    // Release the claim so a same-day manual retry isn't blocked by
-    // lastSentDatePHT already pointing at today.
     await Court.updateOne(
       { _id: court._id },
       {

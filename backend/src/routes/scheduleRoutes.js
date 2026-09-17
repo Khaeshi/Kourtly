@@ -4,10 +4,27 @@ import ScheduleBlock from '../models/ScheduleBlock.js';
 import Reservation from '../models/Reservation.js';
 import { getDayOfWeek, resolveSchedule, ALL_SLOTS, toMinutes } from '../utils/scheduleUtils.js';
 import { emitCourtEvent } from '../lib/emitCourtEvent.js';
+import { redis } from '../lib/redisClient.js';
 
 const router = express.Router();
+const RESOLVE_CACHE_TTL_SECONDS = 120;
+
+
 
 const DAY_NAMES = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+
+
+function resolveCacheKey(courtId, date) {
+  return `schedule:resolve:${courtId}:${date}`;
+}
+
+async function invalidateResolveCache(courtId, date) {
+  try {
+    await redis.del(resolveCacheKey(courtId, date));
+  } catch (err) {
+    console.error('[schedule] cache invalidation failed:', err.message);
+  }
+}
 
 // ── Default seed data ─────────────────────────────────────────────────────────
 // Called once to initialise rules if none exist yet.
@@ -129,6 +146,7 @@ router.post('/blocks', async (req, res) => {
 
     const block = await ScheduleBlock.create({ courtId: req.courtId, date, courts, blockType, startTime, endTime, reason });
     emitCourtEvent(req, 'schedule:updated', { action: 'block_created', blockId: block._id });
+    await invalidateResolveCache(req.courtId, date);
     res.status(201).json(block);
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -144,6 +162,7 @@ router.delete('/blocks/:id', async (req, res) => {
     const deleted = await ScheduleBlock.findOneAndDelete({ _id: req.params.id, courtId: req.courtId });
     if (!deleted) return res.status(404).json({ error: 'Block not found.' });
     emitCourtEvent(req, 'schedule:updated', { action: 'block_deleted', blockId: req.params.id });
+    await invalidateResolveCache(req.courtId, deleted.date);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -160,25 +179,42 @@ router.get('/resolve', async (req, res) => {
     const { date } = req.query;
     if (!date) return res.status(400).json({ error: 'date is required.' });
 
+    const cacheKey = resolveCacheKey(req.courtId, date);
+
+    try {
+      const cached = await redis.get(cacheKey);
+      if (cached) return res.json(JSON.parse(cached));
+    } catch (err) {
+      console.error('[schedule] cache read failed, falling back to DB:', err.message);
+    }
+
     await seedDefaultRules(req.courtId);
 
     const dayOfWeek = getDayOfWeek(date);
     const [rule, blocks] = await Promise.all([
-      ScheduleRule.findOne({ courtId: req.courtId, dayOfWeek }).lean(),  
-      ScheduleBlock.find({ courtId: req.courtId, date }).lean(),       
+      ScheduleRule.findOne({ courtId: req.courtId, dayOfWeek }).lean(),
+      ScheduleBlock.find({ courtId: req.courtId, date }).lean(),
     ]);
 
     const { isFullyClosed, baseSlots, perCourt } = resolveSchedule(rule, blocks);
 
-    res.json({
+    const payload = {
       date,
       dayOfWeek,
-      dayName:      DAY_NAMES[dayOfWeek],
+      dayName: DAY_NAMES[dayOfWeek],
       isFullyClosed,
-      baseSlots,    // slots open per weekly rule (before reservations)
-      perCourt,     // per-court admin blocks
-      blocks,       // raw blocks for admin display
-    });
+      baseSlots,
+      perCourt,
+      blocks,
+    };
+
+    try {
+      await redis.set(cacheKey, JSON.stringify(payload), 'EX', RESOLVE_CACHE_TTL_SECONDS);
+    } catch (err) {
+      console.error('[schedule] cache write failed:', err.message);
+    }
+
+    res.json(payload);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
