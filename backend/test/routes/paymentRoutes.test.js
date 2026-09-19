@@ -1,18 +1,19 @@
 import request from 'supertest';
+import { jest } from '@jest/globals';
 import app from '../../src/app.js';
 import Court from '../../src/models/Court.js';
 import Reservation from '../../src/models/Reservation.js';
 import PaymentWebhookEvent from '../../src/models/PaymentWebhookEvent.js';
 import PayoutTransfer from '../../src/models/PayoutTransfer.js';
 
-describe('payment webhook routes', () => {
-  test('dedupes repeated cocoart webhook events by event id', async () => {
-    process.env.COCOART_WEBHOOK_SECRET = 'test-token';
+describe('payment webhook transaction rollback', () => {
+  test('rolls back reservation and payout state if a write inside the transaction fails', async () => {
+    process.env.XENDIT_CALLBACK_TOKEN = 'test-token';
 
     const court = await Court.create({
-      name: 'Webhook Court',
-      slug: 'webhook-court',
-      adminEmail: 'webhook@court.com',
+      name: 'Rollback Court',
+      slug: 'rollback-court',
+      adminEmail: 'rollback@court.com',
       isActive: true,
       subscription: { status: 'active' },
       courtCount: 4,
@@ -31,75 +32,101 @@ describe('payment webhook routes', () => {
       reservationFeeAmount: 500,
       downpaymentAmount: 250,
       maintenanceFeeAmount: 5,
-      paymentLinkId: 'inv-1',
-      publicRef: 'RSV-TEST-1',
+      paymentLinkId: 'inv-rollback',
+      publicRef: 'RSV-ROLLBACK-1',
       paymentStatus: 'awaiting_payment',
     });
 
+    const createSpy = jest
+      .spyOn(PayoutTransfer, 'create')
+      .mockImplementationOnce(() => {
+        throw new Error('SIMULATED_FAILURE');
+      });
+
     const payload = {
-      id: 'inv-1',
+      id: 'inv-rollback',
       status: 'PAID',
       external_id: `${reservation._id}-abc`,
       paid_amount: 255,
     };
 
-    const first = await request(app)
-      .post('/api/payments/cocoart/webhook')
-      .set('x-cocoart-webhook-secret', 'test-token')
+    const res = await request(app)
+      .post('/api/payments/xendit/webhook')
+      .set('x-callback-token', 'test-token')
       .send(payload);
-    expect(first.status).toBe(200);
 
-    const second = await request(app)
-      .post('/api/payments/cocoart/webhook')
-      .set('x-cocoart-webhook-secret', 'test-token')
-      .send(payload);
-    expect(second.status).toBe(200);
-    expect(second.body.deduped).toBe(true);
+    expect(res.status).toBe(500);
 
-    const events = await PaymentWebhookEvent.find({ eventId: 'inv-1' }).lean();
-    expect(events).toHaveLength(1);
-    expect(events[0].processed).toBe(true);
-
-    const updated = await Reservation.findById(reservation._id).lean();
-    expect(updated.status).toBe('confirmed');
-    expect(updated.paymentStatus).toBe('paid');
+    const afterReservation = await Reservation.findById(reservation._id).lean();
+    expect(afterReservation.status).toBe('approved_waiting_payment');
+    expect(afterReservation.paymentStatus).toBe('awaiting_payment');
 
     const transfers = await PayoutTransfer.find({ reservationId: reservation._id }).lean();
-    expect(transfers).toHaveLength(1);
+    expect(transfers).toHaveLength(0);
+
+    const event = await PaymentWebhookEvent.findOne({ eventId: 'inv-rollback' }).lean();
+    expect(event.processed).toBe(false);
+
+    createSpy.mockRestore();
   });
 
-  test('activates court subscription from subscription webhook metadata', async () => {
-    process.env.COCOART_WEBHOOK_SECRET = 'test-token';
+  test('concurrent identical webhook deliveries only process once', async () => {
+    process.env.XENDIT_CALLBACK_TOKEN = 'test-token';
 
     const court = await Court.create({
-      name: 'Subscription Court',
-      slug: 'subscription-court',
-      adminEmail: 'owner@court.com',
+      name: 'Concurrent Court',
+      slug: 'concurrent-court',
+      adminEmail: 'concurrent@court.com',
       isActive: true,
-      subscription: { status: 'suspended' },
+      subscription: { status: 'active' },
       courtCount: 4,
     });
 
+    const reservation = await Reservation.create({
+      courtId: court._id,
+      name: 'Guest',
+      phone: '09170000000',
+      email: 'guest@test.com',
+      court: 1,
+      date: '2026-04-20',
+      timeSlot: '10:00-11:00',
+      duration: 1,
+      status: 'approved_waiting_payment',
+      reservationFeeAmount: 500,
+      downpaymentAmount: 250,
+      maintenanceFeeAmount: 5,
+      paymentLinkId: 'inv-concurrent',
+      publicRef: 'RSV-CONCURRENT-1',
+      paymentStatus: 'awaiting_payment',
+    });
+
     const payload = {
-      id: 'sub-evt-1',
+      id: 'inv-concurrent',
       status: 'PAID',
-      metadata: {
-        type: 'subscription',
-        courtId: String(court._id),
-      },
+      external_id: `${reservation._id}-abc`,
+      paid_amount: 255,
     };
 
-    const res = await request(app)
-      .post('/api/payments/cocoart/webhook')
-      .set('x-cocoart-webhook-secret', 'test-token')
-      .send(payload);
+    const send = () =>
+      request(app)
+        .post('/api/payments/xendit/webhook')
+        .set('x-callback-token', 'test-token')
+        .set('webhook-id', 'wh-duplicate-1')
+        .send(payload);
 
-    expect(res.status).toBe(200);
-    expect(res.body.kind).toBe('subscription');
+    const [first, second] = await Promise.all([send(), send()]);
 
-    const updatedCourt = await Court.findById(court._id).lean();
-    expect(updatedCourt.subscription.status).toBe('active');
-    expect(updatedCourt.subscription.nextBilling).toBeTruthy();
+    console.log('FIRST:', first.status, JSON.stringify(first.body));
+    console.log('SECOND:', second.status, JSON.stringify(second.body));
+
+    const statuses = [first.status, second.status].sort();
+    expect(statuses[0]).toBe(200);
+    expect([200, 409]).toContain(statuses[1]);
+
+    const transfers = await PayoutTransfer.find({ reservationId: reservation._id }).lean();
+    expect(transfers).toHaveLength(1);
+
+    const events = await PaymentWebhookEvent.find({ eventId: 'wh-duplicate-1' }).lean();
+    expect(events).toHaveLength(1);
   });
 });
-

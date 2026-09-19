@@ -1,12 +1,14 @@
 import mongoose from 'mongoose';
-import { MongoMemoryServer } from 'mongodb-memory-server';
+import { MongoMemoryReplSet } from 'mongodb-memory-server';
 
 let mongoServer;
 
 beforeAll(async () => {
-  mongoServer = await MongoMemoryServer.create();
+  mongoServer = await MongoMemoryReplSet.create({
+    replSet: { count: 1 }, // single-node replica set, minimum needed for transactions
+  });
   await mongoose.connect(mongoServer.getUri());
-});
+}, 30000); // replica set election takes longer to spin up than a standalone instance, default 5s timeout may not be enough
 
 beforeEach(async () => {
   const collections = mongoose.connection.collections;

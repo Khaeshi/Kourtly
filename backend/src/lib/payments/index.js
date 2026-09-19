@@ -1,8 +1,8 @@
-import { createCocoartPayment, isCocoartWebhookAuthorized } from '../../services/cocoartService.js';
+import { createXenditInvoice, isXenditWebhookAuthorized } from '../../services/xenditService.js';
 
 export function getPaymentProvider() {
   if (process.env.PAYMENT_PROVIDER) return process.env.PAYMENT_PROVIDER.toLowerCase();
-  return ['production', 'test'].includes(process.env.NODE_ENV) ? 'cocoart' : 'mock';
+  return ['production', 'test'].includes(process.env.NODE_ENV) ? 'xendit' : 'mock';
 }
 
 export async function createPaymentLink({
@@ -23,10 +23,10 @@ export async function createPaymentLink({
       qr_string: 'MOCK-PAYMENT',
     };
   }
-  if (provider !== 'cocoart') {
+  if (provider !== 'xendit') {
     throw new Error(`Unsupported payment provider: ${provider}`);
   }
-  return createCocoartPayment({
+  return createXenditInvoice({
     referenceId,
     amount,
     description,
@@ -40,6 +40,6 @@ export async function createPaymentLink({
 
 export function verifyWebhookSignature(payload, headers) {
   const provider = getPaymentProvider();
-  if (provider !== 'cocoart') return false;
-  return isCocoartWebhookAuthorized(headers, payload);
+  if (provider !== 'xendit') return false;
+  return isXenditWebhookAuthorized(headers);
 }

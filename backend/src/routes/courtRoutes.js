@@ -187,15 +187,15 @@ router.post('/me/subscription/upgrade', async (req, res) => {
     if (!target.price) return res.status(400).json({ error: 'This tier requires a tailored quote. Please contact support.' });
 
     const expiryDate = new Date(Date.now() + 24 * 60 * 60 * 1000);
-    const payment = await createPaymentLink({
+      const payment = await createPaymentLink({
       amount: target.price,
       description: `${target.label} subscription for ${court.name}`,
-      referenceId: `SUB-${court._id}-${Date.now()}`,
+      referenceId: `SUB-${court._id}-${tier}-${Date.now()}`,
       payerEmail: court.adminEmail,
       successUrl: `${process.env.APP_BASE_URL || 'http://localhost:3000'}/admin/settings?upgrade=success`,
       failureUrl: `${process.env.APP_BASE_URL || 'http://localhost:3000'}/admin/settings?upgrade=failed`,
       expiryDate,
-      metadata: { type: 'subscription', courtId: String(court._id), tier },
+      metadata: { type: 'subscription', courtId: String(court._id), tier }, // kept for visibility in Xendit's own dashboard only, not read back by the webhook
     });
 
     res.json({ tier, paymentUrl: payment.payment_url || payment.checkout_url || '', paymentId: payment.id || payment.payment_id || '' });

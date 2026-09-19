@@ -81,8 +81,8 @@ const CourtSchema = new mongoose.Schema({
   settings: {
     timezone:     { type: String, default: 'Asia/Manila' },
     currency:     { type: String, default: 'PHP' },
-    hourlyRate:   { type: Number, default: 210 },          // per hour
-    reservationFee: { type: Number, default: 210 },        // legacy fallback
+    hourlyRate:   { type: Number, default: 210 },       
+    reservationFee: { type: Number, default: 210 },      
     weeklySummary: { type: Boolean, default: true },
   },
 
@@ -98,21 +98,20 @@ const CourtSchema = new mongoose.Schema({
 
   // ── Payout Destination (admin) ─────────────────────────────────────────────
   payout: {
-    recipientCode:    { type: String, default: '' }, // Cocoart recipient code
+    recipientCode:    { type: String, default: '' }, 
     accountName:      { type: String, default: '' },
-    channelCode:      { type: String, default: '' }, // e.g. BPI, BDO, GCASH, MAYA
+    channelCode:      { type: String, default: '' }, 
     accountNumberLast4: { type: String, default: '' },
     isConfigured:     { type: Boolean, default: false },
   },
 
   // ── Visibility ──────────────────────────────────────────────────────────────
-  isPublic:  { type: Boolean, default: false }, // show on landing page once active
-  isActive:  { type: Boolean, default: true  }, // false = suspended/deleted
+  isPublic:  { type: Boolean, default: false }, 
+  isActive:  { type: Boolean, default: true  }, 
 
 }, { timestamps: true });
 
 // Indexes
-CourtSchema.index({ slug: 1 });
 CourtSchema.index({ 'subscription.status': 1 });
 CourtSchema.index({ isPublic: 1, isActive: 1 });
 

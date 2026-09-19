@@ -21,7 +21,7 @@ router.get('/', async (req, res) => {
 
 router.post('/:id/retry', async (req, res) => {
   return res.status(501).json({
-    error: 'Automatic payout retry is disabled until Cocoart disbursement integration is implemented.',
+    error: 'Automatic payout retry is not yet implemented.',
   });
 });
 
