@@ -453,12 +453,12 @@ export default function SettingsPage() {
         </Field>
       </Section>
 
-      <Section title="Payout Destination (Cocoart Recipient)">
+      <Section title="Payout Destination (Xendit Recipient)">
         <p className="text-xs text-gray-500">
           Configure recipient details for reservation payout disbursements. Sensitive bank credentials are not stored here.
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <Field label="Recipient Code *" hint="Provided by Cocoart recipient setup">
+          <Field label="Recipient Code *" hint="Provided by Xendit recipient setup">
             <input value={form.payoutRecipientCode} onChange={e => set('payoutRecipientCode', e.target.value)} className={INPUT} />
           </Field>
           <Field label="Channel Code" hint="e.g. BDO, BPI, GCASH, MAYA">

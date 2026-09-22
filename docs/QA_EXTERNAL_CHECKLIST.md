@@ -22,10 +22,10 @@ Use this sheet for manual external QA (browser + API tool like Postman/Insomnia 
 
 - Backend and frontend are running.
 - Required env vars set in backend:
-  - `COCOART_API_KEY`
-  - `COCOART_WEBHOOK_SECRET`
+  - `XENDIT_API_KEY`
+  - `XENDIT_WEBHOOK_SECRET`
   - `APP_BASE_URL`
-  - `PAYMENT_PROVIDER=cocoart`
+  - `PAYMENT_PROVIDER=XENDIT`
   - `PAYMENT_HOLD_MINUTES=10` (or your chosen value)
 - If testing AI features (Phase 3–5), configure one:
   - **Anthropic**
@@ -149,7 +149,7 @@ Notes:
 ### PAY-005 - Invalid webhook signature rejection
 - Priority: P0
 - Steps:
-  1. Send webhook with wrong/missing `x-cocoart-webhook-secret`.
+  1. Send webhook with wrong/missing `x-XENDIT-webhook-secret`.
 - Expected:
   - Request rejected (`401 Unauthorized`).
   - No reservation/payment state mutation occurs.

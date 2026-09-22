@@ -270,7 +270,7 @@ router.post('/ask', async (req, res) => {
     try {
       const answer = await generateAIText({
         maxTokens: 260,
-        system: "You are an analytics assistant for PlayKou court managers in the Philippines. You receive a question and structured analytics data (JSON) for their court. Answer the question directly using the data provided. Rules: Be specific: cite numbers, dates, percentages. If the data doesn't answer the question, say so clearly. Keep answers under 120 words. Taglish questions are fine - answer in plain English. Never suggest features that don't exist in the platform.",
+        system: "You are an analytics assistant for Kourtly court managers in the Philippines. You receive a question and structured analytics data (JSON) for their court. Answer the question directly using the data provided. Rules: Be specific: cite numbers, dates, percentages. If the data doesn't answer the question, say so clearly. Keep answers under 120 words. Taglish questions are fine - answer in plain English. Never suggest features that don't exist in the platform.",
         prompt: `Question: ${question}\n\nAnalytics data:\n${JSON.stringify(dataUsed)}`,
       });
       if (!answer) throw new Error('Empty AI answer');

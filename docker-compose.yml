@@ -1,0 +1,87 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: kourtly-backend
+    ports:
+      - "5000:5000"
+    environment:
+      NODE_ENV: production
+      MONGODB_URI: mongodb://mongo:27017/kourtly
+      REDIS_URL: redis://redis:6379
+      APP_BASE_URL: http://localhost:3000
+      PAYMENT_PROVIDER: xendit
+      PAYMENT_HOLD_MINUTES: "10"
+      KOURTLY_INTERNAL_AUTH_SECRET: dev-secret-key-change-in-production
+      XENDIT_API_KEY: ${XENDIT_API_KEY:-mock-key}
+      XENDIT_WEBHOOK_VERIFICATION_TOKEN: ${XENDIT_WEBHOOK_VERIFICATION_TOKEN:-mock-token}
+      AI_PROVIDER: local-llama
+      LOCAL_LLM_ENDPOINT: http://localhost:11434/api/generate
+      LOCAL_LLM_MODEL: llama3
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - kourtly-network
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: kourtly-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_API_URL: http://localhost:5000
+    depends_on:
+      - backend
+    networks:
+      - kourtly-network
+    restart: unless-stopped
+
+  mongo:
+    image: mongo:7.0
+    container_name: kourtly-mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    environment:
+      MONGO_INITDB_DATABASE: kourtly
+    networks:
+      - kourtly-network
+    restart: unless-stopped
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7
+    container_name: kourtly-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - kourtly-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  mongo-data:
+  redis-data:
+
+networks:
+  kourtly-network:
+    driver: bridge

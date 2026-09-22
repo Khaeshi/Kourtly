@@ -1,6 +1,6 @@
 import express from 'express';
 import cors from 'cors';
-
+import helmet from 'helmet'
 import userRoutes from './routes/userRoutes.js';
 import playerRoutes from './routes/playerRoutes.js';
 import queueRoutes from './routes/queueRoutes.js';
@@ -20,6 +20,9 @@ import { requireModule, MODULES } from './lib/moduleEntitlements.js';
 import { notFound, errorHandler } from './middleware/errorMiddleware.js';
 
 const app = express();
+app.use(helmet({
+   crossOriginResourcePolicy: { policy: "cross-origin" }
+}));
 
 app.use(cors({
   origin: [

@@ -11,7 +11,7 @@ export function validateCoreEnv() {
 }
 
 export function validatePaymentEnv() {
-  const required = ['COCOART_API_KEY', 'COCOART_WEBHOOK_SECRET', 'APP_BASE_URL'];
+  const required = ['XENDIT_API_KEY', 'XENDIT_WEBHOOK_VERIFICATION_TOKEN', 'APP_BASE_URL'];
   const missingVars = missing(required);
 
   if (missingVars.length) {
@@ -22,9 +22,9 @@ export function validatePaymentEnv() {
     console.warn(`[env] ${msg}`);
   }
 
-  const provider = (process.env.PAYMENT_PROVIDER || 'cocoart').toLowerCase();
-  if (provider !== 'cocoart' && !(provider === 'mock' && process.env.NODE_ENV !== 'production')) {
-    throw new Error(`Unsupported PAYMENT_PROVIDER "${provider}". Current supported provider: cocoart or mock for local development`);
+  const provider = (process.env.PAYMENT_PROVIDER || 'xendit').toLowerCase();
+  if (provider !== 'xendit' && !(provider === 'mock' && process.env.NODE_ENV !== 'production')) {
+    throw new Error(`Unsupported PAYMENT_PROVIDER "${provider}". Current supported provider: xendit or mock for local development`);
   }
 
   const aiProvider = (process.env.AI_PROVIDER || 'anthropic').toLowerCase();
@@ -35,4 +35,3 @@ export function validatePaymentEnv() {
     console.warn('[env] LOCAL_LLM_ENDPOINT not set. Defaulting to http://localhost:11434/api/generate.');
   }
 }
-

@@ -100,7 +100,7 @@ describe('tenant isolation (Court A cannot access Court B resources by id)', () 
       items: [{ name: 'Drink', price: 50, quantity: 1, addedAt: new Date() }],
       total: 50,
       status: 'open',
-      paymentSummary: { reservationFee: 500, paidOnline: 500, remainingBalance: 0, source: 'cocoart' },
+      paymentSummary: { reservationFee: 500, paidOnline: 500, remainingBalance: 0, source: 'xendit' },
     });
 
     const res = await request(app)

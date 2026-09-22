@@ -24,12 +24,12 @@ Current script notes:
 - `dev` runs `node server.js`
 - `test` runs Jest in-band (`node --experimental-vm-modules ...jest --runInBand`)
 
-## Payment Environment (Cocoart)
+## Payment Environment (Xendit)
 
 Required for production payment flow:
 
-- `COCOART_API_KEY`
-- `COCOART_WEBHOOK_SECRET`
+- `Xendit_API_KEY`
+- `Xendit_WEBHOOK_SECRET`
 - `APP_BASE_URL`
 - `MONGODB_URI`
 
@@ -40,8 +40,8 @@ Runtime behavior:
 
 ## Production Readiness Checklist
 
-- Configure Cocoart webhook URL to `POST /api/payments/cocoart/webhook`.
-- Set `COCOART_WEBHOOK_SECRET` to match Cocoart callback secret.
+- Configure Xendit webhook URL to `POST /api/payments/Xendit/webhook`.
+- Set `Xendit_WEBHOOK_SECRET` to match Xendit callback secret.
 - Ensure each court has a configured payout recipient code in admin settings.
 - Verify public booking flow in sandbox:
   - create reservation

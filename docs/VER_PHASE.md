@@ -10,8 +10,8 @@ New statuses include pending_admin, approved_waiting_payment, expired, etc.
 Added payment metadata: option, fee amounts, payment link refs, expiry, paid timestamps
 Payment provider integration skeleton (backend)
 
-Added backend/src/services/cocoartService.js
-Added invoice creation using Cocoart API
+Added backend/src/services/xenditService.js
+Added invoice creation using xendit API
 Added webhook token verification
 Admin approve/cancel payment flow
 
@@ -29,7 +29,7 @@ Marks expired if TTL already passed when fetched
 Webhook processing
 
 Added backend/src/routes/paymentRoutes.js
-Added POST /api/payments/cocoart/webhook
+Added POST /api/payments/xendit/webhook
 validates callback token
 dedupes already-paid reservation
 sets reservation confirmed on paid
@@ -88,7 +88,7 @@ account number (stored as last4 only)
 Disbursement logging + execution hook
 
 Added PayoutTransfer model to track payout attempts/status.
-On successful Cocoart payment webhook:
+On successful xendit payment webhook:
 create payout transfer record
 attempt disbursement via provider if recipient configured
 persist success/failure and disbursement ID
@@ -198,7 +198,7 @@ Runtime env validation
 Added backend/src/utils/envValidation.js
 Startup now validates:
 MONGODB_URI (required always)
-COCOART_API_KEY, COCOART_WEBHOOK_SECRET, APP_BASE_URL
+xendit_API_KEY, xendit_WEBHOOK_SECRET, APP_BASE_URL
 Behavior:
 development = warning on missing payment env
 production = fail fast if payment env missing

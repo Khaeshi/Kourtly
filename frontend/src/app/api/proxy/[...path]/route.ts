@@ -36,7 +36,7 @@ async function proxyRequest(req: NextRequest, params: Promise<{ path: string[] }
   try {
     response = await fetch(url, {
       method,
-      headers: { 'Content-Type': 'application/json', 'x-playkou-auth': internalAssertion },
+      headers: { 'Content-Type': 'application/json', 'x-kourtly-auth': internalAssertion },
       body,
       signal: AbortSignal.timeout(10_000),
     });

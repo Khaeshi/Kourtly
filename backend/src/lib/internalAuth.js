@@ -1,12 +1,12 @@
 import crypto from 'node:crypto';
 import User from '../models/User.js';
 
-const AUTH_HEADER = 'x-playkou-auth';
+const AUTH_HEADER = 'x-kourtyl-auth';
 const MAX_CLOCK_SKEW_SECONDS = 30;
 const MAX_ASSERTION_AGE_SECONDS = 5 * 60;
 
 function getSecret() {
-  return process.env.PLAYKOU_INTERNAL_AUTH_SECRET || process.env.NEXTAUTH_SECRET || '';
+  return process.env.KOURTLY_INTERNAL_AUTH_SECRET || process.env.NEXTAUTH_SECRET || '';
 }
 
 export function verifyInternalAssertion(value) {

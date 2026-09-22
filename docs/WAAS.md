@@ -112,9 +112,9 @@ Queue management, billing tabs, reservations, scheduling, analytics dashboard, s
 
 ---
 
-## Phase 2 — Payment Stabilization (Provider + Cocoart) ✅
+## Phase 2 — Payment Stabilization (Provider + Xendit) ✅
 
-> Current repo state is **Cocoart-based** (Xendit is not the active provider).
+> Current repo state is **Xendit-based** (Xendit is not the active provider).
 
 ### What is shipped
 
@@ -125,10 +125,10 @@ Queue management, billing tabs, reservations, scheduling, analytics dashboard, s
   - `createPaymentLink(...)` (supports `metadata`)
   - `verifyWebhookSignature(...)`
 
-**Cocoart integration**
+**Xendit integration**
 
-- Service: `backend/src/services/cocoartService.js`
-- Webhook path: `/api/payments/cocoart/webhook`
+- Service: `backend/src/services/XenditService.js`
+- Webhook path: `/api/payments/Xendit/webhook`
 - Xendit service removed: `backend/src/services/xenditService.js` deleted
 - Reservation payment fields are generic:
   - `paymentLinkId`, `paymentUrl`, `paymentQrString`
@@ -156,9 +156,9 @@ Public payment redirects follow the actual route shape:
 ### Env vars (Phase 2)
 
 ```bash
-PAYMENT_PROVIDER=cocoart
-COCOART_API_KEY=
-COCOART_WEBHOOK_SECRET=
+PAYMENT_PROVIDER=Xendit
+Xendit_API_KEY=
+Xendit_WEBHOOK_SECRET=
 APP_BASE_URL=
 PAYMENT_HOLD_MINUTES=10
 ```

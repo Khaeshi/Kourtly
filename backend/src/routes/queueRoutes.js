@@ -138,7 +138,7 @@ router.post('/proofread', async (req, res) => {
     try {
       aiNarrative = await generateAIText({
         maxTokens: 180,
-        system: 'You are a badminton queue assistant for PlayKou. Review a generated match and explain if it is fair based on player levels and match type. Keep response under 90 words. Give practical, non-hyped reasoning.',
+        system: 'You are a badminton queue assistant for Kourtly. Review a generated match and explain if it is fair based on player levels and match type. Keep response under 90 words. Give practical, non-hyped reasoning.',
         prompt: `Match type: ${matchType || 'auto'}
 Team A: ${t1.map((p) => `${p.name}(${p.level})`).join(', ')}
 Team B: ${t2.map((p) => `${p.name}(${p.level})`).join(', ')}

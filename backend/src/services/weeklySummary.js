@@ -62,7 +62,7 @@ export async function getWeeklyAnalytics(courtId) {
 export async function generateSummary(analyticsData) {
   const text = await generateAIText({
     maxTokens: 350,
-    system: 'You are a court management assistant for PlayKou, a sports booking platform in the Philippines. You receive 7 days of analytics data and write a short, friendly weekly summary for the court owner. Rules: Use simple English mixed with light Filipino phrases where natural (e.g. "Maganda!"). Always cite specific numbers. End with exactly one actionable suggestion (not a generic tip). Maximum 180 words. Tone: helpful colleague, not a corporate report.',
+    system: 'You are a court management assistant for Kourtly, a sports booking platform in the Philippines. You receive 7 days of analytics data and write a short, friendly weekly summary for the court owner. Rules: Use simple English mixed with light Filipino phrases where natural (e.g. "Maganda!"). Always cite specific numbers. End with exactly one actionable suggestion (not a generic tip). Maximum 180 words. Tone: helpful colleague, not a corporate report.',
     prompt: `Create weekly summary from this data:\n${JSON.stringify(analyticsData)}`,
   });
   if (!text) throw new Error('AI provider returned empty summary');
@@ -87,7 +87,7 @@ export async function sendSummaryEmail(court, summary, analyticsData) {
 
   const html = `
     <div style="font-family:Arial,sans-serif;max-width:640px;margin:0 auto;padding:20px;">
-      <h2 style="margin:0 0 10px;">Your PlayKou Weekly Summary</h2>
+      <h2 style="margin:0 0 10px;">Your Kourtly Weekly Summary</h2>
       <p style="color:#555;margin:0 0 18px;">Period: ${analyticsData.period.start} to ${analyticsData.period.end}</p>
       <div style="background:#f7f7f7;padding:14px;border-radius:8px;margin-bottom:16px;">
         <p style="margin:0;line-height:1.6;">${summary}</p>
@@ -102,9 +102,9 @@ export async function sendSummaryEmail(court, summary, analyticsData) {
   `;
 
   await resend.emails.send({
-    from: process.env.RESEND_FROM_EMAIL || 'noreply@playkou.com',
+    from: process.env.RESEND_FROM_EMAIL || 'noreply@kourtly.com',
     to,
-    subject: `PlayKou Weekly Summary (${analyticsData.period.start} - ${analyticsData.period.end})`,
+    subject: `Kourtly Weekly Summary (${analyticsData.period.start} - ${analyticsData.period.end})`,
     html,
   });
 }

@@ -2,12 +2,12 @@ import crypto from 'node:crypto';
 
 export function createInternalAssertion(user: { email?: string | null }) {
   const secret =
-    process.env.PLAYKOU_INTERNAL_AUTH_SECRET ||
+    process.env.KOURTLY_INTERNAL_AUTH_SECRET ||
     process.env.NEXTAUTH_SECRET ||
     process.env.AUTH_SECRET;
 
   if (!secret) {
-    throw new Error('PLAYKOU_INTERNAL_AUTH_SECRET is not configured.');
+    throw new Error('KOURTLY_INTERNAL_AUTH_SECRET is not configured.');
   }
   if (!user.email) {
     throw new Error('User email is required to sign an internal assertion.');

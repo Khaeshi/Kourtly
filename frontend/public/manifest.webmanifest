@@ -1,6 +1,6 @@
 {
-  "name": "PlayKou",
-  "short_name": "PlayKou",
+  "name": "Kourtly",
+  "short_name": "Kourtly",
   "description": "Court booking and management platform.",
   "start_url": "/",
   "scope": "/",
