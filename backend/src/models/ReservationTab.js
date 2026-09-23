@@ -29,7 +29,7 @@ const ReservationTabSchema = new mongoose.Schema({
     paidOnline:      { type: Number, default: 0 },
     paidCourtFee:    { type: Number, default: 0 },
     remainingBalance:{ type: Number, default: 0 },
-    source:          { type: String, default: 'cocoart' },
+    source:          { type: String, default: 'xendit' },
   },
 }, { timestamps: true });
 
