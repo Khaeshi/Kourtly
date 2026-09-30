@@ -4,7 +4,7 @@ import { createInternalAssertion } from '@/lib/internalAuthClient';
 
 export const dynamic = 'force-dynamic';
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+const BACKEND_URL = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
 async function proxyRequest(req: NextRequest, params: Promise<{ path: string[] }>, method: string) {
   const session = await auth();

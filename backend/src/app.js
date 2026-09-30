@@ -30,6 +30,8 @@ app.use(cors({
     'https://badminton-scbc.vercel.app',
   ],
   credentials: true,
+    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-kourtly-auth'],
 }));
 
 app.use(express.json());

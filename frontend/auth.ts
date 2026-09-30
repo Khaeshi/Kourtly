@@ -3,7 +3,7 @@ import type { NextAuthOptions } from 'next-auth';
 import { getServerSession } from 'next-auth/next';
 import Google from 'next-auth/providers/google';
 
-const BASE = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+const BASE = process.env.INTERNAL_API_URL || process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
 export const authOptions: NextAuthOptions = {
   secret: process.env.NEXTAUTH_SECRET || process.env.AUTH_SECRET,
@@ -44,11 +44,13 @@ export const authOptions: NextAuthOptions = {
         trigger === 'signIn' ||
         trigger === 'update' ||
         !token.role;
+        console.log('[jwt] trigger:', trigger, 'shouldRefresh:', shouldRefresh, 'email:', token.email);
 
       if (token.email && shouldRefresh) {
         try {
           const res  = await fetch(`${BASE}/api/users/by-email/${encodeURIComponent(token.email!)}`);
           const user = await res.json();
+          console.log('[jwt] backend response:', res.status, JSON.stringify(user));
 
           token.role    = user.role    ?? 'user';
           token.dbId    = user._id     ?? '';

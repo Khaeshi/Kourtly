@@ -11,7 +11,7 @@ export function validateCoreEnv() {
 }
 
 export function validatePaymentEnv() {
-  const required = ['XENDIT_API_KEY', 'XENDIT_WEBHOOK_VERIFICATION_TOKEN', 'APP_BASE_URL'];
+  const required = ['XENDIT_SECRET_KEY', 'XENDIT_CALLBACK_TOKEN', 'APP_BASE_URL'];
   const missingVars = missing(required);
 
   if (missingVars.length) {
@@ -25,13 +25,5 @@ export function validatePaymentEnv() {
   const provider = (process.env.PAYMENT_PROVIDER || 'xendit').toLowerCase();
   if (provider !== 'xendit' && !(provider === 'mock' && process.env.NODE_ENV !== 'production')) {
     throw new Error(`Unsupported PAYMENT_PROVIDER "${provider}". Current supported provider: xendit or mock for local development`);
-  }
-
-  const aiProvider = (process.env.AI_PROVIDER || 'anthropic').toLowerCase();
-  if (aiProvider === 'anthropic' && (!process.env.ANTHROPIC_API_KEY || String(process.env.ANTHROPIC_API_KEY).trim() === '')) {
-    console.warn('[env] ANTHROPIC_API_KEY not set. AI features will use fallback responses.');
-  }
-  if (aiProvider === 'local-llama' && (!process.env.LOCAL_LLM_ENDPOINT || String(process.env.LOCAL_LLM_ENDPOINT).trim() === '')) {
-    console.warn('[env] LOCAL_LLM_ENDPOINT not set. Defaulting to http://localhost:11434/api/generate.');
   }
 }

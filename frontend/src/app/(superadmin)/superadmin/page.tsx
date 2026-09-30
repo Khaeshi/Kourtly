@@ -54,11 +54,15 @@ export default function SuperAdminDashboard() {
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
-    fetch(`/api/proxy/superadmin/payout-transfers?limit=20&status=${payoutFilter}`)
-      .then(r => r.json())
-      .then(setPayoutTransfers)
-      .catch(() => setPayoutTransfers([]));
-  }, [payoutFilter]);
+  fetch(`/api/proxy/superadmin/payout-transfers?limit=20&status=${payoutFilter}`)
+    .then(async r => {
+      if (!r.ok) throw new Error(`Failed to load payout transfers: ${r.status}`);
+      const data = await r.json();
+      setPayoutTransfers(Array.isArray(data) ? data : []);
+    })
+    .catch(() => setPayoutTransfers([]));
+}, [payoutFilter]);
+
 
   const expiringTrials = courts.filter(c => {
     if (c.subscription.status !== 'trial') return false;

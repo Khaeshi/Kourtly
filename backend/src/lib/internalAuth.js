@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import User from '../models/User.js';
 
-const AUTH_HEADER = 'x-kourtyl-auth';
+const AUTH_HEADER = 'x-kourtly-auth';
 const MAX_CLOCK_SKEW_SECONDS = 30;
 const MAX_ASSERTION_AGE_SECONDS = 5 * 60;
 
@@ -39,8 +39,11 @@ export function getInternalAuthHeader() {
 
 export async function getAuthenticatedUser(req) {
   const assertion = verifyInternalAssertion(req.headers[AUTH_HEADER]);
+  console.log('[internalAuth] header present:', !!req.headers[AUTH_HEADER], 'assertion valid:', !!assertion, 'email:', assertion?.email);
   if (assertion?.email) {
-    return User.findOne({ email: assertion.email.toLowerCase() }).lean();
+    const user = await User.findOne({ email: assertion.email.toLowerCase() }).lean();
+    console.log('[internalAuth] user found:', !!user, 'role:', user?.role);
+    return user;
   }
 
   const testBypassAllowed =
