@@ -5,7 +5,7 @@ interface PublicFooterProps {
 
 export default function PublicFooter({ compact = false }: PublicFooterProps) {
   return (
-    <footer className="px-[clamp(1.25rem,5vw,3rem)]">
+    <footer className="px-[clamp(1.25rem,5vw,3rem)] pt-4">
       {!compact && (
         <div className="max-w-[1180px] mx-auto pt-[clamp(2.75rem,6vw,4rem)] pb-[clamp(2.25rem,5vw,3.25rem)] flex justify-between items-start flex-wrap gap-4 max-[480px]:flex-col max-[480px]:items-start">
           <p className="font-display text-[clamp(1.5rem,3.4vw,2.3rem)] text-[var(--line)] leading-[0.95]">
@@ -27,7 +27,7 @@ export default function PublicFooter({ compact = false }: PublicFooterProps) {
         }`}
       >
         <div>&copy; {new Date().getFullYear()} Kourtly, built for badminton communities.</div>
-        <div className={compact ? 'text-[var(--line-faint)]' : undefined}>Muntinlupa &ndash; Laguna, Philippines</div>
+        <div className={compact ? 'text-[var(--line-faint)]' : undefined}> Philippines</div>
       </div>
     </footer>
   );

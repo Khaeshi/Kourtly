@@ -68,7 +68,7 @@ export default function ProblemSection() {
             Everything still running on paper and chat
           </h2>
           <p className="text-[var(--line-dim)] text-[clamp(0.95rem,1.4vw,1.02rem)]">
-            Courts across Muntinlupa to Laguna are still tracking their day on Messenger,
+            Courts across Philippines are still tracking their day on Messenger,
             spreadsheets, and notebooks. It works, until it doesn&apos;t.
           </p>
         </div>

@@ -895,3 +895,29 @@ input[type="date"].public-input { color-scheme: dark; }
 .booking-fade-up-2 { animation: bookingFadeUp 0.6s 0.15s ease both; }
 .booking-fade-up-3 { animation: bookingFadeUp 0.6s 0.3s ease both; }
 
+/* ══════════════════════════════════════════
+   LiveCourtBoard — responsive grid for public queue view
+══════════════════════════════════════════ */
+
+@keyframes kt-pop {
+  from { opacity: 0; transform: scale(.95); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes kt-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes kt-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(232,163,61,.5); }
+  100% { box-shadow: 0 0 0 8px rgba(232,163,61,0); }
+}
+.kt-live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--amber);
+  animation: kt-pulse 1.6s ease-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .kt-live-dot { animation: none; }
+}

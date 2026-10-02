@@ -6,6 +6,7 @@ import Timeline from '@/app/components/public/Timeline';
 import AsymmetricFeaturePanel from '@/app/components/public/AsymmetricFeaturePanel';
 import FactRow from '@/app/components/public/FactRow';
 import PublicFooter from '@/app/components/public/PublicFooter';
+import LiveCourtBoard from '@/app/components/public/LiveCourtBoard';
 
 const ONBOARDING_STEPS = [
   {
@@ -65,8 +66,8 @@ const TIERS = [
   {
     name: 'Standard',
     eyebrow: 'For busy courts',
-    price: 'Custom',
-    interval: 'tailored pricing',
+    price: '3,500',
+    interval: '/ month',
     description: 'Add player registration and a fair, visible queue for walk-ins.',
     features: ['Everything in Basic', 'Player directory', 'Queue and match generation', 'Live queue updates'],
     tone: 'border-[var(--divider)] bg-[rgba(255,255,255,0.025)]',
@@ -74,8 +75,8 @@ const TIERS = [
   {
     name: 'Premium',
     eyebrow: 'For full operations',
-    price: 'Custom',
-    interval: 'tailored pricing',
+    price: '5,500',
+    interval: '/ month',
     description: 'Run items and player tabs alongside court activity.',
     features: ['Everything in Standard', 'Item catalog', 'Player and reservation tabs', 'Billing history'],
     tone: 'border-[var(--divider)] bg-[rgba(255,255,255,0.025)]',
@@ -98,22 +99,26 @@ export default function ForCourtsPage() {
 
       {/* Left-aligned hero (one per page, not centered) */}
       <header className="pt-[calc(64px+clamp(2rem,5vw,3rem))] pb-0 max-[480px]:pt-[calc(56px+1.6rem)]">
-        <div className="public-wrap">
-          <p className="text-[0.95rem] text-[var(--line-dim)] mb-3 max-[480px]:text-[0.85rem]">
-            Court management for the Philippines
-          </p>
-          <h1 className="font-display text-[clamp(2rem,5vw,3.5rem)] text-[var(--line)] mb-4 max-w-[16ch]">
-            Run your court online
-          </h1>
-          <p className="text-[var(--line-dim)] text-[clamp(0.98rem,1.5vw,1.08rem)] max-w-[480px] mb-8">
-            Start with the operation you need today, then add the next layer as your court gets busier.
-          </p>
-          <Link href="/register-court" className="pub-cta pub-cta-primary">
-            Start with Kourtly
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-[15px] h-[15px]">
-              <path d="M5 12h14M13 6l6 6-6 6" />
-            </svg>
-          </Link>
+        <div className="public-wrap grid grid-cols-1 md:grid-cols-[1fr_1.05fr] gap-[clamp(1.5rem,5vw,4rem)] items-center">
+          <div>
+            <p className="text-[0.95rem] text-[var(--line-dim)] mb-3 max-[480px]:text-[0.85rem]">
+              Court management for the Philippines
+            </p>
+            <h1 className="font-display text-[clamp(2rem,5vw,3.5rem)] text-[var(--line)] mb-4 max-w-[16ch]">
+              Run the front desk from one screen.
+            </h1>
+            <p className="text-[var(--line-dim)] text-[clamp(0.98rem,1.5vw,1.08rem)] max-w-[480px] mb-8">
+              Start with the operation you need today, then add the next layer as your court gets busier.
+            </p>
+            <Link href="/register-court" className="pub-cta pub-cta-primary">
+              Start with Kourtly
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-[15px] h-[15px]">
+                <path d="M5 12h14M13 6l6 6-6 6" />
+              </svg>
+            </Link>
+          </div>
+
+          <LiveCourtBoard />
         </div>
       </header>
 
