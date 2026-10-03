@@ -11,6 +11,7 @@ import {
   LayoutDashboard,
   Users,
   ListOrdered,
+  ClipboardCheck,
   Menu,
   X,
   Maximize,
@@ -39,6 +40,11 @@ const NAV = [
     href: '/superadmin/courts',
     label: 'Courts',
     icon: ListOrdered,
+  },
+  {
+    href: '/superadmin/pending-courts',
+    label: 'Pending Courts',
+    icon: ClipboardCheck,
   },
   {
     href: '/users',

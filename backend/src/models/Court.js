@@ -28,6 +28,8 @@ const CourtSchema = new mongoose.Schema({
     city:      { type: String, default: '' },
     province:  { type: String, default: '' },
     country:   { type: String, default: 'Philippines' },
+    lat:       { type: Number, default: null },
+    lng:       { type: Number, default: null },
     coordinates: {
       lat: { type: Number, default: null },
       lng: { type: Number, default: null },
@@ -42,6 +44,20 @@ const CourtSchema = new mongoose.Schema({
     instagram: { type: String, default: '' },
     website:   { type: String, default: '' },
   },
+  contactPerson: {
+    name:  { type: String, default: '' },
+    phone: { type: String, default: '' },
+  },
+
+  // ── Registration ────────────────────────────────────────────────────────────
+  registrationStatus: {
+    type: String,
+    enum: ['pending', 'approved', 'rejected'],
+    default: 'pending',
+  },
+  registeredBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  trialEndsAt: { type: Date, default: null },
+  rejectionReason: { type: String, default: '' },
 
   // ── Branding ─────────────────────────────────────────────────────────────────
   description: { type: String, default: '' },
@@ -55,7 +71,7 @@ const CourtSchema = new mongoose.Schema({
 
   // ── Subscription ────────────────────────────────────────────────────────────
   subscription: {
-    status:     { type: String, enum: ['trial', 'active', 'expired', 'suspended'], default: 'trial' },
+    status:     { type: String, enum: ['pending', 'trial', 'active', 'expired', 'suspended'], default: 'trial' },
     plan:       { type: String, enum: ['monthly', 'annual'], default: 'monthly' },
     tier:       { type: String, enum: ['basic', 'standard', 'premium', 'elite'], default: 'basic' },
     pendingTier: { type: String, enum: ['basic', 'standard', 'premium', 'elite'], default: null },

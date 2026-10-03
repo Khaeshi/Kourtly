@@ -13,6 +13,7 @@ import reservationTabRoutes from './routes/reservationtabRoutes.js';
 import courtRoutes from './routes/courtRoutes.js';
 import superadminRoutes from './routes/superadminRoutes.js';
 import publicRoutes from './routes/publicRoutes.js';
+import courtRegistrationRoutes from './routes/courtRegistrationRoutes.js';
 import paymentRoutes from './routes/paymentRoutes.js';
 import payoutTransferRoutes from './routes/payoutTransferRoutes.js';
 import { tenantMiddleware } from './middleware/tenantMiddleware.js';
@@ -49,7 +50,7 @@ app.use(express.json());
 // Public routes: regexes keep similarly prefixed routes in their own tier.
 app.use(/^\/api\/public\/courts\/[^/]+\/reserve$/, publicCostlyLimiter);
 app.use(/^\/api\/public\/courts\/[^/]+\/reservations\/[^/]+\/mock-pay$/, publicCostlyLimiter);
-app.use(/^\/api\/public\/register-court$/, publicCostlyLimiter);
+app.use(/^\/api\/register-court$/, publicCostlyLimiter);
 
 app.use(/^\/api\/public\/courts$/, publicReadLimiter);
 app.use(/^\/api\/public\/courts\/id\/[^/]+$/, publicReadLimiter);
@@ -67,6 +68,7 @@ app.use(/^\/api\/users\/(?!upsert$)[^/]+$/, limitMethods(superadminLimiter, ['DE
 
 // The Xendit webhook is intentionally not rate limited so provider retries are preserved.
 app.use('/api/public', publicRoutes);
+app.use('/api/register-court', courtRegistrationRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/users', userRoutes);
 

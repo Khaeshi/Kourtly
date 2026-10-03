@@ -27,6 +27,60 @@ router.get('/courts', async (req, res) => {
   }
 });
 
+router.get('/courts/pending', async (req, res) => {
+  try {
+    const courts = await Court.find({ registrationStatus: 'pending' })
+      .populate('registeredBy', 'email')
+      .sort({ createdAt: -1 })
+      .lean();
+    res.json(courts);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.patch('/courts/:id/approve', async (req, res) => {
+  try {
+    const now = new Date();
+    const trialEndsAt = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
+    const court = await Court.findByIdAndUpdate(
+      req.params.id,
+      {
+        $set: {
+          registrationStatus: 'approved',
+          'subscription.status': 'trial',
+          'subscription.trialEnds': trialEndsAt,
+          trialEndsAt,
+        },
+      },
+      { new: true, runValidators: true },
+    );
+    if (!court) return res.status(404).json({ error: 'Court not found.' });
+    res.json(court);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.patch('/courts/:id/reject', async (req, res) => {
+  try {
+    const court = await Court.findByIdAndUpdate(
+      req.params.id,
+      {
+        $set: {
+          registrationStatus: 'rejected',
+          rejectionReason: req.body.reason ?? '',
+        },
+      },
+      { new: true, runValidators: true },
+    );
+    if (!court) return res.status(404).json({ error: 'Court not found.' });
+    res.json(court);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 router.get('/courts/:id/entitlements', async (req, res) => {
   try {
     const court = await Court.findById(req.params.id).select('name subscription').lean();
@@ -141,6 +195,7 @@ router.post('/courts', async (req, res) => {
     }
     const court = await Court.create({
       name, slug, adminEmail, sports, courtCount,
+      registrationStatus: 'approved',
       subscription: { status: 'trial' },
       isPublic: false, isActive: true,
     });
