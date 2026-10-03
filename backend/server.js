@@ -26,6 +26,7 @@ const io = new Server(httpServer, {
     origin: [
       'http://localhost:3000',
       'https://badminton-scbc.vercel.app',
+      'https://www.playkou.site',
     ],
     credentials: true,
   },
