@@ -1,9 +1,19 @@
+import crypto from 'node:crypto';
 import request from 'supertest';
 import app from '../../src/app.js';
 import Court from '../../src/models/Court.js';
 import Reservation from '../../src/models/Reservation.js';
 import ScheduleRule from '../../src/models/ScheduleRule.js';
 import User from '../../src/models/User.js';
+
+function signedInAs(email) {
+  const now = Math.floor(Date.now() / 1000);
+  const payload = Buffer.from(JSON.stringify({ email, iat: now, exp: now + 300 })).toString('base64url');
+  const secret = 'registration-test-secret';
+  process.env.KOURTLY_INTERNAL_AUTH_SECRET = secret;
+  const signature = crypto.createHmac('sha256', secret).update(payload).digest('base64url');
+  return `${payload}.${signature}`;
+}
 
 describe('public routes', () => {
   test('GET /api/public/courts returns only active trial/active courts', async () => {
@@ -20,30 +30,54 @@ describe('public routes', () => {
     expect(res.body.map((c) => c.slug).sort()).toEqual(['a', 'b']);
   });
 
-  test('POST /api/public/register-court validates required fields', async () => {
-    const res = await request(app).post('/api/public/register-court').send({ name: 'Court X' });
+  test('POST /api/register-court requires a signed-in user', async () => {
+    const res = await request(app).post('/api/register-court').send({ name: 'Court X' });
+    expect(res.status).toBe(401);
+  });
+
+  test('POST /api/register-court validates required fields', async () => {
+    await User.create({ email: 'registration@court.com' });
+    const res = await request(app)
+      .post('/api/register-court')
+      .set('x-kourtly-auth', signedInAs('registration@court.com'))
+      .send({ name: 'Court X' });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/required/i);
   });
 
-  test('POST /api/public/register-court creates court and admin link', async () => {
+  test('POST /api/register-court creates a pending court and links the signed-in admin', async () => {
+    await User.create({ email: 'admin@prime.com' });
     const payload = {
       name: 'Prime Court',
       slug: 'prime-court',
-      adminEmail: 'admin@prime.com',
+      adminEmail: 'attacker@invalid.com',
       courtCount: 4,
+      location: { city: 'Manila', lat: 14.5995, lng: 120.9842 },
+      contactPerson: { name: 'Prime Contact', phone: '09170000000' },
     };
 
-    const res = await request(app).post('/api/public/register-court').send(payload);
+    const res = await request(app)
+      .post('/api/register-court')
+      .set('x-kourtly-auth', signedInAs('admin@prime.com'))
+      .send(payload);
     expect(res.status).toBe(201);
     expect(res.body.success).toBe(true);
     expect(res.body.slug).toBe('prime-court');
 
     const createdCourt = await Court.findOne({ slug: 'prime-court' }).lean();
     const adminUser = await User.findOne({ email: 'admin@prime.com' }).lean();
+    const attackerUser = await User.findOne({ email: 'attacker@invalid.com' }).lean();
     expect(createdCourt).toBeTruthy();
+    expect(createdCourt.registrationStatus).toBe('pending');
+    expect(createdCourt.registeredBy.toString()).toBe(adminUser._id.toString());
+    expect(createdCourt.subscription.status).toBe('pending');
+    expect(createdCourt.subscription.trialEnds).toBeNull();
+    expect(createdCourt.location.lat).toBe(14.5995);
+    expect(createdCourt.location.lng).toBe(120.9842);
+    expect(createdCourt.contactPerson.name).toBe('Prime Contact');
     expect(adminUser).toBeTruthy();
     expect(adminUser.role).toBe('admin');
+    expect(attackerUser).toBeNull();
   });
 
   test('POST /api/public/courts/:slug/reserve prevents overlaps', async () => {

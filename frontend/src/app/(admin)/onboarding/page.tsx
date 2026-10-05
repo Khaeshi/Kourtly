@@ -1,7 +1,6 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useSession } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
 import { ArrowRight, Check } from 'lucide-react';
 
 const INPUT = "w-full bg-white border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-900 outline-none focus:border-green-400 transition-colors";
@@ -14,31 +13,25 @@ const STEPS = [
 ];
 
 export default function OnboardingPage() {
-  const router              = useRouter();
-  const { data: session, update } = useSession();
+  const { data: session } = useSession();
   const [step,    setStep]    = useState(1);
   const [loading, setLoading] = useState(false);
   const [error,   setError]   = useState('');
+  const [submitted, setSubmitted] = useState(false);
 
   const [form, setForm] = useState({
     name:         '',
     slug:         '',
-    adminEmail:   '',
     courtCount:   '4',
     sports:       ['badminton'] as string[],
     city:         '',
     province:     '',
     address:      '',
+    lat:          '',
+    lng:          '',
     phone:        '',
     facebook:     '',
   });
-
-  // Pre-fill admin email from session
-  useEffect(() => {
-    if (session?.user?.email && !form.adminEmail) {
-      setForm(p => ({ ...p, adminEmail: session.user.email! }));
-    }
-  }, [session?.user?.email]);
 
   const set = (k: keyof typeof form, v: any) =>
     setForm(p => ({ ...p, [k]: v }));
@@ -56,8 +49,14 @@ export default function OnboardingPage() {
     );
 
   const handleSubmit = async () => {
-    if (!form.name || !form.adminEmail || !form.slug) {
-      setError('Court name, slug, and admin email are required.');
+    if (!form.name || !form.slug) {
+      setError('Court name and slug are required.');
+      return;
+    }
+    if (!form.city || form.lat === '' || form.lng === '' ||
+        !Number.isFinite(Number(form.lat)) || !Number.isFinite(Number(form.lng))) {
+      setError('City, latitude, and longitude are required.');
+      setStep(2);
       return;
     }
     setLoading(true);
@@ -70,13 +69,14 @@ export default function OnboardingPage() {
         body: JSON.stringify({
           name:       form.name,
           slug:       form.slug,
-          adminEmail: form.adminEmail,
           sports:     form.sports,
           courtCount: Number(form.courtCount),
           location: {
             city:     form.city,
             province: form.province,
             address:  form.address,
+            lat:      Number(form.lat),
+            lng:      Number(form.lng),
           },
           contact: {
             phone:    form.phone,
@@ -88,17 +88,24 @@ export default function OnboardingPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Registration failed');
 
-      // 2. Force session token refresh so courtId is picked up
-      await update();
-
-      // 3. Go to admin dashboard
-      router.push('/admin');
+      setSubmitted(true);
     } catch (err: any) {
       setError(err.message || 'Something went wrong.');
     } finally {
       setLoading(false);
     }
   };
+
+  if (submitted) {
+    return (
+      <div className="w-full max-w-lg bg-white rounded-2xl border border-gray-200 shadow-sm p-8 text-center">
+        <h1 className="text-2xl font-bold text-gray-900 mb-2">Registration submitted</h1>
+        <p className="text-sm text-gray-600">
+          Your court is awaiting approval. Your 14-day trial will begin after a superadmin approves it.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="w-full max-w-lg">
@@ -108,7 +115,7 @@ export default function OnboardingPage() {
           <div className="w-5 h-5 rounded-full bg-white opacity-90" />
         </div>
         <h1 className="text-2xl font-bold text-gray-900 mb-1">Set Up Your Court</h1>
-        <p className="text-gray-500 text-sm">Your 14-day free trial starts now. No credit card required.</p>
+        <p className="text-gray-500 text-sm">Your 14-day free trial starts after approval. No credit card required.</p>
       </div>
 
       {/* Step indicator */}
@@ -171,9 +178,9 @@ export default function OnboardingPage() {
               <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">
                 Admin Email <span className="text-red-500">*</span>
               </label>
-              <input type="email" value={form.adminEmail} onChange={e => set('adminEmail', e.target.value)}
-                className={INPUT} placeholder="you@example.com" />
-              <p className="text-[0.68rem] text-green-600 mt-1">Defaulted to your signed-in email</p>
+              <input type="email" value={session?.user?.email || ''} readOnly
+                className={`${INPUT} opacity-70`} />
+              <p className="text-[0.68rem] text-green-600 mt-1">Your signed-in account will be linked as the court admin.</p>
             </div>
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">
@@ -201,12 +208,24 @@ export default function OnboardingPage() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">City</label>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">City *</label>
                 <input value={form.city} onChange={e => set('city', e.target.value)} className={INPUT} placeholder="Biñan" />
               </div>
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Province</label>
                 <input value={form.province} onChange={e => set('province', e.target.value)} className={INPUT} placeholder="Laguna" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Latitude *</label>
+                <input type="number" step="any" value={form.lat} onChange={e => set('lat', e.target.value)}
+                  className={INPUT} placeholder="14.5995" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Longitude *</label>
+                <input type="number" step="any" value={form.lng} onChange={e => set('lng', e.target.value)}
+                  className={INPUT} placeholder="120.9842" />
               </div>
             </div>
             <div>
@@ -259,7 +278,7 @@ export default function OnboardingPage() {
               {[
                 ['Court Name',  form.name],
                 ['Booking URL', `/book/${form.slug}`],
-                ['Admin Email', form.adminEmail],
+                ['Admin Email', session?.user?.email || '—'],
                 ['Courts',      `${form.courtCount} physical court${form.courtCount !== '1' ? 's' : ''}`],
                 ['Sports',      form.sports.join(', ')],
                 ['City',        form.city || '—'],
@@ -271,8 +290,8 @@ export default function OnboardingPage() {
               ))}
             </div>
             <div className="bg-green-50 border border-green-200 rounded-xl p-4">
-              <p className="text-green-800 text-sm font-medium mb-1">14-day free trial</p>
-              <p className="text-green-600 text-xs">No credit card required. Full access to all features during trial.</p>
+              <p className="text-green-800 text-sm font-medium mb-1">14-day free trial after approval</p>
+              <p className="text-green-600 text-xs">No credit card required. The trial starts when your registration is approved.</p>
             </div>
           </div>
         )}
@@ -288,8 +307,13 @@ export default function OnboardingPage() {
           {step < 4 ? (
             <button
               onClick={() => {
-                if (step === 1 && (!form.name || !form.adminEmail)) {
-                  setError('Court name and admin email are required.');
+                if (step === 1 && !form.name) {
+                  setError('Court name is required.');
+                  return;
+                }
+                if (step === 2 && (!form.city || form.lat === '' || form.lng === '' ||
+                    !Number.isFinite(Number(form.lat)) || !Number.isFinite(Number(form.lng)))) {
+                  setError('City, latitude, and longitude are required.');
                   return;
                 }
                 if (step === 3 && form.sports.length === 0) {

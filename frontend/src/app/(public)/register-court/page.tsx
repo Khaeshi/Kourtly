@@ -1,7 +1,8 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
+import { signIn, useSession } from 'next-auth/react';
 import { APP_NAME } from '@/lib/config';
 import { Check, ArrowRight, ChevronRight } from 'lucide-react';
 
@@ -28,6 +29,7 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
 const INPUT = "w-full bg-white/5 border border-blue-500/20 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-blue-400 transition-colors";
 
 export default function RegisterCourtPage() {
+  const { data: session } = useSession();
   const [step,    setStep]    = useState(1);
   const [loading, setLoading] = useState(false);
   const [done,    setDone]    = useState(false);
@@ -35,9 +37,21 @@ export default function RegisterCourtPage() {
   const [form,    setForm]    = useState({
     name: '', slug: '', adminEmail: '',
     sports: ['badminton'] as string[], courtCount: '4',
-    city: '', province: '', address: '',
+    city: '', province: '', address: '', lat: '', lng: '',
     phone: '', email: '', facebook: '', instagram: '',
   });
+
+  useEffect(() => {
+    if (!session?.user?.email) return;
+    setForm(previous => ({ ...previous, adminEmail: session.user!.email! }));
+    const savedDraft = sessionStorage.getItem('court-registration-draft');
+    if (savedDraft) {
+      const draft = JSON.parse(savedDraft);
+      if (draft.form) setForm({ ...draft.form, adminEmail: session.user.email });
+      if (Number.isInteger(draft.step) && draft.step >= 1 && draft.step <= 4) setStep(draft.step);
+      sessionStorage.removeItem('court-registration-draft');
+    }
+  }, [session?.user?.email]);
 
   const set = (k: keyof typeof form, v: string) => setForm(p => ({ ...p, [k]: v }));
   const toggleSport = (s: string) => setForm(p => ({
@@ -46,11 +60,14 @@ export default function RegisterCourtPage() {
 
   const validate = () => {
     if (step === 1) {
-      if (!form.name || !form.slug || !form.adminEmail) { setError('Please fill in all required fields.'); return false; }
-      if (!form.adminEmail.includes('@')) { setError('Enter a valid email.'); return false; }
+      if (!form.name || !form.slug) { setError('Please fill in all required fields.'); return false; }
     }
     if (step === 2 && form.sports.length === 0) { setError('Select at least one sport.'); return false; }
-    if (step === 3 && !form.city) { setError('City is required.'); return false; }
+    if (step === 3 && (!form.city || form.lat === '' || form.lng === '' ||
+        !Number.isFinite(Number(form.lat)) || !Number.isFinite(Number(form.lng)))) {
+      setError('City, latitude, and longitude are required.');
+      return false;
+    }
     setError(null); return true;
   };
 
@@ -59,15 +76,23 @@ export default function RegisterCourtPage() {
 
   const submit = async () => {
     if (!validate()) return;
+    if (!session?.user?.email) {
+      sessionStorage.setItem('court-registration-draft', JSON.stringify({ form, step }));
+      await signIn('google', { callbackUrl: '/register-court' });
+      return;
+    }
     setLoading(true); setError(null);
     try {
       const res = await fetch('/api/public/register-court', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: form.name, slug: form.slug, adminEmail: form.adminEmail,
+          name: form.name, slug: form.slug,
           sports: form.sports, courtCount: Number(form.courtCount),
-          location: { address: form.address, city: form.city, province: form.province, country: 'Philippines' },
+          location: {
+            address: form.address, city: form.city, province: form.province, country: 'Philippines',
+            lat: Number(form.lat), lng: Number(form.lng),
+          },
           contact:  { phone: form.phone, email: form.email, facebook: form.facebook, instagram: form.instagram },
         }),
       });
@@ -89,17 +114,13 @@ export default function RegisterCourtPage() {
         <div className="w-14 h-14 bg-blue-500/15 rounded-full flex items-center justify-center mx-auto mb-5 border border-blue-400/30">
           <Check size={24} className="text-blue-300" />
         </div>
-        <h1 className="text-xl font-bold text-white mb-2">You&apos;re registered!</h1>
+        <h1 className="text-xl font-bold text-white mb-2">Registration submitted</h1>
         <p className="text-sm text-white/60 leading-relaxed mb-5">
-          Your 14-day free trial has started. Sign in with Google using <strong>{form.adminEmail}</strong> to access your dashboard.
+          Your court is awaiting approval. We&apos;ll start your 14-day trial once a superadmin approves the registration.
         </p>
         <div className="bg-blue-500/10 border border-blue-400/25 rounded-lg px-4 py-3 text-[0.78rem] text-blue-200 mb-5 text-left">
-          Our team has been notified and will reach out within 24 hours.
+          We&apos;ll notify <strong>{session?.user?.email}</strong> when there&apos;s an update.
         </div>
-        <Link href="/auth/signin"
-          className="block w-full bg-blue-500 text-[#0b1120] py-3 rounded-lg text-sm font-medium no-underline text-center hover:bg-blue-400 transition-colors">
-          Sign In to Dashboard
-        </Link>
         <Link href="/" className="block mt-3 text-sm text-white/45 no-underline hover:text-blue-300">← Back to home</Link>
       </div>
     </div>
@@ -124,7 +145,7 @@ export default function RegisterCourtPage() {
         <div className="px-8 pt-8 pb-6 border-b border-blue-500/15">
           <p className="text-[0.72rem] uppercase tracking-[0.05em] text-blue-300/70 mb-1">Court Registration</p>
           <h1 className="text-xl font-bold text-white">Start your free trial</h1>
-          <p className="text-sm text-white/45 mt-1">14 days free · No credit card required</p>
+          <p className="text-sm text-white/45 mt-1">14 days free after approval · No credit card required</p>
           <div className="flex items-center gap-2 mt-5">
             {STEPS.map((s, i) => (
               <div key={s} className="flex items-center gap-2">
@@ -155,9 +176,9 @@ export default function RegisterCourtPage() {
               <input value={form.slug} onChange={e => set('slug', slugify(e.target.value))}
                 placeholder="south-city-bc" className={`${INPUT} font-mono`} />
             </Field>
-            <Field label="Admin Email *" hint="Sign in with this Google account">
-              <input type="email" value={form.adminEmail} onChange={e => set('adminEmail', e.target.value)}
-                placeholder="admin@yourcourtname.com" className={INPUT} />
+            <Field label="Registration Account" hint="Your signed-in Google account will be linked as the court admin">
+              <input value={session?.user?.email || 'Sign in with Google when submitting'}
+                readOnly className={`${INPUT} opacity-70`} />
             </Field>
           </>}
 
@@ -201,6 +222,16 @@ export default function RegisterCourtPage() {
                 </select>
               </Field>
             </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Latitude *">
+                <input type="number" step="any" value={form.lat} onChange={e => set('lat', e.target.value)}
+                  placeholder="14.5995" className={INPUT} />
+              </Field>
+              <Field label="Longitude *">
+                <input type="number" step="any" value={form.lng} onChange={e => set('lng', e.target.value)}
+                  placeholder="120.9842" className={INPUT} />
+              </Field>
+            </div>
           </>}
 
           {step === 4 && <>
@@ -241,7 +272,7 @@ export default function RegisterCourtPage() {
           ) : (
             <button onClick={submit} disabled={loading}
               className="flex-1 py-2.5 rounded-lg text-sm bg-blue-500 text-[#0b1120] hover:bg-blue-400 cursor-pointer transition-colors disabled:opacity-50 font-semibold">
-              {loading ? 'Registering...' : 'Start Free Trial'}
+              {loading ? 'Submitting...' : session?.user ? 'Submit for Approval' : 'Sign in with Google to Submit'}
             </button>
           )}
         </div>
