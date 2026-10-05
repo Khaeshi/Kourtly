@@ -1,7 +1,9 @@
 'use client';
 
 import { createContext, useContext, useEffect, useState } from 'react';
+import { useSession } from 'next-auth/react';
 import { usePathname } from 'next/navigation';
+import { getOfflineCapabilities, storeOfflineCapabilities } from '@/lib/offlineCache';
 
 export type ModuleKey = 'booking' | 'queue' | 'item_tabs';
 export type TierKey = 'basic' | 'standard' | 'premium' | 'elite';
@@ -23,17 +25,79 @@ const DEFAULT_CAPABILITIES: Capabilities = {
 
 const CapabilitiesContext = createContext<Capabilities | null>(null);
 
+function isCapabilities(value: unknown): value is Capabilities {
+  if (typeof value !== 'object' || value === null) return false;
+  const data = value as Record<string, unknown>;
+  const modules = data.modules;
+  const tiers: TierKey[] = ['basic', 'standard', 'premium', 'elite'];
+  if (typeof modules !== 'object' || modules === null) return false;
+  const moduleFlags = modules as Record<string, unknown>;
+  return tiers.includes(data.tier as TierKey) &&
+    tiers.includes(data.currentTier as TierKey) &&
+    typeof moduleFlags.booking === 'boolean' &&
+    typeof moduleFlags.queue === 'boolean' &&
+    typeof moduleFlags.item_tabs === 'boolean';
+}
+
 export function CapabilitiesProvider({ children }: { children: React.ReactNode }) {
   const [capabilities, setCapabilities] = useState<Capabilities | null>(null);
+  const { data: session } = useSession();
+  const identity = session?.user?.dbId && session.user.courtId
+    ? `${session.user.dbId}:${session.user.courtId}`
+    : null;
 
   useEffect(() => {
-    fetch('/api/proxy/court/me/capabilities')
-      .then(response => response.ok ? response.json() : null)
-      .then(data => {
-        if (data?.tier && data?.modules) setCapabilities(data);
-      })
-      .catch(() => {});
-  }, []);
+    let cancelled = false;
+    setCapabilities(null);
+
+    const loadCapabilities = async () => {
+      let shouldUseOfflineCapabilities = false;
+      try {
+        const response = await fetch('/api/proxy/court/me/capabilities');
+        if (response.status === 401) return;
+        if (response.status === 502) {
+          shouldUseOfflineCapabilities = true;
+        } else if (response.ok) {
+          const data: unknown = await response.json();
+          if (!isCapabilities(data)) return;
+          if (!cancelled) setCapabilities(data);
+          if (identity) {
+            const offlineCapabilities: Capabilities = {
+              tier: data.tier,
+              currentTier: data.currentTier,
+              modules: {
+                booking: data.modules.booking,
+                queue: data.modules.queue,
+                item_tabs: data.modules.item_tabs,
+              },
+            };
+            await storeOfflineCapabilities(identity, offlineCapabilities).catch(error => {
+              console.error('Could not store offline admin capabilities.', error);
+            });
+          }
+          return;
+        } else {
+          return;
+        }
+      } catch {
+        shouldUseOfflineCapabilities = true;
+      }
+
+      if (shouldUseOfflineCapabilities && identity) {
+        try {
+          const saved = await getOfflineCapabilities<Capabilities>(identity);
+          if (!cancelled && saved && isCapabilities(saved)) setCapabilities(saved);
+        } catch (error) {
+          console.error('Could not load offline admin capabilities.', error);
+        }
+      }
+    };
+
+    void loadCapabilities();
+    return () => {
+      cancelled = true;
+    };
+  }, [identity]);
 
   return (
     <CapabilitiesContext.Provider value={capabilities ?? DEFAULT_CAPABILITIES}>

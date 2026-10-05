@@ -1,22 +1,32 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSession } from 'next-auth/react';
+import { usePathname } from 'next/navigation';
 import { Toaster } from 'sileo';
 import { APP_NAME } from '@/lib/config';
 import AdminSidebar from './AdminSidebar';
 import { CapabilitiesProvider, CapabilityGate } from '@/lib/entitlements';
 import { disconnectSocket, getSocket } from '@/lib/socket';
+import {
+  getNetworkOfflineState,
+  initializeAdminOfflineIdentity,
+  prefetchAdminRoutesWhenIdle,
+} from '@/lib/offlineCache';
 
 interface Props {
   children: React.ReactNode;
+  buildId: string;
   user: { name: string; email: string; image: string }
 }
 
-export default function AdminLayoutClient({ children, user }: Props) {
+export default function AdminLayoutClient({ children, buildId, user }: Props) {
   const { data: session } = useSession();
+  const pathname = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [fsSupported, setFsSupported] = useState(false);
+  const [offline, setOffline] = useState(false);
+  const initializedCacheKey = useRef<string | null>(null);
   
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
 
@@ -36,6 +46,59 @@ export default function AdminLayoutClient({ children, user }: Props) {
     document.addEventListener('fullscreenchange', handler);
     return () => document.removeEventListener('fullscreenchange', handler);
   }, []);
+
+  useEffect(() => {
+    const updateOfflineStatus = () => setOffline(!navigator.onLine);
+    updateOfflineStatus();
+    void getNetworkOfflineState()
+      .then(networkOffline => {
+        if (networkOffline) setOffline(true);
+      })
+      .catch(error => console.error('Could not read the saved network state.', error));
+    const onServiceWorkerMessage = (event: MessageEvent<{ type?: string }>) => {
+      if (event.data?.type === 'OFFLINE_DETECTED') setOffline(true);
+    };
+    navigator.serviceWorker?.addEventListener('message', onServiceWorkerMessage);
+    window.addEventListener('online', updateOfflineStatus);
+    window.addEventListener('offline', updateOfflineStatus);
+    return () => {
+      navigator.serviceWorker?.removeEventListener('message', onServiceWorkerMessage);
+      window.removeEventListener('online', updateOfflineStatus);
+      window.removeEventListener('offline', updateOfflineStatus);
+    };
+  }, []);
+
+  useEffect(() => {
+    const dbId = session?.user?.dbId;
+    const courtId = session?.user?.courtId;
+    if (!pathname.startsWith('/admin') || !dbId || !courtId || !('serviceWorker' in navigator)) return;
+
+    const identity = `${dbId}:${courtId}`;
+    const cacheKey = `${identity}:${buildId}`;
+    if (initializedCacheKey.current === cacheKey) return;
+    initializedCacheKey.current = cacheKey;
+
+    const onServiceWorkerMessage = (event: MessageEvent<{ type?: string; message?: string }>) => {
+      if (event.data?.type === 'ADMIN_ROUTES_CACHE_FAILED') {
+        console.error('Could not prepare admin routes for offline use.', event.data.message);
+      }
+    };
+    navigator.serviceWorker.addEventListener('message', onServiceWorkerMessage);
+
+    void initializeAdminOfflineIdentity(identity, buildId)
+      .then(async activeWorker => {
+        const networkOffline = await getNetworkOfflineState();
+        if (navigator.onLine && !networkOffline) prefetchAdminRoutesWhenIdle(activeWorker);
+      })
+      .catch(error => {
+        initializedCacheKey.current = null;
+        console.error('Could not initialize offline admin storage.', error);
+      });
+
+    return () => {
+      navigator.serviceWorker.removeEventListener('message', onServiceWorkerMessage);
+    };
+  }, [buildId, pathname, session?.user?.courtId, session?.user?.dbId]);
 
   // Auto-enter fullscreen when admin layout mounts
   useEffect(() => {
@@ -126,11 +189,18 @@ export default function AdminLayoutClient({ children, user }: Props) {
         <div className="flex min-h-screen bg-gray-100 font-sans">
           <AdminSidebar
             isOpen={sidebarOpen}
+            offline={offline}
             onClose={() => setSidebarOpen(false)}
             user={user}
           />
           <main className="admin-main flex-1 px-[clamp(1rem,3vw,2rem)] pb-[clamp(1rem,3vw,2rem)] pt-[clamp(1rem,3vw,2rem)] md:pt-[clamp(1rem,3vw,2rem)]">
-            <CapabilityGate>{children}</CapabilityGate>
+            {offline ? (
+              <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                Not available offline
+              </p>
+            ) : (
+              <CapabilityGate>{children}</CapabilityGate>
+            )}
           </main>
         </div>
       </CapabilitiesProvider>

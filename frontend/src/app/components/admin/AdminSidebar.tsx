@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { signOut, useSession } from 'next-auth/react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type MouseEvent } from 'react';
 import {
   Users,
   ListOrdered,
@@ -16,9 +16,11 @@ import {
 } from 'lucide-react';
 import Image from 'next/image';
 import { useCapabilities } from '@/lib/entitlements';
+import { wipeOfflineData } from '@/lib/offlineCache';
 
 interface Props {
   isOpen: boolean;
+  offline: boolean;
   onClose: () => void;
   user: { name: string; email: string; image: string };
 }
@@ -38,12 +40,20 @@ const SUPERADMIN_NAV = [
   { href: '/admin/superadmin', label: 'Super Admin' },
 ];
 
-export default function AdminSidebar({ isOpen, onClose, user }: Props) {
+export default function AdminSidebar({ isOpen, offline, onClose, user }: Props) {
   const pathname = usePathname();
   const { data: session } = useSession();
   const isSuperAdmin = session?.user?.role === 'superadmin';
   const capabilities = useCapabilities();
   const [signingOut, setSigningOut] = useState(false);
+
+  const handleNavigation = (href: string) => (event: MouseEvent<HTMLAnchorElement>) => {
+    onClose();
+    if (offline || !navigator.onLine) {
+      event.preventDefault();
+      window.location.assign(href);
+    }
+  };
 
   // Court name + logo (API is source of truth; session carries logo after update())
   const [courtName, setCourtName] = useState<string | null>(null);
@@ -82,7 +92,14 @@ export default function AdminSidebar({ isOpen, onClose, user }: Props) {
 
   const handleSignOut = async () => {
     setSigningOut(true);
-    await signOut({ callbackUrl: '/' });
+    try {
+      await wipeOfflineData();
+      await signOut({ callbackUrl: '/' });
+    } catch (error) {
+      console.error('Could not clear offline data before signing out.', error);
+      setSigningOut(false);
+      window.alert('Offline data could not be cleared. Please try signing out again.');
+    }
   };
 
   // Display name: court name > 'Admin Panel' for superadmin > 'My Court'
@@ -95,7 +112,7 @@ export default function AdminSidebar({ isOpen, onClose, user }: Props) {
 
       {/* Brand */}
       <div className="px-5 py-5 pb-4 border-b border-gray-100">
-        <Link href="/" className="no-underline flex items-center gap-2.5" onClick={onClose}>
+        <Link href="/" className="no-underline flex items-center gap-2.5" onClick={handleNavigation('/')}>
           {isSuperAdmin ? (
             <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 bg-purple-700">
               <div className="w-2.5 h-2.5 rounded-full bg-white opacity-90" />
@@ -138,7 +155,7 @@ export default function AdminSidebar({ isOpen, onClose, user }: Props) {
             <Link
               key={item.href}
               href={item.href}
-              onClick={onClose}
+              onClick={handleNavigation(item.href)}
               className={`sidebar-item ${active ? 'active' : ''}`}
             >
               <Icon
@@ -207,7 +224,7 @@ export default function AdminSidebar({ isOpen, onClose, user }: Props) {
 
         <Link
           href="/"
-          onClick={onClose}
+          onClick={handleNavigation('/')}
           className="flex items-center gap-2 px-3.5 py-2 rounded-lg no-underline text-gray-500 text-xs hover:bg-gray-100 transition-colors"
         >
           ← View Site
