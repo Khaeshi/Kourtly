@@ -34,6 +34,7 @@ let workerIdentity = null;
 let workerIdentityLoaded = false;
 let networkOffline = false;
 let networkOfflineLoaded = false;
+let wipeGeneration = 0;
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -191,6 +192,7 @@ async function deleteMetaKeysWithPrefix(prefix) {
 }
 
 async function wipeOfflineStorage() {
+  wipeGeneration += 1;
   await Promise.all((await caches.keys()).map((name) => caches.delete(name)));
   workerIdentity = null;
   workerIdentityLoaded = true;
@@ -201,6 +203,19 @@ async function wipeOfflineStorage() {
     request.onsuccess = () => resolve();
     request.onerror = () => reject(request.error || new Error('Could not clear offline storage.'));
   });
+}
+
+async function openExistingCache(name, generation) {
+  if (generation !== wipeGeneration || !(await caches.has(name)) ||
+      generation !== wipeGeneration) return null;
+  return caches.open(name);
+}
+
+async function putInCache(name, request, response, generation) {
+  if (generation !== wipeGeneration) return;
+  const cache = await caches.open(name);
+  if (generation !== wipeGeneration) return;
+  await cache.put(request, response);
 }
 
 async function notifyClientsToWipe() {
@@ -265,7 +280,7 @@ function expiredSessionResponse() {
   );
 }
 
-async function cacheStaticAssets(html, cache) {
+async function cacheStaticAssets(html, cache, generation = wipeGeneration) {
   const assetPaths = new Set();
   const tags = html.matchAll(/<(?:script|link)\b[^>]*>/gi);
   for (const [tag] of tags) {
@@ -282,11 +297,12 @@ async function cacheStaticAssets(html, cache) {
     if (await cache.match(request)) continue;
     const response = await fetch(request);
     if (!response.ok) throw new Error(`Could not cache required app asset: ${new URL(assetUrl).pathname}`);
+    if (generation !== wipeGeneration) return;
     await cache.put(request, response);
   }
 }
 
-async function cacheAdminPage(pathname, identity, buildId) {
+async function cacheAdminPage(pathname, identity, buildId, generation) {
   const pageUrl = new URL(pathname, self.location.origin);
   const request = new Request(pageUrl, {
     credentials: 'include',
@@ -300,9 +316,11 @@ async function cacheAdminPage(pathname, identity, buildId) {
   }
 
   const html = await response.clone().text();
+  if (generation !== wipeGeneration) return;
   const cache = await caches.open(cacheName(buildId, identity));
   const pageKey = new URL(pageUrl.pathname, self.location.origin);
-  await cacheStaticAssets(html, cache);
+  await cacheStaticAssets(html, cache, generation);
+  if (generation !== wipeGeneration) return;
   await cache.put(pageKey, response);
   await writeMeta(pageCachedAtKey(buildId, identity, pageUrl.pathname), Date.now());
 }
@@ -350,21 +368,25 @@ async function getOlderBuildCaches(currentBuildId, identity) {
     });
 }
 
-async function findOfflineAdminPage(identity, buildId, pathname) {
-  const currentCache = await caches.open(cacheName(buildId, identity));
+async function findOfflineAdminPage(identity, buildId, pathname, generation) {
+  const currentCache = await openExistingCache(cacheName(buildId, identity), generation);
+  if (!currentCache) return null;
   const currentPage = await getFreshCachedAdminPage(currentCache, buildId, identity, pathname);
+  if (generation !== wipeGeneration) return null;
   if (currentPage) return currentPage;
 
   const olderCaches = await getOlderBuildCaches(buildId, identity);
   for (const older of olderCaches) {
-    const cache = await caches.open(older.name);
+    const cache = await openExistingCache(older.name, generation);
+    if (!cache) continue;
     const page = await getFreshCachedAdminPage(cache, older.buildId, identity, pathname);
+    if (generation !== wipeGeneration) return null;
     if (page) return page;
   }
   return null;
 }
 
-async function handleAdminNavigation(request) {
+async function handleAdminNavigation(request, generation) {
   const requestUrl = new URL(request.url);
   const pathname = requestUrl.pathname;
   const identity = await getWorkerIdentity();
@@ -377,14 +399,13 @@ async function handleAdminNavigation(request) {
     await notifyClientsOffline();
     const buildId = await getWorkerBuildId();
     if (identity && buildId) {
-      const cached = await findOfflineAdminPage(identity, buildId, pathname);
+      const cached = await findOfflineAdminPage(identity, buildId, pathname, generation);
       if (cached) return cached;
     }
     return adminOfflineResponse();
   }
 
   if (
-    (response.redirected && response.url.includes('/auth/signin')) ||
     response.status === 401 ||
     response.status === 403
   ) {
@@ -398,12 +419,15 @@ async function handleAdminNavigation(request) {
     try {
       const html = await response.clone().text();
       const buildId = await getWorkerBuildId();
-      if (buildId) {
-        const cache = await caches.open(cacheName(buildId, identity));
+      if (buildId && generation === wipeGeneration) {
+        const name = cacheName(buildId, identity);
+        const cache = await caches.open(name);
         const pageUrl = new URL(pathname, self.location.origin);
-        await cacheStaticAssets(html, cache);
-        await cache.put(pageUrl, response.clone());
-        await writeMeta(pageCachedAtKey(buildId, identity, pathname), Date.now());
+        await cacheStaticAssets(html, cache, generation);
+        if (generation === wipeGeneration) {
+          await cache.put(pageUrl, response.clone());
+          await writeMeta(pageCachedAtKey(buildId, identity, pathname), Date.now());
+        }
       }
     } catch (error) {
       console.error('Could not refresh the cached admin document or its assets.', error);
@@ -424,7 +448,7 @@ async function handleSignInNavigation(request) {
   }
 }
 
-async function precacheAdminRoutes(source) {
+async function precacheAdminRoutes(source, generation) {
   const identity = await getWorkerIdentity();
   if (!identity) throw new Error('Admin cache identity is not set.');
   const buildId = await getWorkerBuildId();
@@ -433,7 +457,7 @@ async function precacheAdminRoutes(source) {
   const failed = [];
   for (const route of ADMIN_ROUTES) {
     try {
-      await cacheAdminPage(route, identity, buildId);
+      await cacheAdminPage(route, identity, buildId, generation);
       cached.push(route);
     } catch (error) {
       console.error(`Could not cache admin route ${route}.`, error);
@@ -513,7 +537,8 @@ self.addEventListener('message', (event) => {
       workerIdentityLoaded = true;
     })());
   } else if (event.data?.type === 'PRECACHE_ADMIN_ROUTES') {
-    event.waitUntil(precacheAdminRoutes(event.source).catch((error) => {
+    const generation = wipeGeneration;
+    event.waitUntil(precacheAdminRoutes(event.source, generation).catch((error) => {
       event.source?.postMessage({ type: 'ADMIN_ROUTES_CACHE_FAILED', message: error.message });
     }));
   } else if (event.data?.type === 'CLEAR_OFFLINE_DATA') {
@@ -522,6 +547,7 @@ self.addEventListener('message', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
+  const generation = wipeGeneration;
   const request = event.request;
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
@@ -563,8 +589,8 @@ self.addEventListener('fetch', (event) => {
       const buildId = await getWorkerBuildId();
       let cache;
       if (identity && buildId) {
-        cache = await caches.open(cacheName(buildId, identity));
-        const cached = await cache.match(request);
+        cache = await openExistingCache(cacheName(buildId, identity), generation);
+        const cached = cache && await cache.match(request);
         if (cached) return cached;
       }
       let response;
@@ -576,7 +602,9 @@ self.addEventListener('fetch', (event) => {
         return offlineJsonResponse();
       }
       await markNetworkOnline();
-      if (cache && response.ok) await cache.put(request, response.clone());
+      if (cache && response.ok && generation === wipeGeneration) {
+        await cache.put(request, response.clone());
+      }
       return response;
     })());
     return;
@@ -588,8 +616,8 @@ self.addEventListener('fetch', (event) => {
       const buildId = await getWorkerBuildId();
       let cache;
       if (identity && buildId) {
-        cache = await caches.open(cacheName(buildId, identity));
-        const cached = await cache.match(request);
+        cache = await openExistingCache(cacheName(buildId, identity), generation);
+        const cached = cache && await cache.match(request);
         if (cached) return cached;
       }
       let response;
@@ -601,7 +629,9 @@ self.addEventListener('fetch', (event) => {
         return offlineJsonResponse();
       }
       await markNetworkOnline();
-      if (cache && response.ok) await cache.put(request, response.clone());
+      if (cache && response.ok && generation === wipeGeneration) {
+        await cache.put(request, response.clone());
+      }
       return response;
     })());
     return;
@@ -612,17 +642,30 @@ self.addEventListener('fetch', (event) => {
     event.respondWith((async () => {
       const identity = await getWorkerIdentity();
       const buildId = await getWorkerBuildId();
+      let cache = null;
+      let cached = null;
       if (!identity || !buildId) {
-        const response = await fetch(request);
-        await markNetworkOnline();
-        return response;
+        try {
+          const response = await fetch(request);
+          await markNetworkOnline();
+          return response;
+        } catch {
+          return (await caches.match(request)) || Response.error();
+        }
       }
-      const cache = await caches.open(cacheName(buildId, identity));
-      const cached = await cache.match(request);
+      cache = await openExistingCache(cacheName(buildId, identity), generation);
+      cached = cache && await cache.match(request);
       if (cached) return cached;
-      const response = await fetch(request);
+      let response;
+      try {
+        response = await fetch(request);
+      } catch {
+        return cached || (await caches.match(request)) || Response.error();
+      }
       await markNetworkOnline();
-      if (response.ok) await cache.put(request, response.clone());
+      if (response.ok && generation === wipeGeneration) {
+        await putInCache(cacheName(buildId, identity), request, response.clone(), generation);
+      }
       return response;
     })());
     return;
@@ -636,11 +679,13 @@ self.addEventListener('fetch', (event) => {
         await markNetworkOnline();
         return response;
       }
-      const cache = await caches.open(PUBLIC_DATA);
-      const cached = await cache.match(request);
+      const cache = await openExistingCache(PUBLIC_DATA, generation);
+      const cached = cache && await cache.match(request);
       const networkFetch = fetch(request).then(async (response) => {
         await markNetworkOnline();
-        if (response.ok) await cache.put(request, response.clone());
+        if (response.ok && generation === wipeGeneration) {
+          await putInCache(PUBLIC_DATA, request, response.clone(), generation);
+        }
         return response;
       }).catch(() => cached);
       return cached || networkFetch;
@@ -658,7 +703,9 @@ self.addEventListener('fetch', (event) => {
       }
       return fetch(request).then(async (response) => {
         await markNetworkOnline();
-        if (response.ok) await (await caches.open(PUBLIC_DATA)).put(request, response.clone());
+        if (response.ok && generation === wipeGeneration) {
+          await putInCache(PUBLIC_DATA, request, response.clone(), generation);
+        }
         return response;
       }).catch(async () => (await caches.match(request)));
     })());
@@ -666,14 +713,16 @@ self.addEventListener('fetch', (event) => {
   }
 
   if (request.mode === 'navigate' && isAdminRoute(url.pathname)) {
-    event.respondWith(handleAdminNavigation(request));
+    event.respondWith(handleAdminNavigation(request, generation));
     return;
   }
 
   if (request.mode === 'navigate' && isPublicNavigation(url.pathname)) {
     event.respondWith(fetch(request).then(async (response) => {
       await markNetworkOnline();
-      if (response.ok) await (await caches.open(APP_SHELL)).put(request, response.clone());
+      if (response.ok && generation === wipeGeneration) {
+        await putInCache(APP_SHELL, request, response.clone(), generation);
+      }
       return response;
     }).catch(async () => (await caches.match(request)) || (await caches.match('/offline'))));
   }
