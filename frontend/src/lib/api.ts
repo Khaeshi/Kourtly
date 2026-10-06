@@ -1,4 +1,13 @@
 import { API_BASE } from '@/lib/config'
+import { sileo } from 'sileo';
+import { wipeOfflineData } from '@/lib/offlineCache';
+import {
+  readSnapshot,
+  recordLastOnlineAt,
+  sanitizeSnapshot,
+  snapshotEndpoint,
+  storeSnapshot,
+} from '@/lib/snapshotStore';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -44,39 +53,216 @@ export interface Tab {
   createdAt: string; updatedAt: string;
 }
 
-/**
- * Helpers
- * @desc The flow becomes: api.ts req() -> /proxy/players -> Next.js proxy readds JWT -> Railway + x-court-id header
- * @returns 
- */
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number | null,
+    readonly kind: 'http' | 'network'
+  ) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
 
-async function getCourtHeaders(): Promise<Record<string, string>> {
-  // getSession works on both client and server components
-  const { getSession } = await import('next-auth/react');
-  const session = await getSession();
-  const headers: Record<string, string> = {};
-  if (session?.user?.courtId) headers['x-court-id'] = session.user.courtId;
-  if (session?.user?.role)    headers['x-user-role'] = session.user.role;
-  return headers;
+export class OfflineUnavailableError extends Error {
+  constructor(message = 'This data is not available offline.', options?: ErrorOptions) {
+    super(message, options);
+    this.name = 'OfflineUnavailableError';
+  }
+}
+
+export class OfflineReadOnlyError extends Error {
+  constructor(message = 'Changes cannot be made while offline.') {
+    super(message);
+    this.name = 'OfflineReadOnlyError';
+  }
+}
+
+interface ProxyFetchOptions {
+  allowSnapshotFallback?: boolean;
+}
+
+let configuredIdentity: string | null = null;
+let sessionRedirectStarted = false;
+const HEARTBEAT_WRITE_INTERVAL_MS = 30_000;
+const lastHeartbeatWrite = new Map<string, number>();
+
+export function setProxyIdentity(identity: string | null): void {
+  configuredIdentity = identity;
+}
+
+function emitConnectivity(status: 'online' | 'offline' | 'degraded'): void {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('kourtly:connectivity', { detail: { status } }));
+  }
+}
+
+function proxyPath(path: string): string {
+  return path.startsWith(`${API_BASE}/`) ? path.slice(API_BASE.length) : path;
+}
+
+async function getSnapshotIdentity(): Promise<string | null> {
+  if (configuredIdentity) return configuredIdentity;
+  if (typeof navigator !== 'undefined' && !navigator.onLine) return null;
+  try {
+    const { getSession } = await import('next-auth/react');
+    const session = await getSession();
+    const dbId = session?.user?.dbId;
+    const courtId = session?.user?.courtId;
+    return dbId && courtId ? `${dbId}:${courtId}` : null;
+  } catch (error) {
+    console.error('Could not resolve the admin snapshot identity.', error);
+    return null;
+  }
+}
+
+function endSession(): void {
+  if (
+    typeof window === 'undefined' ||
+    sessionRedirectStarted ||
+    window.location.pathname === '/auth/signin'
+  ) return;
+  sessionRedirectStarted = true;
+  void (async () => {
+    try {
+      await wipeOfflineData();
+    } catch (error) {
+      console.error('Could not wipe offline data after an unauthorized response.', error);
+    }
+    try {
+      const { signOut } = await import('next-auth/react');
+      await signOut({ callbackUrl: '/auth/signin' });
+    } catch (error) {
+      console.error('Could not sign out after an unauthorized response.', error);
+      window.location.assign('/auth/signin');
+    }
+  })();
+}
+
+async function readErrorMessage(response: Response): Promise<string> {
+  try {
+    const data: unknown = await response.json();
+    if (typeof data === 'object' && data !== null &&
+        'error' in data && typeof data.error === 'string') return data.error;
+  } catch {
+    // Non-JSON API errors retain their HTTP status and generic message.
+  }
+  return `API error ${response.status}`;
+}
+
+function recordSuccessfulResponse(identity: string | null): void {
+  if (!identity) return;
+  const now = Date.now();
+  const lastWrite = lastHeartbeatWrite.get(identity);
+  if (lastWrite !== undefined && now - lastWrite < HEARTBEAT_WRITE_INTERVAL_MS) return;
+  lastHeartbeatWrite.set(identity, now);
+  void recordLastOnlineAt(identity, now).catch(error => {
+    lastHeartbeatWrite.delete(identity);
+    console.error('Could not update the last successful connection time.', error);
+  });
+}
+
+export async function proxyFetch<T>(
+  path: string,
+  options?: RequestInit,
+  proxyOptions: ProxyFetchOptions = {}
+): Promise<T> {
+  const endpoint = snapshotEndpoint(proxyPath(path));
+  const method = (options?.method ?? 'GET').toUpperCase();
+  const isGet = method === 'GET';
+  const rejectOfflineWrite = () => {
+    sileo.error({ title: 'Read-only offline', description: 'Reconnect to make changes.' });
+    return new OfflineReadOnlyError();
+  };
+  if (!isGet && typeof navigator !== 'undefined' && !navigator.onLine) {
+    throw rejectOfflineWrite();
+  }
+
+  const identity = await getSnapshotIdentity();
+  if (!isGet && typeof navigator !== 'undefined' && !navigator.onLine) {
+    throw rejectOfflineWrite();
+  }
+  const headers = new Headers(options?.headers);
+  if (!headers.has('Content-Type') && options?.body !== undefined) {
+    headers.set('Content-Type', 'application/json');
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}${endpoint}`, {
+      ...options,
+      method,
+      headers,
+    });
+  } catch (error) {
+    const apiError = new ApiError(
+      error instanceof Error ? error.message : 'Network request failed.',
+      null,
+      'network'
+    );
+    emitConnectivity(typeof navigator !== 'undefined' && !navigator.onLine ? 'offline' : 'degraded');
+    if (isGet && proxyOptions.allowSnapshotFallback !== false && identity) {
+      try {
+        const saved = await readSnapshot<T>(identity, endpoint);
+        if (saved) return saved.data;
+      } catch (storageError) {
+        console.error(`Could not read offline snapshot for ${endpoint}.`, storageError);
+      }
+    }
+    throw new OfflineUnavailableError(undefined, { cause: apiError });
+  }
+
+  if (response.status === 401) endSession();
+  if (!isGet && response.status === 503) {
+    const message = await readErrorMessage(response);
+    if (message.toLowerCase() === 'offline') {
+      emitConnectivity(typeof navigator !== 'undefined' && !navigator.onLine ? 'offline' : 'degraded');
+      sileo.error({ title: 'Read-only offline', description: 'Reconnect to make changes.' });
+      throw new OfflineReadOnlyError();
+    }
+    throw new ApiError(message, response.status, 'http');
+  }
+  if (isGet && [502, 503, 504].includes(response.status)) {
+    emitConnectivity(typeof navigator !== 'undefined' && !navigator.onLine ? 'offline' : 'degraded');
+    const apiError = new ApiError(await readErrorMessage(response), response.status, 'http');
+    if (isGet && proxyOptions.allowSnapshotFallback !== false && identity) {
+      try {
+        const saved = await readSnapshot<T>(identity, endpoint);
+        if (saved) return saved.data;
+      } catch (storageError) {
+        console.error(`Could not read offline snapshot for ${endpoint}.`, storageError);
+      }
+    }
+    throw new OfflineUnavailableError(undefined, { cause: apiError });
+  }
+  if (!response.ok) {
+    throw new ApiError(await readErrorMessage(response), response.status, 'http');
+  }
+
+  emitConnectivity('online');
+  recordSuccessfulResponse(identity);
+
+  let data: T;
+  try {
+    data = await response.json() as T;
+  } catch {
+    throw new ApiError(
+      'The API returned an invalid response.',
+      response.status,
+      'http'
+    );
+  }
+
+  if (isGet && identity && sanitizeSnapshot(endpoint, data) !== undefined) {
+    void storeSnapshot(identity, endpoint, data).catch(error => {
+      console.error(`Could not save offline snapshot for ${endpoint}.`, error);
+    });
+  }
+  return data;
 }
 
 async function req<T>(path: string, options?: RequestInit): Promise<T> {
-  const courtHeaders = await getCourtHeaders();
-  const res = await fetch(`${API_BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...courtHeaders },
-    ...options,
-  });
-  if (!res.ok) {
-    let message = `API error ${res.status}`;
-    try {
-      const data = await res.json();
-      if (data?.error) message = data.error;
-    } catch {
-      // ignore parse errors and keep generic status error
-    }
-    throw new Error(message);
-  }
-  return res.json();
+  return proxyFetch<T>(path, options);
 }
 
 // ─── Players ──────────────────────────────────────────────────────────────────
@@ -272,7 +458,7 @@ export async function createReservationBillingTab(id: string): Promise<Reservati
 }
 
 export async function deleteReservation(id: string): Promise<void> {
-  await fetch(`${API_BASE}/reservations/${id}`, { method: 'DELETE' });
+  await req<void>(`/reservations/${id}`, { method: 'DELETE' });
 }
 
 // ─── Reservation Tabs ─────────────────────────────────────────────────────────

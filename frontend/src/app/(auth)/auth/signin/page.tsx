@@ -1,7 +1,7 @@
 'use client';
-import { signIn, useSession } from 'next-auth/react';
+import { getSession, signIn, useSession } from 'next-auth/react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, useRef, Suspense } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { APP_NAME } from '@/lib/config';
@@ -22,25 +22,47 @@ function SignInSpinner({ label }: { label: string }) {
 function SignInContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { data: session, status } = useSession();
+  const { status } = useSession();
   const callbackUrl = searchParams.get('callbackUrl') || null;
   const error = searchParams.get('error');
   const [loading, setLoading] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [sessionCheckComplete, setSessionCheckComplete] = useState(false);
+  const sessionVerificationStarted = useRef(false);
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
   useEffect(() => {
-    if (status !== 'authenticated' || !session) return;
-
-    if (session.user.role === 'admin') {
-      router.replace(callbackUrl?.startsWith('/admin') ? callbackUrl : '/admin');
-    } else {
-      router.replace('/');
+    if (status !== 'authenticated') {
+      sessionVerificationStarted.current = false;
+      return;
     }
-  }, [status, session, callbackUrl, router]);
+    if (sessionVerificationStarted.current) return;
+    sessionVerificationStarted.current = true;
+    let active = true;
+    setSessionCheckComplete(false);
+    void getSession()
+      .then(freshSession => {
+        if (!active) return;
+        setSessionCheckComplete(true);
+        if (!freshSession) return;
+        if (freshSession.user.role === 'admin') {
+          router.replace(callbackUrl?.startsWith('/admin') ? callbackUrl : '/admin');
+        } else {
+          router.replace('/');
+        }
+      })
+      .catch(error => {
+        if (!active) return;
+        console.error('Could not refresh the sign-in session.', error);
+        setSessionCheckComplete(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, [status, callbackUrl, router]);
 
   const handleGoogleSignIn = async () => {
     setLoading(true);
@@ -56,10 +78,10 @@ function SignInContent() {
     );
   }
 
-  if (status === 'loading' || status === 'authenticated') {
+  if (status === 'loading' || (status === 'authenticated' && !sessionCheckComplete)) {
     return (
       <div className="public-root min-h-screen flex items-center justify-center">
-        <SignInSpinner label={status === 'authenticated' ? 'Redirecting...' : 'Loading...'} />
+        <SignInSpinner label={status === 'authenticated' ? 'Verifying session...' : 'Loading...'} />
       </div>
     );
   }

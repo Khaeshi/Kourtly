@@ -1,11 +1,12 @@
+import { wipeSnapshots } from '@/lib/snapshotStore';
+
 const DB_NAME = 'kourtly-offline';
 const DB_VERSION = 1;
 const META_STORE = 'meta';
 const IDENTITY_KEY = 'identity';
 const BUILD_ID_KEY = 'buildId';
 const OFFLINE_KEY = 'networkOffline';
-const CAPABILITIES_KEY_PREFIX = 'adminCapabilities:';
-const CAPABILITIES_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const openConnections = new Set<IDBDatabase>();
 
 function openOfflineDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -16,8 +17,13 @@ function openOfflineDatabase(): Promise<IDBDatabase> {
       }
     };
     request.onsuccess = () => {
-      request.result.onversionchange = () => request.result.close();
-      resolve(request.result);
+      const database = request.result;
+      openConnections.add(database);
+      database.onversionchange = () => {
+        database.close();
+        openConnections.delete(database);
+      };
+      resolve(database);
     };
     request.onerror = () => reject(request.error ?? new Error('Could not open offline storage.'));
   });
@@ -33,6 +39,7 @@ async function readMeta<T>(key: string): Promise<T | undefined> {
     });
   } finally {
     database.close();
+    openConnections.delete(database);
   }
 }
 
@@ -50,50 +57,59 @@ async function writeMeta(key: string, value: unknown): Promise<void> {
     });
   } finally {
     database.close();
+    openConnections.delete(database);
   }
-}
-
-async function deleteMeta(key: string): Promise<void> {
-  const database = await openOfflineDatabase();
-  try {
-    await new Promise<void>((resolve, reject) => {
-      const request = database.transaction(META_STORE, 'readwrite').objectStore(META_STORE).delete(key);
-      request.onsuccess = () => resolve();
-      request.onerror = () => reject(request.error ?? new Error('Could not remove offline metadata.'));
-    });
-  } finally {
-    database.close();
-  }
-}
-
-export async function storeOfflineCapabilities<T>(identity: string, capabilities: T): Promise<void> {
-  await writeMeta(`${CAPABILITIES_KEY_PREFIX}${identity}`, {
-    capabilities,
-    cachedAt: Date.now(),
-  });
-}
-
-export async function getOfflineCapabilities<T>(identity: string): Promise<T | undefined> {
-  const key = `${CAPABILITIES_KEY_PREFIX}${identity}`;
-  const stored = await readMeta<{ capabilities: T; cachedAt: number }>(key);
-  if (!stored) return undefined;
-
-  const age = Date.now() - stored.cachedAt;
-  if (!Number.isFinite(stored.cachedAt) || age < 0 || age >= CAPABILITIES_MAX_AGE_MS) {
-    await deleteMeta(key);
-    return undefined;
-  }
-  return stored.capabilities;
 }
 
 export async function wipeOfflineData(): Promise<void> {
-  const cacheNames = await caches.keys();
-  await Promise.all(cacheNames.map(cacheName => caches.delete(cacheName)));
+  for (const database of openConnections) {
+    database.close();
+    openConnections.delete(database);
+  }
+  const results = await Promise.allSettled([
+    (async () => {
+      const cacheNames = await caches.keys();
+      const cacheResults = await Promise.allSettled(cacheNames.map(cacheName => caches.delete(cacheName)));
+      const failures = cacheResults
+        .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+        .map(result => result.reason);
+      if (failures.length) throw new AggregateError(failures, 'Could not clear all service worker caches.');
+    })(),
+    deleteDatabase(DB_NAME, 'Could not clear offline storage.'),
+    wipeSnapshots(),
+  ]);
+  const failures = results
+    .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+    .map(result => result.reason);
+  if (failures.length) throw new AggregateError(failures, 'Could not completely clear offline data.');
+}
 
-  await new Promise<void>((resolve, reject) => {
-    const request = indexedDB.deleteDatabase(DB_NAME);
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error ?? new Error('Could not clear offline storage.'));
+export async function ensureAdminOfflineIdentity(identity: string): Promise<void> {
+  const previousIdentity = await readMeta<string>(IDENTITY_KEY);
+  if (previousIdentity !== identity) await wipeOfflineData();
+  await writeMeta(IDENTITY_KEY, identity);
+}
+
+function deleteDatabase(name: string, errorMessage: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.deleteDatabase(name);
+    let blockedTimer: ReturnType<typeof setTimeout> | undefined;
+    request.onsuccess = () => {
+      if (blockedTimer) clearTimeout(blockedTimer);
+      resolve();
+    };
+    request.onerror = () => reject(request.error ?? new Error(errorMessage));
+    request.onblocked = () => {
+      for (const database of openConnections) {
+        database.close();
+        openConnections.delete(database);
+      }
+      if (!blockedTimer) {
+        blockedTimer = setTimeout(() => {
+          reject(new Error(`${errorMessage} Deletion remained blocked for 3 seconds.`));
+        }, 3_000);
+      }
+    };
   });
 }
 
@@ -101,12 +117,7 @@ export async function initializeAdminOfflineIdentity(
   identity: string,
   buildId: string
 ): Promise<ServiceWorker | null> {
-  const previousIdentity = await readMeta<string>(IDENTITY_KEY);
-  if (previousIdentity !== identity) {
-    await wipeOfflineData();
-  }
-
-  await writeMeta(IDENTITY_KEY, identity);
+  await ensureAdminOfflineIdentity(identity);
   await writeMeta(BUILD_ID_KEY, buildId);
   const existingRegistration = await navigator.serviceWorker.getRegistration();
   const networkOffline = await readMeta<boolean>(OFFLINE_KEY);

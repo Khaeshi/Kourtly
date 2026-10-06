@@ -17,6 +17,7 @@ import {
 import Image from 'next/image';
 import { useCapabilities } from '@/lib/entitlements';
 import { wipeOfflineData } from '@/lib/offlineCache';
+import { proxyFetch } from '@/lib/api';
 
 interface Props {
   isOpen: boolean;
@@ -76,13 +77,16 @@ export default function AdminSidebar({ isOpen, offline, onClose, user }: Props) 
       setCourtLogoUrl(session.user.court.logoUrl);
     }
 
-    fetch('/api/proxy/court/me')
-      .then(r => (r.ok ? r.json() : null))
-      .then(data => {
+    const loadCourt = async () => {
+      try {
+        const data = await proxyFetch<{ name?: string; logoUrl?: string }>('/court/me');
         if (data?.name) setCourtName(data.name);
         if (data?.logoUrl) setCourtLogoUrl(data.logoUrl);
-      })
-      .catch(() => {});
+      } catch (error) {
+        console.error('Could not load court branding.', error);
+      }
+    };
+    void loadCourt();
   }, [
     session?.user?.courtId,
     session?.user?.court?.name,

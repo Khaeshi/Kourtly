@@ -1,9 +1,8 @@
 'use client';
 
-import { createContext, useContext, useEffect, useState } from 'react';
-import { useSession } from 'next-auth/react';
+import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
-import { getOfflineCapabilities, storeOfflineCapabilities } from '@/lib/offlineCache';
+import { proxyFetch } from '@/lib/api';
 
 export type ModuleKey = 'booking' | 'queue' | 'item_tabs';
 export type TierKey = 'basic' | 'standard' | 'premium' | 'elite';
@@ -17,13 +16,21 @@ export interface Capabilities {
   pendingTierEffectiveAt?: string | null;
 }
 
+interface CapabilityState {
+  status: 'unknown' | 'known';
+  capabilities: Capabilities | null;
+}
+
 const DEFAULT_CAPABILITIES: Capabilities = {
   tier: 'basic',
   currentTier: 'basic',
   modules: { booking: true, queue: false, item_tabs: false },
 };
 
-const CapabilitiesContext = createContext<Capabilities | null>(null);
+const CapabilitiesContext = createContext<CapabilityState>({
+  status: 'unknown',
+  capabilities: null,
+});
 
 function isCapabilities(value: unknown): value is Capabilities {
   if (typeof value !== 'object' || value === null) return false;
@@ -40,79 +47,47 @@ function isCapabilities(value: unknown): value is Capabilities {
 }
 
 export function CapabilitiesProvider({ children }: { children: React.ReactNode }) {
-  const [capabilities, setCapabilities] = useState<Capabilities | null>(null);
-  const { data: session } = useSession();
-  const identity = session?.user?.dbId && session.user.courtId
-    ? `${session.user.dbId}:${session.user.courtId}`
-    : null;
+  const [state, setState] = useState<CapabilityState>({
+    status: 'unknown',
+    capabilities: null,
+  });
+
+  const loadCapabilities = useCallback(async () => {
+    try {
+      const data: unknown = await proxyFetch('/court/me/capabilities');
+      if (!isCapabilities(data)) {
+        setState({ status: 'unknown', capabilities: null });
+        return;
+      }
+      setState({ status: 'known', capabilities: data });
+    } catch (error) {
+      console.error('Could not load admin capabilities.', error);
+      setState(current => current.status === 'known'
+        ? current
+        : { status: 'unknown', capabilities: null });
+    }
+  }, []);
 
   useEffect(() => {
-    let cancelled = false;
-    setCapabilities(null);
-
-    const loadCapabilities = async () => {
-      let shouldUseOfflineCapabilities = false;
-      try {
-        const response = await fetch('/api/proxy/court/me/capabilities');
-        if (response.status === 401) return;
-        if (response.status === 502) {
-          shouldUseOfflineCapabilities = true;
-        } else if (response.ok) {
-          const data: unknown = await response.json();
-          if (!isCapabilities(data)) return;
-          if (!cancelled) setCapabilities(data);
-          if (identity) {
-            const offlineCapabilities: Capabilities = {
-              tier: data.tier,
-              currentTier: data.currentTier,
-              modules: {
-                booking: data.modules.booking,
-                queue: data.modules.queue,
-                item_tabs: data.modules.item_tabs,
-              },
-            };
-            await storeOfflineCapabilities(identity, offlineCapabilities).catch(error => {
-              console.error('Could not store offline admin capabilities.', error);
-            });
-          }
-          return;
-        } else {
-          return;
-        }
-      } catch {
-        shouldUseOfflineCapabilities = true;
-      }
-
-      if (shouldUseOfflineCapabilities && identity) {
-        try {
-          const saved = await getOfflineCapabilities<Capabilities>(identity);
-          if (!cancelled && saved && isCapabilities(saved)) setCapabilities(saved);
-        } catch (error) {
-          console.error('Could not load offline admin capabilities.', error);
-        }
-      }
-    };
-
     void loadCapabilities();
-    return () => {
-      cancelled = true;
-    };
-  }, [identity]);
+    window.addEventListener('online', loadCapabilities);
+    return () => window.removeEventListener('online', loadCapabilities);
+  }, [loadCapabilities]);
 
-  return (
-    <CapabilitiesContext.Provider value={capabilities ?? DEFAULT_CAPABILITIES}>
-      {children}
-    </CapabilitiesContext.Provider>
-  );
+  return <CapabilitiesContext.Provider value={state}>{children}</CapabilitiesContext.Provider>;
 }
 
-export function useCapabilities() {
-  return useContext(CapabilitiesContext) ?? DEFAULT_CAPABILITIES;
+export function useCapabilityState(): CapabilityState {
+  return useContext(CapabilitiesContext);
+}
+
+export function useCapabilities(): Capabilities {
+  return useCapabilityState().capabilities ?? DEFAULT_CAPABILITIES;
 }
 
 export function CapabilityGate({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const capabilities = useCapabilities();
+  const { status, capabilities } = useCapabilityState();
   const requiredModule = pathname.startsWith('/admin/queue') || pathname.startsWith('/admin/players')
     ? 'queue'
     : pathname.startsWith('/admin/items') || pathname.startsWith('/admin/billing')
@@ -120,6 +95,14 @@ export function CapabilityGate({ children }: { children: React.ReactNode }) {
       : pathname.startsWith('/admin/reservation') || pathname.startsWith('/admin/schedule')
         ? 'booking'
         : null;
+
+  if (status === 'unknown' || !capabilities) {
+    return (
+      <div className="max-w-[680px] py-12">
+        <p className="text-sm text-gray-500">Access status is unavailable. Reconnect to verify your current tier.</p>
+      </div>
+    );
+  }
 
   if (requiredModule && !capabilities.modules[requiredModule]) {
     return (
