@@ -12,6 +12,7 @@ import {
 } from '@/lib/api';
 import type { Player, CatalogItem, Tab, ReservationTab, PaginatedTabs, PaginatedResTabs } from '@/lib/api';
 import { useSocketEvent } from '@/hooks/useSocketEvent';
+import { useConnectivity } from '@/lib/connectivity';
 
 // ── Constants (unchanged) ─────────────────────────────────────────────────────
 const LEVEL_COLOR: Record<string, string> = {
@@ -39,6 +40,9 @@ function SplitModal({ item, openTabs, primaryTab, onClose, onDone }: {
 }) {
   const [additionalIds, setAdditionalIds] = useState<string[]>([]);
   const [loading,       setLoading]       = useState(false);
+  const { status } = useConnectivity();
+  const offline = status !== 'online';
+  const offlineTitle = offline ? 'Reconnect to make changes' : undefined;
 
   const primaryId   = primaryTab?.player._id ?? null;
   const otherTabs   = openTabs.filter(t => t.player._id !== primaryId);
@@ -165,7 +169,7 @@ function SplitModal({ item, openTabs, primaryTab, onClose, onDone }: {
             className="px-4 py-1.5 rounded-md border border-gray-200 bg-white text-gray-500 text-xs cursor-pointer hover:bg-gray-50 transition-all">
             Cancel
           </button>
-          <button onClick={handle} disabled={!canCharge || loading}
+          <button onClick={handle} disabled={!canCharge || loading || offline} title={offlineTitle}
             className={`px-4 py-1.5 rounded-md border text-xs font-semibold transition-all ${
               !canCharge
                 ? 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed'
@@ -189,6 +193,9 @@ function TabCard({ tab, isActive, onClick, onUpdate }: {
   tab: Tab; isActive: boolean; onClick: () => void; onUpdate: () => void;
 }) {
   const [paying, setPaying] = useState(false);
+  const { status } = useConnectivity();
+  const offline = status !== 'online';
+  const offlineTitle = offline ? 'Reconnect to make changes' : undefined;
 
   const handlePay = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -235,7 +242,7 @@ function TabCard({ tab, isActive, onClick, onUpdate }: {
               <span className="flex-1 text-xs text-gray-600 truncate">{item.name}</span>
               <span className="text-[0.7rem] text-gray-400 font-mono">×{item.quantity}</span>
               <span className="text-xs text-gray-600 font-mono min-w-[44px] text-right">{fmt(item.price * item.quantity)}</span>
-              <button onClick={e => handleRemove(e, i)} className="text-gray-300 hover:text-red-400 transition-colors text-xs px-0.5 leading-none">✕</button>
+              <button onClick={e => handleRemove(e, i)} disabled={offline} title={offlineTitle} className="text-gray-300 hover:text-red-400 transition-colors text-xs px-0.5 leading-none">✕</button>
             </div>
           ))}
         </div>
@@ -244,7 +251,7 @@ function TabCard({ tab, isActive, onClick, onUpdate }: {
       <div className="px-4 py-2 border-t border-gray-100 bg-gray-50/60 flex gap-1.5">
         {tab.items.length > 0 && (
           <>
-            <button onClick={handlePay} disabled={paying}
+            <button onClick={handlePay} disabled={paying || offline} title={offlineTitle}
               className="flex-1 py-1.5 rounded-md border border-yellow-200 bg-yellow-50 text-yellow-900 text-xs font-semibold cursor-pointer hover:bg-yellow-100 transition-all disabled:opacity-40">
               {paying ? '...' : `Pay ${fmt(tab.total)}`}
             </button>
@@ -255,12 +262,14 @@ function TabCard({ tab, isActive, onClick, onUpdate }: {
                 sileo.error({ title: 'Marked unpaid', description: `${tab.player.name} — ${fmt(tab.total)}` });
                 onUpdate();
               }}
+              disabled={offline}
+              title={offlineTitle}
               className="px-2.5 py-1.5 rounded-md border border-orange-200 bg-orange-50 text-orange-600 text-xs font-semibold cursor-pointer hover:bg-orange-100 transition-all">
               Not Paid
             </button>
           </>
         )}
-        <button onClick={handleClose}
+        <button onClick={handleClose} disabled={offline} title={offlineTitle}
           className="px-2.5 py-1.5 rounded-md border border-red-100 bg-red-50/60 text-red-400 text-xs cursor-pointer hover:bg-red-100 transition-all">
           ✕
         </button>
@@ -271,6 +280,9 @@ function TabCard({ tab, isActive, onClick, onUpdate }: {
 
 // ── Main Page (all logic unchanged) ──────────────────────────────────────────
 export default function BillingPage() {
+  const { status } = useConnectivity();
+  const offline = status !== 'online';
+  const offlineTitle = offline ? 'Reconnect to make changes' : undefined;
   const [players,    setPlayers]    = useState<Player[]>([]);
   const [items,      setItems]      = useState<CatalogItem[]>([]);
   const [openTabs,   setOpenTabs]   = useState<Tab[]>([]);
@@ -311,7 +323,7 @@ export default function BillingPage() {
     } catch (error) {
       setPlayers([]); setItems([]); setOpenTabs([]); setResTabs([]);
       setLoadError(error instanceof OfflineUnavailableError
-        ? 'Not cached yet'
+        ? 'Not cached yet. Open this page once while online.'
         : 'Could not load billing data.');
       if (!(error instanceof OfflineUnavailableError)) {
         console.error('Could not load billing data.', error);
@@ -335,7 +347,7 @@ export default function BillingPage() {
       setHistoryPaged(null);
       setResHistory(null);
       setHistoryError(error instanceof OfflineUnavailableError
-        ? 'Not cached'
+        ? 'Not cached yet. Open this page once while online.'
         : 'Could not load billing history.');
       if (!(error instanceof OfflineUnavailableError)) {
         console.error('Could not load billing history.', error);
@@ -462,7 +474,7 @@ export default function BillingPage() {
                 <option value="">Open tab for player...</option>
                 {availablePlayers.map(p => <option key={p._id} value={p._id}>{p.name} — {p.level}</option>)}
               </select>
-              <button onClick={handleOpenTab} disabled={!openingFor}
+              <button onClick={handleOpenTab} disabled={!openingFor || offline} title={offlineTitle}
                 className={`px-4 py-2 rounded-md text-xs font-semibold border transition-all ${
                   openingFor ? 'bg-green-50 border-green-200 text-green-700 cursor-pointer hover:bg-green-100' : 'bg-gray-50 border-gray-200 text-gray-400 cursor-not-allowed'
                 }`}>
@@ -536,7 +548,7 @@ export default function BillingPage() {
                             className="w-5 h-5 rounded border border-gray-200 bg-white text-gray-500 text-sm flex items-center justify-center disabled:cursor-not-allowed hover:border-gray-300 transition-colors">+</button>
                         </div>
                       )}
-                      <button disabled={!activeTab} onClick={() => handleQuickAdd(item)}
+                      <button disabled={!activeTab || offline} title={offlineTitle} onClick={() => handleQuickAdd(item)}
                         className={`px-2 py-1 rounded text-[0.7rem] font-semibold shrink-0 border transition-all ${
                           !activeTab ? 'bg-gray-50 border-gray-200 text-gray-300 cursor-not-allowed'
                             : item.isSplittable ? 'bg-blue-50 border-blue-200 text-blue-600 cursor-pointer hover:bg-blue-100'
@@ -621,6 +633,8 @@ export default function BillingPage() {
                               <span className="text-[0.7rem] text-gray-400 font-mono">×{item.quantity}</span>
                               <span className="text-xs text-gray-600 font-mono min-w-[44px] text-right">{fmt(item.price * item.quantity)}</span>
                               <button
+                                disabled={offline}
+                                title={offlineTitle}
                                 onClick={async e => {
                                   e.stopPropagation();
                                   await removeItemFromReservationTab(tab._id, i);
@@ -638,6 +652,8 @@ export default function BillingPage() {
                       <div className="px-4 py-2 border-t border-gray-100 bg-gray-50/60 flex gap-1.5">
                         {tab.total > 0 && (
                           <button
+                            disabled={offline}
+                            title={offlineTitle}
                             onClick={async e => {
                               e.stopPropagation();
                               await sileo.promise(payReservationTab(tab._id), {
@@ -652,6 +668,8 @@ export default function BillingPage() {
                           </button>
                         )}
                         <button
+                          disabled={offline}
+                          title={offlineTitle}
                           onClick={async e => {
                             e.stopPropagation();
                             if (!confirm(`Clear ${tab.guestName}'s tab?`)) return;
@@ -712,7 +730,7 @@ export default function BillingPage() {
                             className="w-5 h-5 rounded border border-gray-200 bg-white text-gray-500 text-sm flex items-center justify-center disabled:cursor-not-allowed hover:border-gray-300">+</button>
                         </div>
                         {/* Add button */}
-                        <button disabled={!activeResTab}
+                        <button disabled={!activeResTab || offline} title={offlineTitle}
                           onClick={async () => {
                             if (!activeResTab) return;
                             setAddingResItem(item._id);
@@ -826,7 +844,7 @@ export default function BillingPage() {
                           await payUnpaid(tab._id);
                           sileo.success({ title: 'Marked as paid', description: tab.player.name });
                           loadHistory();
-                        }} className="text-[0.65rem] font-semibold px-2 py-0.5 rounded-full border border-orange-300 bg-orange-50 text-orange-600 cursor-pointer hover:bg-orange-100 transition-all mr-4">
+                        }} disabled={offline} title={offlineTitle} className="text-[0.65rem] font-semibold px-2 py-0.5 rounded-full border border-orange-300 bg-orange-50 text-orange-600 cursor-pointer hover:bg-orange-100 transition-all mr-4">
                           Collect Unpaid
                         </button>
                       ) : (
@@ -855,6 +873,7 @@ export default function BillingPage() {
                         <p className="font-mono text-sm font-semibold text-yellow-900">{fmt(tab.total)}</p>
                         {tab.status === 'unpaid' && (
                           <button onClick={async () => { await payUnpaid(tab._id); sileo.success({ title: 'Paid', description: tab.player.name }); loadHistory(); }}
+                            disabled={offline} title={offlineTitle}
                             className="text-[0.65rem] text-orange-600 underline cursor-pointer mt-0.5">Collect</button>
                         )}
                       </div>
@@ -937,7 +956,7 @@ export default function BillingPage() {
                             await payReservationUnpaid(tab._id);
                             sileo.success({ title: 'Paid', description: tab.guestName });
                             loadHistory();
-                          }} className="text-[0.65rem] font-semibold px-2 py-0.5 rounded-full border border-orange-300 bg-orange-50 text-orange-600 cursor-pointer hover:bg-orange-100">
+                          }} disabled={offline} title={offlineTitle} className="text-[0.65rem] font-semibold px-2 py-0.5 rounded-full border border-orange-300 bg-orange-50 text-orange-600 cursor-pointer hover:bg-orange-100">
                             Unpaid — Collect
                           </button>
                         ) : tab.status === 'open' ? (
@@ -946,7 +965,7 @@ export default function BillingPage() {
                               await payReservationTab(tab._id);
                               sileo.success({ title: 'Paid!', description: tab.guestName });
                               loadHistory();
-                            }} className="text-[0.65rem] font-semibold px-2 py-0.5 rounded-full border border-blue-300 bg-blue-50 text-blue-700 cursor-pointer hover:bg-blue-100">
+                            }} disabled={offline} title={offlineTitle} className="text-[0.65rem] font-semibold px-2 py-0.5 rounded-full border border-blue-300 bg-blue-50 text-blue-700 cursor-pointer hover:bg-blue-100">
                               Pay {fmt(tab.total)}
                             </button>
                           ) : (
@@ -977,6 +996,7 @@ export default function BillingPage() {
                         <span className="font-mono text-sm font-semibold text-yellow-900">{fmt(tab.total)}</span>
                         {tab.status === 'unpaid' && (
                           <button onClick={async () => { await payReservationUnpaid(tab._id); sileo.success({ title: 'Paid', description: tab.guestName }); loadHistory(); }}
+                            disabled={offline} title={offlineTitle}
                             className="block text-[0.65rem] text-orange-600 underline cursor-pointer mt-0.5">Collect</button>
                         )}
                       </div>

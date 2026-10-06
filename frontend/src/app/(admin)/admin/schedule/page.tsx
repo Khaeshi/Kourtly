@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { sileo } from 'sileo';
 import { useSocketEvent } from '@/hooks/useSocketEvent';
+import { proxyFetch } from '@/lib/api';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -82,11 +83,11 @@ function WeeklyRulesPanel({ rules, onUpdate }: {
   const updateRule = async (dayOfWeek: number, patch: Partial<ScheduleRule>) => {
     setSaving(dayOfWeek);
     try {
-      await fetch(`/api/proxy/schedule/rules/${dayOfWeek}`, {
+      await proxyFetch(`/schedule/rules/${dayOfWeek}`, {
         method:  'PUT',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify(patch),
-      });
+      }, { allowSnapshotFallback: false });
       sileo.success({ title: 'Schedule updated' });
       onUpdate();
     } catch {
@@ -198,12 +199,11 @@ function AddBlockForm({ onAdded }: { onAdded: () => void }) {
     setSaving(true);
     // In AddBlockForm — submit
     try{
-      const res = await fetch('/api/proxy/schedule/blocks', {
+      await proxyFetch('/schedule/blocks', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify(form),
-      });
-      if (!res.ok) throw new Error((await res.json()).error);
+      }, { allowSnapshotFallback: false });
       sileo.success({ title: 'Block added' });
       setOpen(false);
       setForm({ date: todayStr(), blockType: 'day', courts: [], startTime: '18:00', endTime: '21:00', reason: '' });
@@ -429,14 +429,15 @@ export default function SchedulePage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [rulesRes, blocksRes] = await Promise.all([
-        fetch('/api/proxy/schedule/rules'),
-        fetch('/api/proxy/schedule/blocks'),
+      const [rulesData, blocksData] = await Promise.all([
+        proxyFetch<ScheduleRule[]>('/schedule/rules', undefined, { allowSnapshotFallback: false }),
+        proxyFetch<ScheduleBlock[]>('/schedule/blocks', undefined, { allowSnapshotFallback: false }),
       ]);
-      const rulesData  = await rulesRes.json();
-      const blocksData = await blocksRes.json();
       setRules(Array.isArray(rulesData)   ? rulesData  : []);
       setBlocks(Array.isArray(blocksData) ? blocksData : []);
+    } catch (error) {
+      console.error('Could not load schedule data.', error);
+      sileo.error({ title: 'Could not load schedule data' });
     } finally {
       setLoading(false);
     }
@@ -448,9 +449,13 @@ export default function SchedulePage() {
   // deleteBlock
   const deleteBlock = async (id: string) => {
     if (!confirm('Remove this block?')) return;
-    await fetch(`/api/proxy/schedule/blocks/${id}`, { method: 'DELETE' });
-    sileo.success({ title: 'Block removed' });
-    load();
+    try {
+      await proxyFetch(`/schedule/blocks/${id}`, { method: 'DELETE' }, { allowSnapshotFallback: false });
+      sileo.success({ title: 'Block removed' });
+      await load();
+    } catch (error) {
+      sileo.error({ title: 'Could not remove block', description: error instanceof Error ? error.message : 'Please try again.' });
+    }
   };
 
   return (

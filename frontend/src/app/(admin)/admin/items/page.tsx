@@ -1,10 +1,11 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 import { sileo } from 'sileo';
-import { getAllItems, createItem, updateItem, deleteItem } from '@/lib/api';
+import { getAllItems, createItem, updateItem, deleteItem, OfflineUnavailableError } from '@/lib/api';
 import type { CatalogItem } from '@/lib/api';
 import { Button } from '@/app/components/ui/Button';
 import { useSocketEvent } from '@/hooks/useSocketEvent';
+import { useConnectivity } from '@/lib/connectivity';
 
 // ── Constants (unchanged) ─────────────────────────────────────────────────────
 const CATEGORIES = ['general', 'drinks', 'equipment', 'food', 'court fee'];
@@ -47,6 +48,10 @@ function CategoryBadge({ category }: { category: string }) {
 export default function ItemsPage() {
   const [items,    setItems]    = useState<CatalogItem[]>([]);
   const [loading,  setLoading]  = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const { status } = useConnectivity();
+  const offline = status !== 'online';
+  const offlineTitle = offline ? 'Reconnect to make changes' : undefined;
   const [saving,   setSaving]   = useState(false);
   const [editId,   setEditId]   = useState<string | null>(null);
   const [editForm, setEditForm] = useState<ItemForm>(emptyForm);
@@ -56,8 +61,18 @@ export default function ItemsPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    setItems(await getAllItems());
-    setLoading(false);
+    setLoadError('');
+    try {
+      setItems(await getAllItems());
+    } catch (error) {
+      setItems([]);
+      setLoadError(error instanceof OfflineUnavailableError
+        ? 'Not cached yet. Open this page once while online.'
+        : 'Could not load items.');
+      if (!(error instanceof OfflineUnavailableError)) console.error('Could not load items.', error);
+    } finally {
+      setLoading(false);
+    }
   }, []);
   useEffect(() => { load(); }, [load]);
   useSocketEvent('items:updated', useCallback(() => { load(); }, [load]));
@@ -109,7 +124,7 @@ export default function ItemsPage() {
         <div className="flex items-center gap-3">
           <div className="text-right">
             <div className="text-[0.65rem] font-semibold tracking-widest uppercase text-gray-400">Active</div>
-            <div className="font-mono text-xl text-green-700 font-semibold">{items.filter(i => i.isActive).length}</div>
+            <div className="font-mono text-xl text-green-700 font-semibold">{loadError ? '—' : items.filter(i => i.isActive).length}</div>
           </div>
           <Button v="primary" onClick={() => setShowAdd(!showAdd)}>
             {showAdd ? 'Cancel' : '+ Add Item'}
@@ -141,7 +156,7 @@ export default function ItemsPage() {
           </div>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <Toggle checked={form.isSplittable} onChange={v => setForm({ ...form, isSplittable: v })} label="Splittable (÷ across players at queue time)" />
-            <Button v="primary" onClick={handleAdd} loading={saving}>Add Item</Button>
+            <Button v="primary" onClick={handleAdd} loading={saving} disabled={offline} title={offlineTitle}>Add Item</Button>
           </div>
           {form.isSplittable && (
             <p className="text-xs text-green-600 mt-2">This item will appear in the queue shuttlecock picker and can be auto-split across all 4 players.</p>
@@ -166,6 +181,8 @@ export default function ItemsPage() {
       {/* Items */}
       {loading ? (
         <div className="p-16 text-center text-gray-400 text-sm">Loading...</div>
+      ) : loadError ? (
+        <div className="p-16 text-center bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-sm">{loadError}</div>
       ) : filtered.length === 0 ? (
         <div className="p-16 text-center bg-white border border-gray-200 rounded-xl text-gray-400 text-sm">No items yet.</div>
       ) : (
@@ -208,7 +225,7 @@ export default function ItemsPage() {
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <Toggle checked={editForm.isSplittable} onChange={v => setEditForm({ ...editForm, isSplittable: v })} label="Splittable" />
                         <div className="flex gap-1.5">
-                          <Button v="primary" size="sm" onClick={() => handleSave(item._id)}>Save</Button>
+                          <Button v="primary" size="sm" onClick={() => handleSave(item._id)} disabled={offline} title={offlineTitle}>Save</Button>
                           <Button v="ghost"   size="sm" onClick={() => setEditId(null)}>Cancel</Button>
                         </div>
                       </div>
@@ -228,9 +245,9 @@ export default function ItemsPage() {
                           {item.isActive ? 'Active' : 'Hidden'}
                         </span>
                         <div className="flex gap-1.5 justify-end">
-                          <Button v="ghost" size="sm" onClick={() => { setEditId(item._id); setEditForm({ name: item.name, price: String(item.price), category: item.category, isSplittable: item.isSplittable ?? false }); }}>Edit</Button>
-                          <Button v="ghost" size="sm" onClick={() => handleToggleActive(item)}>{item.isActive ? 'Hide' : 'Show'}</Button>
-                          <Button v="danger" size="sm" onClick={() => handleDelete(item)}>Del</Button>
+                          <Button v="ghost" size="sm" onClick={() => { setEditId(item._id); setEditForm({ name: item.name, price: String(item.price), category: item.category, isSplittable: item.isSplittable ?? false }); }} disabled={offline} title={offlineTitle}>Edit</Button>
+                          <Button v="ghost" size="sm" onClick={() => handleToggleActive(item)} disabled={offline} title={offlineTitle}>{item.isActive ? 'Hide' : 'Show'}</Button>
+                          <Button v="danger" size="sm" onClick={() => handleDelete(item)} disabled={offline} title={offlineTitle}>Del</Button>
                         </div>
                       </div>
 
@@ -253,9 +270,9 @@ export default function ItemsPage() {
                           </span>
                         </div>
                         <div className="flex gap-1.5 pt-1">
-                          <Button v="ghost" size="sm" onClick={() => { setEditId(item._id); setEditForm({ name: item.name, price: String(item.price), category: item.category, isSplittable: item.isSplittable ?? false }); }}>Edit</Button>
-                          <Button v="ghost" size="sm" onClick={() => handleToggleActive(item)}>{item.isActive ? 'Hide' : 'Show'}</Button>
-                          <Button v="danger" size="sm" onClick={() => handleDelete(item)}>Del</Button>
+                          <Button v="ghost" size="sm" onClick={() => { setEditId(item._id); setEditForm({ name: item.name, price: String(item.price), category: item.category, isSplittable: item.isSplittable ?? false }); }} disabled={offline} title={offlineTitle}>Edit</Button>
+                          <Button v="ghost" size="sm" onClick={() => handleToggleActive(item)} disabled={offline} title={offlineTitle}>{item.isActive ? 'Hide' : 'Show'}</Button>
+                          <Button v="danger" size="sm" onClick={() => handleDelete(item)} disabled={offline} title={offlineTitle}>Del</Button>
                         </div>
                       </div>
                     </>

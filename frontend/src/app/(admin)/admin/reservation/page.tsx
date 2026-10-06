@@ -12,6 +12,7 @@ import type { Reservation } from '@/lib/api';
 import { Button } from '@/app/components/ui/Button';
 import { useSocketEvent } from '@/hooks/useSocketEvent';
 import { useCapabilities } from '@/lib/entitlements';
+import { useConnectivity } from '@/lib/connectivity';
 
 // ── Constants (unchanged) ─────────────────────────────────────────────────────
 const STATUS_STYLE: Record<string, { label: string; text: string }> = {
@@ -32,6 +33,9 @@ function fmtDate(d: string) {
 function DeleteModal({ r, onClose, onDeleted }: { r: Reservation; onClose: () => void; onDeleted: () => void }) {
   const [typed,    setTyped]    = useState('');
   const [deleting, setDeleting] = useState(false);
+  const { status } = useConnectivity();
+  const offline = status !== 'online';
+  const offlineTitle = offline ? 'Reconnect to make changes' : undefined;
   const confirmed = typed.trim().toLowerCase() === r.name.trim().toLowerCase();
 
   useEffect(() => {
@@ -92,7 +96,7 @@ function DeleteModal({ r, onClose, onDeleted }: { r: Reservation; onClose: () =>
             )}
           </div>
           <div className={`transition-all duration-200 overflow-hidden ${confirmed ? 'max-h-20 opacity-100' : 'max-h-0 opacity-0'}`}>
-            <Button v="danger" loading={deleting} disabled={!confirmed} onClick={handleDelete}
+            <Button v="danger" loading={deleting} disabled={!confirmed || offline} title={offlineTitle} onClick={handleDelete}
               className="w-full justify-center py-2.5 !bg-red-500 !border-red-500 !text-white hover:!bg-red-600 text-sm font-semibold">
               Confirm Delete
             </Button>
@@ -110,6 +114,9 @@ function DetailModal({ r, onClose, onUpdate, onDeleteRequest, canCreateBillingTa
 }) {
   const [notes, setNotes] = useState(r.notes ?? '');
   const [creatingBillingTab, setCreatingBillingTab] = useState(false);
+  const { status } = useConnectivity();
+  const offline = status !== 'online';
+  const offlineTitle = offline ? 'Reconnect to make changes' : undefined;
   const s = STATUS_STYLE[r.status] ?? { label: 'bg-gray-100 border-gray-200 text-gray-500', text: r.status };
 
   const setStatus = async (status: Reservation['status']) => {
@@ -204,15 +211,15 @@ function DetailModal({ r, onClose, onUpdate, onDeleteRequest, canCreateBillingTa
         </div>
         <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between flex-wrap gap-3">
           <div className="flex gap-1.5 flex-wrap">
-            {r.status !== 'completed' && <Button v="ghost"   onClick={() => setStatus('completed')}>Mark Done</Button>}
-            {r.status !== 'cancelled' && <Button v="danger"  onClick={() => setStatus('cancelled')}>Cancel</Button>}
+            {r.status !== 'completed' && <Button v="ghost"   onClick={() => setStatus('completed')} disabled={offline} title={offlineTitle}>Mark Done</Button>}
+            {r.status !== 'cancelled' && <Button v="danger"  onClick={() => setStatus('cancelled')} disabled={offline} title={offlineTitle}>Cancel</Button>}
           </div>
           <div className="flex gap-1.5">
             {canCreateBillingTab && ['confirmed','completed'].includes(r.status) && (
-              <Button v="primary" loading={creatingBillingTab} onClick={createBillingTab}>Create Billing Tab</Button>
+              <Button v="primary" loading={creatingBillingTab} onClick={createBillingTab} disabled={offline} title={offlineTitle}>Create Billing Tab</Button>
             )}
-            <Button v="ghost"  onClick={saveNotes}>Save Notes</Button>
-            <Button v="danger" onClick={() => { onClose(); onDeleteRequest(r); }}>Delete</Button>
+            <Button v="ghost"  onClick={saveNotes} disabled={offline} title={offlineTitle}>Save Notes</Button>
+            <Button v="danger" onClick={() => { onClose(); onDeleteRequest(r); }} disabled={offline} title={offlineTitle}>Delete</Button>
           </div>
         </div>
       </div>
@@ -223,6 +230,9 @@ function DetailModal({ r, onClose, onUpdate, onDeleteRequest, canCreateBillingTa
 // ── Main page (all logic unchanged) ──────────────────────────────────────────
 export default function ReservationsPage() {
   const capabilities = useCapabilities();
+  const { status } = useConnectivity();
+  const offline = status !== 'online';
+  const offlineTitle = offline ? 'Reconnect to make changes' : undefined;
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [loading,      setLoading]      = useState(true);
   const [loadError,    setLoadError]    = useState('');
@@ -244,7 +254,9 @@ export default function ReservationsPage() {
     } catch (error) {
       setReservations([]);
       setLoadError(error instanceof OfflineUnavailableError
-        ? error.message
+        ? error.message === 'Not cached for this date'
+          ? error.message
+          : 'Not cached yet. Open this page once while online.'
         : 'Could not load reservations.');
       if (!(error instanceof OfflineUnavailableError)) {
         console.error('Could not load reservations.', error);
@@ -397,7 +409,7 @@ export default function ReservationsPage() {
                           </div>
                           <div className="flex gap-1.5 justify-end" onClick={e => e.stopPropagation()}>
                             <Button v="ghost"  size="sm" onClick={() => setSelected(r)}>View</Button>
-                            <Button v="danger" size="sm" onClick={() => setToDelete(r)}>✕</Button>
+                            <Button v="danger" size="sm" onClick={() => setToDelete(r)} disabled={offline} title={offlineTitle}>✕</Button>
                           </div>
                         </div>
 
@@ -422,7 +434,7 @@ export default function ReservationsPage() {
                           </div>
                           <div className="flex gap-2" onClick={e => e.stopPropagation()}>
                             <Button v="ghost"  size="sm" className="flex-1 justify-center" onClick={() => setSelected(r)}>View</Button>
-                            <Button v="danger" size="sm" className="flex-1 justify-center" onClick={() => setToDelete(r)}>Delete</Button>
+                            <Button v="danger" size="sm" className="flex-1 justify-center" onClick={() => setToDelete(r)} disabled={offline} title={offlineTitle}>Delete</Button>
                           </div>
                         </div>
                       </div>

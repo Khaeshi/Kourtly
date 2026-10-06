@@ -12,6 +12,7 @@ import {
 } from '@/lib/api';
 import type { Player, Match } from '@/lib/api';
 import { useCapabilities } from '@/lib/entitlements';
+import { useConnectivity } from '@/lib/connectivity';
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
@@ -95,6 +96,9 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 
 export default function AdminDashboard() {
     const capabilities = useCapabilities();
+  const { status } = useConnectivity();
+  const offline = status !== 'online';
+  const offlineTitle = offline ? 'Reconnect to make changes' : undefined;
   // ── Live counts (existing) ─────────────────────────────────────────────────
   const [playerCount, setPlayerCount] = useState<number | string>('—');
   const [matchCount,  setMatchCount]  = useState<number | string>('—');
@@ -124,8 +128,8 @@ export default function AdminDashboard() {
     };
     void load().catch(error => {
       console.error('Could not load dashboard player and queue counts.', error);
-      setPlayerCount('Not cached yet');
-      setMatchCount('Not cached yet');
+      setPlayerCount('Not cached yet. Open this page once while online.');
+      setMatchCount('Not cached yet. Open this page once while online.');
     });
   }, [capabilities.modules.queue]);
 
@@ -134,7 +138,9 @@ export default function AdminDashboard() {
       .then(court => setCourtCount(typeof court.courtCount === 'number' ? court.courtCount : '—'))
       .catch(error => {
         console.error('Could not load the court count.', error);
-        setCourtCount(error instanceof OfflineUnavailableError ? 'Not cached yet' : '—');
+        setCourtCount(error instanceof OfflineUnavailableError
+          ? 'Not cached yet. Open this page once while online.'
+          : '—');
       });
   }, []);
 
@@ -147,7 +153,7 @@ export default function AdminDashboard() {
       setAnalytics(result);
     } catch (error) {
       setAnalytics(null);
-      setAnalyticsError(error instanceof OfflineUnavailableError ? 'Not cached yet' :
+      setAnalyticsError(error instanceof OfflineUnavailableError ? 'Not cached yet. Open this page once while online.' :
         error instanceof Error ? error.message : 'Could not load analytics.');
     } finally {
       setAnalyticsLoading(false);
@@ -186,6 +192,7 @@ export default function AdminDashboard() {
   }, [loadPayoutTransfers]);
 
   const onAskAnalytics = useCallback(async () => {
+    if (offline) return;
     const question = aiQuestion.trim();
     if (!question) return;
     setAiLoading(true);
@@ -199,7 +206,7 @@ export default function AdminDashboard() {
     } finally {
       setAiLoading(false);
     }
-  }, [aiQuestion, period]);
+  }, [aiQuestion, offline, period]);
 
   // ── Derived stat cards (merges live + analytics) ───────────────────────────
   const statCards = [
@@ -514,13 +521,14 @@ export default function AdminDashboard() {
             <input
               value={aiQuestion}
               onChange={(e) => setAiQuestion(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter' && !aiLoading) onAskAnalytics(); }}
+              onKeyDown={(e) => { if (e.key === 'Enter' && !aiLoading && !offline) onAskAnalytics(); }}
               placeholder="Ask anything about your court data..."
               className="flex-1 border border-gray-200 rounded-md px-3 py-2 text-sm outline-none focus:border-gray-400"
             />
             <button
               onClick={onAskAnalytics}
-              disabled={aiLoading || !aiQuestion.trim()}
+              disabled={aiLoading || !aiQuestion.trim() || offline}
+              title={offlineTitle}
               className="px-3 py-2 rounded-md bg-gray-900 text-white text-xs font-medium disabled:opacity-50"
             >
               {aiLoading ? 'Asking...' : 'Ask'}
@@ -593,6 +601,8 @@ export default function AdminDashboard() {
                                     }
                                     loadPayoutTransfers();
                       }}
+                      disabled={offline}
+                      title={offlineTitle}
                       className="text-[10px] px-2 py-1 border border-blue-200 bg-blue-50 text-blue-700 rounded"
                     >
                       Retry

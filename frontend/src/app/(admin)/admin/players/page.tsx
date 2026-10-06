@@ -1,10 +1,11 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 import { sileo } from 'sileo';
-import { getPlayers, createPlayer, updatePlayer, deletePlayer } from '@/lib/api';
+import { getPlayers, createPlayer, updatePlayer, deletePlayer, OfflineUnavailableError } from '@/lib/api';
 import type { Player, Level, Gender } from '@/lib/api';
 import { Button } from '@/app/components/ui/Button';
 import { useSocketEvent } from '@/hooks/useSocketEvent';
+import { useConnectivity } from '@/lib/connectivity';
 
 const LEVEL_COLOR: Record<Level, string> = { A: '#e8c84a', B: '#8BC34A', C: '#4db8a0', D: '#7a9cbf' };
 const LEVEL_BG:    Record<Level, string> = { A: 'rgba(232,200,74,0.1)', B: 'rgba(139,195,74,0.1)', C: 'rgba(77,184,160,0.1)', D: 'rgba(122,156,191,0.1)' };
@@ -18,6 +19,10 @@ const labelCls = "block text-[0.68rem] font-semibold tracking-widest uppercase t
 export default function PlayersPage() {
   const [players,  setPlayers]  = useState<Player[]>([]);
   const [loading,  setLoading]  = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const { status } = useConnectivity();
+  const offline = status !== 'online';
+  const offlineTitle = offline ? 'Reconnect to make changes' : undefined;
   const [saving,   setSaving]   = useState(false);
   const [editId,   setEditId]   = useState<string | null>(null);
   const [search,   setSearch]   = useState('');
@@ -29,8 +34,18 @@ export default function PlayersPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    setPlayers(await getPlayers());
-    setLoading(false);
+    setLoadError('');
+    try {
+      setPlayers(await getPlayers());
+    } catch (error) {
+      setPlayers([]);
+      setLoadError(error instanceof OfflineUnavailableError
+        ? 'Not cached yet. Open this page once while online.'
+        : 'Could not load players.');
+      if (!(error instanceof OfflineUnavailableError)) console.error('Could not load players.', error);
+    } finally {
+      setLoading(false);
+    }
   }, []);
   useEffect(() => { load(); }, [load]);
   useSocketEvent('players:updated', useCallback(() => { load(); }, [load]));
@@ -112,7 +127,7 @@ export default function PlayersPage() {
               </select>
             </div>
           </div>
-          <Button v="primary" onClick={handleAdd} loading={saving}>Add Player</Button>
+          <Button v="primary" onClick={handleAdd} loading={saving} disabled={offline} title={offlineTitle}>Add Player</Button>
         </div>
       )}
 
@@ -134,7 +149,7 @@ export default function PlayersPage() {
             </button>
           ))}
         </div>
-        <span className="text-xs text-gray-400 sm:ml-auto font-mono">{filtered.length} / {players.length}</span>
+        <span className="text-xs text-gray-400 sm:ml-auto font-mono">{loadError ? '— / —' : `${filtered.length} / ${players.length}`}</span>
       </div>
 
       {/* Table — desktop */}
@@ -148,6 +163,8 @@ export default function PlayersPage() {
 
         {loading ? (
           <div className="p-12 text-center text-gray-300 text-sm">Loading...</div>
+        ) : loadError ? (
+          <div className="p-12 text-center text-amber-800 text-sm">{loadError}</div>
         ) : filtered.length === 0 ? (
           <div className="p-12 text-center text-gray-300 text-sm">
             {players.length === 0 ? 'No players yet.' : 'No players match your filters.'}
@@ -166,7 +183,7 @@ export default function PlayersPage() {
                   <option value="Female">Female</option>
                 </select>
                 <div className="flex gap-1.5">
-                  <Button v="primary" size="sm" onClick={() => handleSave(p._id)}>Save</Button>
+                  <Button v="primary" size="sm" onClick={() => handleSave(p._id)} disabled={offline} title={offlineTitle}>Save</Button>
                   <Button v="ghost"   size="sm" onClick={() => setEditId(null)}>Cancel</Button>
                 </div>
               </div>
@@ -182,8 +199,8 @@ export default function PlayersPage() {
                 <span className="text-xs text-gray-500">{p.gender}</span>
                 <span className="text-xs text-gray-500 font-mono">{p.age}</span>
                 <div className="flex gap-1.5 justify-end">
-                  <Button v="ghost" size="sm" onClick={() => { setEditId(p._id); setEditForm({ name: p.name, level: p.level, gender: p.gender, age: String(p.age) }); }}>Edit</Button>
-                  <Button v="danger" size="sm" onClick={() => handleDelete(p._id)}>Remove</Button>
+                  <Button v="ghost" size="sm" onClick={() => { setEditId(p._id); setEditForm({ name: p.name, level: p.level, gender: p.gender, age: String(p.age) }); }} disabled={offline} title={offlineTitle}>Edit</Button>
+                  <Button v="danger" size="sm" onClick={() => handleDelete(p._id)} disabled={offline} title={offlineTitle}>Remove</Button>
                 </div>
               </div>
             )}
@@ -195,6 +212,8 @@ export default function PlayersPage() {
       <div className="sm:hidden flex flex-col gap-3">
         {loading ? (
           <div className="p-12 text-center text-gray-300 text-sm">Loading...</div>
+        ) : loadError ? (
+          <div className="p-12 text-center text-amber-800 text-sm">{loadError}</div>
         ) : filtered.length === 0 ? (
           <div className="p-12 text-center text-gray-300 text-sm">No players found.</div>
         ) : filtered.map(p => (
@@ -213,7 +232,7 @@ export default function PlayersPage() {
                   <option value="Female">Female</option>
                 </select>
                 <div className="flex gap-2">
-                  <Button v="primary" size="sm" onClick={() => handleSave(p._id)} className="flex-1 justify-center">Save</Button>
+                  <Button v="primary" size="sm" onClick={() => handleSave(p._id)} disabled={offline} title={offlineTitle} className="flex-1 justify-center">Save</Button>
                   <Button v="ghost"   size="sm" onClick={() => setEditId(null)}   className="flex-1 justify-center">Cancel</Button>
                 </div>
               </div>
@@ -234,10 +253,11 @@ export default function PlayersPage() {
                 </div>
                 <div className="flex gap-2">
                   <Button v="ghost"  size="sm" className="flex-1 justify-center"
-                    onClick={() => { setEditId(p._id); setEditForm({ name: p.name, level: p.level, gender: p.gender, age: String(p.age) }); }}>
+                    onClick={() => { setEditId(p._id); setEditForm({ name: p.name, level: p.level, gender: p.gender, age: String(p.age) }); }}
+                    disabled={offline} title={offlineTitle}>
                     Edit
                   </Button>
-                  <Button v="danger" size="sm" className="flex-1 justify-center" onClick={() => handleDelete(p._id)}>
+                  <Button v="danger" size="sm" className="flex-1 justify-center" onClick={() => handleDelete(p._id)} disabled={offline} title={offlineTitle}>
                     Remove
                   </Button>
                 </div>

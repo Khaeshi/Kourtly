@@ -1,8 +1,11 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
+import { sileo } from 'sileo';
 import { getPlayers, getQueue, getHistory, getSplittableItems, createMatch, updateMatch, deleteMatch, proofreadMatch } from '@/lib/api';
+import { OfflineUnavailableError } from '@/lib/api';
 import type { Player, Match, MatchType, Level, CatalogItem } from '@/lib/api';
 import { useSocketEvent } from '@/hooks/useSocketEvent';
+import { useConnectivity } from '@/lib/connectivity';
 
 const LEVEL_ORDER: Record<Level, number> = { A:0, B:1, C:2, D:3 };
 const LEVEL_COLOR: Record<Level, string>  = { A:'#d97706', B:'#16a34a', C:'#0891b2', D:'#7c3aed' };
@@ -209,6 +212,26 @@ function PlayerPill({ p, side, index, editingSlot, onEdit }: {
 function MatchCard({ match, index, showActions, onUpdate }: {
   match:Match; index:number; showActions:boolean; onUpdate:()=>void;
 }) {
+  const { status } = useConnectivity();
+  const offline = status !== 'online';
+  const offlineTitle = offline ? 'Reconnect to make changes' : undefined;
+  const updateStatus = async (nextStatus: Match['status']) => {
+    try {
+      await updateMatch(match._id, { status: nextStatus });
+      await onUpdate();
+    } catch (error) {
+      sileo.error({ title: 'Could not update match', description: error instanceof Error ? error.message : 'Please try again.' });
+    }
+  };
+  const remove = async () => {
+    if (!confirm('Remove match?')) return;
+    try {
+      await deleteMatch(match._id);
+      await onUpdate();
+    } catch (error) {
+      sileo.error({ title: 'Could not remove match', description: error instanceof Error ? error.message : 'Please try again.' });
+    }
+  };
   return (
     <div style={{ background:'#fff', border:`1px solid ${match.status==='playing'?'#fde68a':'#e5e7eb'}`, borderRadius:'8px', padding:'1rem', transition:'border-color 0.15s' }}>
       <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', marginBottom:'0.75rem', flexWrap:'wrap' }}>
@@ -242,9 +265,9 @@ function MatchCard({ match, index, showActions, onUpdate }: {
 
       {showActions && (
         <div style={{ display:'flex', gap:'6px', marginTop:'0.75rem', paddingTop:'0.75rem', borderTop:'1px solid #f3f4f6' }}>
-          {match.status === 'queued'  && <Btn v="gold"    onClick={() => updateMatch(match._id,{status:'playing'}).then(onUpdate)}>Mark Playing</Btn>}
-          {match.status === 'playing' && <Btn v="primary" onClick={() => updateMatch(match._id,{status:'done'}).then(onUpdate)}>Mark Done</Btn>}
-          <Btn v="danger" onClick={() => { if(confirm('Remove match?')) deleteMatch(match._id).then(onUpdate); }}>Remove</Btn>
+          {match.status === 'queued'  && <Btn v="gold"    onClick={() => updateStatus('playing')} disabled={offline} title={offlineTitle}>Mark Playing</Btn>}
+          {match.status === 'playing' && <Btn v="primary" onClick={() => updateStatus('done')} disabled={offline} title={offlineTitle}>Mark Done</Btn>}
+          <Btn v="danger" onClick={remove} disabled={offline} title={offlineTitle}>Remove</Btn>
         </div>
       )}
     </div>
@@ -264,16 +287,31 @@ export default function QueuePage() {
   const [shuttlecockId,setShuttlecockId]= useState('');
   const [mobileTab,    setMobileTab]    = useState<'randomizer'|'queue'|'history'>('randomizer');
   const [loading,      setLoading]      = useState(true);
+  const [loadError,    setLoadError]    = useState('');
   const [submitting,   setSubmitting]   = useState(false);
   const [matchMode,    setMatchMode]    = useState<MatchMode>('balanced');
   const [matchTypePref,setMatchTypePref]= useState<MatchTypePreference>('auto');
   const [proofread,    setProofread]    = useState<{ verdict: 'fair' | 'review'; explanation: string; aiUsed: boolean } | null>(null);
   const [proofreadBusy,setProofreadBusy]= useState(false);
+  const { status } = useConnectivity();
+  const offline = status !== 'online';
+  const offlineTitle = offline ? 'Reconnect to make changes' : undefined;
 
   const loadAll = useCallback(async () => {
     setLoading(true);
-    const [p,q,h,s] = await Promise.all([getPlayers(),getQueue(),getHistory(),getSplittableItems()]);
-    setPlayers(p); setQueueList(q); setHistoryList(h); setShuttles(s); setLoading(false);
+    setLoadError('');
+    try {
+      const [p,q,h,s] = await Promise.all([getPlayers(),getQueue(),getHistory(),getSplittableItems()]);
+      setPlayers(p); setQueueList(q); setHistoryList(h); setShuttles(s);
+    } catch (error) {
+      setPlayers([]); setQueueList([]); setHistoryList([]); setShuttles([]);
+      setLoadError(error instanceof OfflineUnavailableError
+        ? 'Not cached yet. Open this page once while online.'
+        : 'Could not load queue data.');
+      if (!(error instanceof OfflineUnavailableError)) console.error('Could not load queue data.', error);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => { loadAll(); }, [loadAll]);
@@ -305,15 +343,21 @@ export default function QueuePage() {
   const handleSubmit = async () => {
     if (!edited) return;
     setSubmitting(true);
-    await createMatch({
-      team1: edited.team1.map(p=>p._id),
-      team2: edited.team2.map(p=>p._id),
-      matchType: edited.matchType,
-      court: selectedCourt,
-      shuttlecockId: shuttlecockId || undefined,
-    });
-    setGenerated(null); setEdited(null); setShuttlecockId('');
-    await loadAll(); setSubmitting(false);
+    try {
+      await createMatch({
+        team1: edited.team1.map(p=>p._id),
+        team2: edited.team2.map(p=>p._id),
+        matchType: edited.matchType,
+        court: selectedCourt,
+        shuttlecockId: shuttlecockId || undefined,
+      });
+      setGenerated(null); setEdited(null); setShuttlecockId('');
+      await loadAll();
+    } catch (error) {
+      sileo.error({ title: 'Could not submit match', description: error instanceof Error ? error.message : 'Please try again.' });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const swapCandidates = editingSlot && edited
@@ -529,7 +573,7 @@ export default function QueuePage() {
           {/* Submit */}
           <div style={{ display:'flex', gap:'6px', paddingTop:'0.25rem' }}>
             <Btn v="ghost" style={{ flex:1 }} onClick={() => { setGenerated(null); setEdited(null); setTimeout(handleGenerate, 80); }}>Re-generate</Btn>
-            <Btn v="gold"  style={{ flex:1 }} onClick={handleSubmit} disabled={submitting}>
+            <Btn v="gold"  style={{ flex:1 }} onClick={handleSubmit} disabled={submitting || offline} title={offlineTitle}>
               {submitting ? 'Submitting...' : 'Submit to Queue'}
             </Btn>
           </div>
@@ -539,7 +583,7 @@ export default function QueuePage() {
               <span style={{ fontSize:'0.65rem', fontWeight:600, letterSpacing:'0.1em', textTransform:'uppercase', color:'#9ca3af' }}>
                 AI Match Proofread
               </span>
-              <Btn v="ghost" onClick={runProofread} disabled={proofreadBusy} style={{ padding:'0.2rem 0.5rem', fontSize:'0.68rem' }}>
+              <Btn v="ghost" onClick={runProofread} disabled={proofreadBusy || offline} title={offlineTitle} style={{ padding:'0.2rem 0.5rem', fontSize:'0.68rem' }}>
                 {proofreadBusy ? 'Checking...' : 'Check Fairness'}
               </Btn>
             </div>
@@ -562,7 +606,7 @@ export default function QueuePage() {
 
       {/* Available players */}
       <div style={{ background:'#fff', border:'1px solid #e5e7eb', borderRadius:'8px', padding:'0.85rem' }}>
-        <p style={{ fontSize:'0.65rem', fontWeight:600, letterSpacing:'0.1em', textTransform:'uppercase', color:'#9ca3af', marginBottom:'0.6rem' }}>Available · {available.length}</p>
+        <p style={{ fontSize:'0.65rem', fontWeight:600, letterSpacing:'0.1em', textTransform:'uppercase', color:'#9ca3af', marginBottom:'0.6rem' }}>Available · {loadError ? '—' : available.length}</p>
         <div style={{ display:'flex', flexDirection:'column', gap:'2px', maxHeight:'200px', overflowY:'auto' }}>
           {available.length === 0
             ? <p style={{ fontSize:'0.78rem', color:'#9ca3af', textAlign:'center', padding:'0.75rem' }}>All players in active matches</p>
@@ -598,8 +642,9 @@ export default function QueuePage() {
 
   const QueuePanel = () => (
     <div style={{ display:'flex', flexDirection:'column', gap:'0.6rem' }}>
-      <p style={{ fontSize:'0.65rem', fontWeight:600, letterSpacing:'0.1em', textTransform:'uppercase', color:'#9ca3af' }}>Active · {queueList.length}</p>
+      <p style={{ fontSize:'0.65rem', fontWeight:600, letterSpacing:'0.1em', textTransform:'uppercase', color:'#9ca3af' }}>Active · {loadError ? '—' : queueList.length}</p>
       {loading ? <p style={{ color:'#9ca3af', fontSize:'0.82rem', padding:'2rem', textAlign:'center' }}>Loading...</p>
+        : loadError ? <p style={{ color:'#92400e', fontSize:'0.82rem', padding:'2rem', textAlign:'center' }}>{loadError}</p>
         : queueList.length === 0 ? <p style={{ color:'#9ca3af', fontSize:'0.82rem', padding:'2rem', textAlign:'center', background:'#fff', border:'1px dashed #e5e7eb', borderRadius:'8px' }}>No active matches.</p>
         : queueList.map((m,i) => <MatchCard key={m._id} match={m} index={i} showActions onUpdate={loadAll} />)}
     </div>
@@ -607,8 +652,9 @@ export default function QueuePage() {
 
   const HistoryPanel = () => (
     <div style={{ display:'flex', flexDirection:'column', gap:'0.6rem' }}>
-      <p style={{ fontSize:'0.65rem', fontWeight:600, letterSpacing:'0.1em', textTransform:'uppercase', color:'#9ca3af' }}>Completed · {historyList.length}</p>
+      <p style={{ fontSize:'0.65rem', fontWeight:600, letterSpacing:'0.1em', textTransform:'uppercase', color:'#9ca3af' }}>Completed · {loadError ? '—' : historyList.length}</p>
       {loading ? <p style={{ color:'#9ca3af', fontSize:'0.82rem', padding:'2rem', textAlign:'center' }}>Loading...</p>
+        : loadError ? <p style={{ color:'#92400e', fontSize:'0.82rem', padding:'2rem', textAlign:'center' }}>{loadError}</p>
         : historyList.length === 0 ? <p style={{ color:'#9ca3af', fontSize:'0.82rem', padding:'2rem', textAlign:'center', background:'#fff', border:'1px dashed #e5e7eb', borderRadius:'8px' }}>No completed matches yet.</p>
         : historyList.map((m,i) => (
             <div key={m._id} style={{ opacity:0.7 }}>
@@ -643,6 +689,7 @@ export default function QueuePage() {
         <p style={{ fontSize:'0.72rem', fontWeight:500, letterSpacing:'0.05em', textTransform:'uppercase', color:'#9ca3af', marginBottom:'0.35rem' }}>Management</p>
         <h1 style={{ fontSize:'1.5rem', fontWeight:700, color:'#111827', letterSpacing:'-0.02em' }}>Queue System</h1>
       </div>
+      {loadError && <p role="status" style={{ marginBottom:'1rem', padding:'0.75rem 1rem', border:'1px solid #fde68a', borderRadius:'8px', background:'#fffbeb', color:'#92400e', fontSize:'0.82rem' }}>{loadError}</p>}
 
       {/* Desktop 3-col */}
       <div className="queue-desktop" style={{ gridTemplateColumns:'300px 1fr 1fr', gap:'1.25rem', alignItems:'start' }}>

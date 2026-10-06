@@ -4,6 +4,7 @@ import { useSession } from 'next-auth/react';
 import { sileo } from 'sileo';
 import { Upload, X } from 'lucide-react';
 import { useCapabilities } from '@/lib/entitlements';
+import { proxyFetch } from '@/lib/api';
 
 const SPORTS    = ['badminton', 'pickleball', 'tennis'];
 const AMENITIES = ['parking', 'shower', 'locker', 'cafeteria', 'wifi', 'aircon'];
@@ -121,9 +122,9 @@ export default function SettingsPage() {
   });
 
   useEffect(() => {
-    fetch('/api/proxy/court/me')
-      .then(r => r.json())
-      .then(c => {
+    const load = async () => {
+      try {
+        const c = await proxyFetch<Court>('/court/me', undefined, { allowSnapshotFallback: false });
         setCourt(c);
         setForm({
           name:           c.name           ?? '',
@@ -146,8 +147,14 @@ export default function SettingsPage() {
           payoutAccountNumber: '',
           weeklySummary: c.settings?.weeklySummary ?? true,
         });
-      })
-      .finally(() => setLoading(false));
+      } catch (error) {
+        console.error('Could not load court settings.', error);
+        sileo.error({ title: 'Could not load settings', description: error instanceof Error ? error.message : 'Please reconnect and try again.' });
+      } finally {
+        setLoading(false);
+      }
+    };
+    void load();
   }, []);
 
   const set = (k: keyof typeof form, v: any) => setForm(p => ({ ...p, [k]: v }));
@@ -157,7 +164,7 @@ export default function SettingsPage() {
   const save = async () => {
     setSaving(true);
     try {
-      const res = await fetch('/api/proxy/court/me', {
+      const updated = await proxyFetch<Court>('/court/me', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -174,14 +181,12 @@ export default function SettingsPage() {
             weeklySummary: Boolean(form.weeklySummary),
           },
         }),
-      });
-      if (!res.ok) throw new Error('Failed to save');
+      }, { allowSnapshotFallback: false });
       sileo.success({ title: 'Settings saved' });
-      const updated = await res.json();
       setCourt(updated);
 
       if (form.payoutRecipientCode) {
-        await fetch('/api/proxy/court/me/payout', {
+        await proxyFetch('/court/me/payout', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -190,7 +195,7 @@ export default function SettingsPage() {
             channelCode: form.payoutChannelCode,
             accountNumber: form.payoutAccountNumber,
           }),
-        });
+        }, { allowSnapshotFallback: false });
       }
     } catch {
       sileo.error({ title: 'Failed to save settings' });
@@ -203,13 +208,11 @@ export default function SettingsPage() {
     if (!upgradeTier) return;
     setUpgradeLoading(true);
     try {
-      const response = await fetch('/api/proxy/court/me/subscription/upgrade', {
+      const data = await proxyFetch<{ paymentUrl?: string }>('/court/me/subscription/upgrade', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tier: upgradeTier }),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Could not start upgrade.');
+      }, { allowSnapshotFallback: false });
       if (!data.paymentUrl) throw new Error('Payment provider did not return a checkout link.');
       window.location.assign(data.paymentUrl);
     } catch (err) {
@@ -223,13 +226,11 @@ export default function SettingsPage() {
     if (!downgradeTier) return;
     setUpgradeLoading(true);
     try {
-      const response = await fetch('/api/proxy/court/me/subscription/downgrade', {
+      const data = await proxyFetch<{ pendingTierEffectiveAt: string }>('/court/me/subscription/downgrade', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tier: downgradeTier, confirmation: downgradeConfirmation }),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Could not schedule downgrade.');
+      }, { allowSnapshotFallback: false });
       sileo.success({ title: 'Downgrade scheduled', description: `Your current tier stays active until ${new Date(data.pendingTierEffectiveAt).toLocaleDateString()}.` });
       setDowngradeTier(null);
       setDowngradeConfirmation('');
@@ -249,15 +250,11 @@ export default function SettingsPage() {
     setUploading(true);
     try {
       const url = await uploadImageToCloudinary(file);
-      const logoRes = await fetch('/api/proxy/court/me/logo', {
+      await proxyFetch('/court/me/logo', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ logoUrl: url }),
-      });
-      if (!logoRes.ok) {
-        const err = await logoRes.json().catch(() => ({}));
-        throw new Error((err as { error?: string }).error || 'Could not save logo URL');
-      }
+      }, { allowSnapshotFallback: false });
       setCourt(c => c ? { ...c, logoUrl: url } : c);
       await updateSession();
       sileo.success({ title: 'Logo updated' });
@@ -276,11 +273,11 @@ export default function SettingsPage() {
     try {
       for (const file of files) {
         const url = await uploadImageToCloudinary(file);
-        await fetch('/api/proxy/court/me/photos', {
+        await proxyFetch('/court/me/photos', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'add', url }),
-        });
+        }, { allowSnapshotFallback: false });
         setCourt(c => c ? { ...c, photos: [...(c.photos ?? []), url] } : c);
       }
       sileo.success({ title: 'Photos uploaded' });
@@ -293,12 +290,16 @@ export default function SettingsPage() {
   };
 
   const removePhoto = async (url: string) => {
-    await fetch('/api/proxy/court/me/photos', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'remove', url }),
-    });
-    setCourt(c => c ? { ...c, photos: c.photos.filter(p => p !== url) } : c);
+    try {
+      await proxyFetch('/court/me/photos', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'remove', url }),
+      }, { allowSnapshotFallback: false });
+      setCourt(c => c ? { ...c, photos: c.photos.filter(p => p !== url) } : c);
+    } catch (error) {
+      sileo.error({ title: 'Could not remove photo', description: error instanceof Error ? error.message : 'Please try again.' });
+    }
   };
 
   if (loading) return <div className="py-16 text-center text-gray-400 text-sm">Loading...</div>;
