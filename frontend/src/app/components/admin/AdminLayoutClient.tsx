@@ -8,6 +8,7 @@ import { APP_NAME } from '@/lib/config';
 import AdminSidebar from './AdminSidebar';
 import { CapabilitiesProvider, CapabilityGate } from '@/lib/entitlements';
 import { ConnectivityProvider, useConnectivity } from '@/lib/connectivity';
+import AdminPrefetchRunner from '@/lib/adminPrefetch';
 import { disconnectSocket, getSocket } from '@/lib/socket';
 import { setProxyIdentity } from '@/lib/api';
 import {
@@ -149,6 +150,7 @@ function AdminLayoutContent({
       {sidebarOpen && <div className="sidebar-backdrop" onClick={() => setSidebarOpen(false)} />}
 
       <CapabilitiesProvider key={identity ?? 'anonymous'}>
+        <AdminPrefetchRunner />
         <div className="flex min-h-screen bg-gray-100 font-sans">
           <AdminSidebar
             isOpen={sidebarOpen}

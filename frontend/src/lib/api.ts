@@ -3,11 +3,17 @@ import { sileo } from 'sileo';
 import { wipeOfflineData } from '@/lib/offlineCache';
 import {
   readSnapshot,
+  readReservationWindow,
   recordLastOnlineAt,
   sanitizeSnapshot,
   snapshotEndpoint,
   storeSnapshot,
 } from '@/lib/snapshotStore';
+import {
+  filterReservations,
+  RESERVATION_WINDOW_SNAPSHOT_KEY,
+  type ReservationWindow,
+} from '@/lib/reservationSnapshot';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -80,6 +86,8 @@ export class OfflineReadOnlyError extends Error {
 
 interface ProxyFetchOptions {
   allowSnapshotFallback?: boolean;
+  snapshotKey?: string;
+  reservationWindow?: ReservationWindow;
 }
 
 let configuredIdentity: string | null = null;
@@ -253,8 +261,11 @@ export async function proxyFetch<T>(
     );
   }
 
+  const snapshotKey = proxyOptions.snapshotKey
+    ? snapshotEndpoint(proxyOptions.snapshotKey)
+    : endpoint;
   if (isGet && identity && sanitizeSnapshot(endpoint, data) !== undefined) {
-    void storeSnapshot(identity, endpoint, data).catch(error => {
+    void storeSnapshot(identity, snapshotKey, data, Date.now(), proxyOptions.reservationWindow).catch(error => {
       console.error(`Could not save offline snapshot for ${endpoint}.`, error);
     });
   }
@@ -369,8 +380,8 @@ export async function getTabHistoryPaged(params: TabHistoryParams = {}): Promise
 export interface Reservation {
   _id: string;
   name: string;
-  phone: string;
-  email: string;
+  phone?: string;
+  email?: string;
   court: number;
   date: string;        // "YYYY-MM-DD"
   timeSlot: string;    // "08:00-09:00"
@@ -398,7 +409,7 @@ export interface Reservation {
   paymentStatus?: 'none' | 'awaiting_payment' | 'paid' | 'expired' | 'failed' | 'cancelled';
   paymentExpiresAt?: string | null;
   paymentUrl?: string;
-  notes: string;
+  notes?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -414,7 +425,42 @@ export async function getReservations(params?: {
   const q = new URLSearchParams();
   if (params?.date)   q.set('date',   params.date);
   if (params?.status) q.set('status', params.status);
-  return req<Reservation[]>(`/reservations?${q}`);
+  try {
+    return await req<Reservation[]>(`/reservations?${q}`);
+  } catch (error) {
+    if (!(error instanceof OfflineUnavailableError)) throw error;
+    const identity = await getSnapshotIdentity();
+    if (!identity) throw new OfflineUnavailableError(
+      params?.date ? 'Not cached for this date' : 'Not cached yet',
+      { cause: error }
+    );
+    const saved = await readReservationWindow(
+      identity,
+      params?.date ? { dateFrom: params.date, dateTo: params.date } : undefined
+    );
+    if (!saved) throw new OfflineUnavailableError(
+      params?.date ? 'Not cached for this date' : 'Not cached yet',
+      { cause: error }
+    );
+    return filterReservations(saved.data as Reservation[], params ?? {});
+  }
+}
+
+export async function getReservationsRange(
+  dateFrom: string,
+  dateTo: string
+): Promise<Reservation[]> {
+  const reservationWindow = { dateFrom, dateTo };
+  const q = new URLSearchParams({ dateFrom, dateTo });
+  return proxyFetch<Reservation[]>(
+    `/reservations?${q}`,
+    undefined,
+    {
+      allowSnapshotFallback: false,
+      snapshotKey: RESERVATION_WINDOW_SNAPSHOT_KEY,
+      reservationWindow,
+    }
+  );
 }
 
 export async function getAvailability(

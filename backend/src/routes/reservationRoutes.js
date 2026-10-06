@@ -45,11 +45,49 @@ async function sendConfirmationEmail(reservation) {
  */
 router.get('/', async (req, res) => {
   try {
-    const { date, status } = req.query;
+    const { date, dateFrom, dateTo, status } = req.query;
+    const isValidDate = value =>
+      typeof value === 'string' &&
+      /^\d{4}-\d{2}-\d{2}$/.test(value) &&
+      !Number.isNaN(Date.parse(`${value}T00:00:00.000Z`)) &&
+      new Date(`${value}T00:00:00.000Z`).toISOString().slice(0, 10) === value;
+
+    if ((dateFrom !== undefined && !isValidDate(dateFrom)) ||
+        (dateTo !== undefined && !isValidDate(dateTo))) {
+      return res.status(400).json({ error: 'dateFrom and dateTo must be valid YYYY-MM-DD dates.' });
+    }
+    if ((dateFrom === undefined) !== (dateTo === undefined)) {
+      return res.status(400).json({ error: 'dateFrom and dateTo must be provided together.' });
+    }
+    if (dateFrom !== undefined && dateTo !== undefined) {
+      const start = Date.parse(`${dateFrom}T00:00:00.000Z`);
+      const end = Date.parse(`${dateTo}T00:00:00.000Z`);
+      if (end < start) return res.status(400).json({ error: 'dateTo must not be before dateFrom.' });
+      if ((end - start) / 86_400_000 >= 62) {
+        return res.status(400).json({ error: 'The reservation date range may not exceed 62 days.' });
+      }
+    }
+
     const filter = { courtId: req.courtId };
-    if (date)                       filter.date   = date;
+    if (date) {
+      filter.date = date;
+    } else if (dateFrom || dateTo) {
+      filter.date = {};
+      if (dateFrom) filter.date.$gte = dateFrom;
+      if (dateTo) filter.date.$lte = dateTo;
+    }
     if (status && status !== 'all') filter.status = status;
-    const reservations = await Reservation.find(filter).sort({ date: 1, timeSlot: 1 }).lean();
+    const query = Reservation.find(filter).sort({ date: 1, timeSlot: 1 });
+    if (dateFrom !== undefined && dateTo !== undefined) {
+      const reservations = await query.limit(2001).lean();
+      if (reservations.length > 2000) {
+        return res.status(413).json({
+          error: 'Too many reservations in this range. Narrow the range.',
+        });
+      }
+      return res.json(reservations);
+    }
+    const reservations = await query.lean();
     res.json(reservations);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -217,8 +255,6 @@ router.post('/', async (req, res) => {
     emitCourtEvent(req, 'analytics:refresh', { source: 'reservations' });
 
     res.status(201).json(reservation);
-
-    res.status(201).json(reservation);
   } catch (err) {
     if (String(err.message || '').includes('Invalid reservation status transition') ||
         String(err.message || '').includes('Invalid payment status transition')) {
@@ -371,8 +407,10 @@ router.post('/:id/cancel-payment', async (req, res) => {
  */
 router.delete('/:id', async (req, res) => {
   try {
-    const deleted = await Reservation.findByIdAndDelete(
-      {_id: req.params.id, courtId: req.courtId });
+    const deleted = await Reservation.findOneAndDelete({
+      _id: req.params.id,
+      courtId: req.courtId,
+    });
     if (!deleted) return res.status(404).json({ error: 'Reservation not found.' });
     emitCourtEvent(req, 'reservation:updated', { action: 'deleted', reservationId: req.params.id });
     emitCourtEvent(req, 'analytics:refresh', { source: 'reservations' });

@@ -283,6 +283,9 @@ export default function QueuePage() {
 
   const busyIds   = new Set(queueList.flatMap(m => [...m.team1,...m.team2].map(p=>p._id)));
   const available = players.filter(p => !busyIds.has(p._id));
+  const maleCount = available.filter(p => p.gender === 'Male').length;
+  const femaleCount = available.filter(p => p.gender === 'Female').length;
+  const canGenerate = maleCount >= 4 || femaleCount >= 4 || (maleCount >= 2 && femaleCount >= 2);
   const usedCourts= new Set(queueList.map(m=>m.court));
 
   const handleGenerate = useCallback(() => {
@@ -388,9 +391,12 @@ export default function QueuePage() {
               ))}
             </div>
           </div>
-
-          <Btn v="primary" onClick={handleGenerate} disabled={available.length < 4} style={{ opacity: available.length < 4 ? 0.4 : 1 }}>
-            {available.length < 4 ? `Need ${4-available.length} more` : 'Generate Match'}
+          <Btn v="primary" onClick={handleGenerate} disabled={!canGenerate} style={{ opacity: canGenerate ? 1 : 0.4 }}>
+            {available.length < 4
+              ? `Need ${4 - available.length} more`
+              : !canGenerate
+                ? 'Need 2 men + 2 women, or 4 of one gender'
+                : 'Generate Match'}
           </Btn>
         </div>
       ) : edited && (

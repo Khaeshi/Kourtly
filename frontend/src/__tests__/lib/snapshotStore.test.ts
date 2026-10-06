@@ -1,10 +1,17 @@
 import {
   isSnapshotFresh,
+  readReservationWindow,
   readSnapshot,
   sanitizeSnapshot,
   storeSnapshot,
   SNAPSHOT_TTL_MS,
 } from '@/lib/snapshotStore';
+import {
+  filterReservations,
+  reservationWindowCovers,
+  RESERVATION_WINDOW_SNAPSHOT_KEY,
+} from '@/lib/reservationSnapshot';
+import type { Reservation } from '@/lib/api';
 
 function createFakeIndexedDB() {
   type StoreData = Map<IDBValidKey, unknown>;
@@ -188,6 +195,59 @@ describe('snapshotStore', () => {
 
   test('returns undefined for an endpoint without a snapshot whitelist', () => {
     expect(sanitizeSnapshot('/payout-transfers', [{ accountNumber: 'private' }])).toBeUndefined();
+  });
+
+  test('filters reservations locally by date, status and court', () => {
+    const rows = [
+      { date: '2026-10-05', status: 'confirmed', court: 1 },
+      { date: '2026-10-05', status: 'cancelled', court: 2 },
+      { date: '2026-10-06', status: 'confirmed', court: 2 },
+    ] as Reservation[];
+
+    expect(filterReservations(rows, {
+      date: '2026-10-05',
+      status: 'confirmed',
+      court: 1,
+    })).toEqual([rows[0]]);
+  });
+
+  test('keeps one stable reservation-window snapshot and checks its date coverage', async () => {
+    const cachedWindow = { dateFrom: '2026-09-28', dateTo: '2026-11-04' };
+    const now = 1_800_000_000_000;
+    await storeSnapshot(
+      'user:court',
+      RESERVATION_WINDOW_SNAPSHOT_KEY,
+      [{ _id: 'old', date: '2026-10-01', phone: 'strip' }],
+      now,
+      cachedWindow
+    );
+    await storeSnapshot(
+      'user:court',
+      RESERVATION_WINDOW_SNAPSHOT_KEY,
+      [{ _id: 'new', date: '2026-10-05', phone: 'strip' }],
+      now + 1,
+      cachedWindow
+    );
+
+    expect(fakeIndexedDB.recordCount('kourtly-snapshots', 'snapshots')).toBe(1);
+    await expect(readReservationWindow('user:court', {
+      dateFrom: '2026-10-05',
+      dateTo: '2026-10-05',
+    }, now + 2)).resolves.toMatchObject({
+      data: [{ _id: 'new', date: '2026-10-05' }],
+    });
+    await expect(readReservationWindow('user:court', {
+      dateFrom: '2026-09-27',
+      dateTo: '2026-10-05',
+    }, now + 2)).resolves.toBeUndefined();
+    expect(reservationWindowCovers(cachedWindow, {
+      dateFrom: '2026-09-28',
+      dateTo: '2026-11-04',
+    })).toBe(true);
+    expect(reservationWindowCovers(cachedWindow, {
+      dateFrom: '2026-11-05',
+      dateTo: '2026-11-05',
+    })).toBe(false);
   });
 
   test('whitelists reservation fields and strips personal contact and payment-link data', () => {

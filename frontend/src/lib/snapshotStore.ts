@@ -11,6 +11,7 @@ export interface Snapshot<T = unknown> {
   data: T;
   source: 'network';
   fetchedAt: number;
+  reservationWindow?: { dateFrom: string; dateTo: string };
 }
 
 export interface SnapshotMetadata {
@@ -219,7 +220,7 @@ export function sanitizeSnapshot(path: string, value: unknown): unknown | undefi
   if (pathname === '/reservation-tabs/history') {
     return projectPaginated(value, projectReservationTab);
   }
-  if (pathname === '/reservations') return projectReservations(value);
+  if (pathname === '/reservations' || pathname === '/reservations/window') return projectReservations(value);
   if (pathname === '/analytics/summary') return projectAnalytics(value);
   if (pathname === '/court/me/capabilities') return projectCapabilities(value);
   if (pathname === '/court/me' && isRecord(value)) {
@@ -247,7 +248,8 @@ export async function storeSnapshot(
   identity: string,
   endpoint: string,
   value: unknown,
-  fetchedAt = Date.now()
+  fetchedAt = Date.now(),
+  reservationWindow?: { dateFrom: string; dateTo: string }
 ): Promise<boolean> {
   const data = sanitizeSnapshot(endpoint, value);
   if (data === undefined) return false;
@@ -258,6 +260,7 @@ export async function storeSnapshot(
     data,
     source: 'network',
     fetchedAt,
+    ...(reservationWindow ? { reservationWindow } : {}),
   };
   const database = await openSnapshotDatabase();
   try {
@@ -269,6 +272,45 @@ export async function storeSnapshot(
     closeDatabase(database);
   }
   return true;
+}
+
+export async function readReservationWindow(
+  identity: string,
+  requestedWindow?: { dateFrom: string; dateTo: string },
+  now = Date.now()
+): Promise<{ data: unknown[]; fetchedAt: number; reservationWindow: { dateFrom: string; dateTo: string } } | undefined> {
+  const database = await openSnapshotDatabase();
+  try {
+    const endpoint = '/reservations/window';
+    const id = snapshotId(identity, endpoint);
+    const snapshot = await transactionRequest(
+      database.transaction(SNAPSHOT_STORE, 'readonly').objectStore(SNAPSHOT_STORE)
+        .get(id) as IDBRequest<Snapshot<unknown[]> | undefined>,
+      'Could not read reservation window snapshot.'
+    );
+    if (!snapshot) return undefined;
+    const inWindow = snapshot.reservationWindow && (
+      !requestedWindow ||
+      (snapshot.reservationWindow.dateFrom <= requestedWindow.dateFrom &&
+        snapshot.reservationWindow.dateTo >= requestedWindow.dateTo)
+    );
+    if (!isSnapshotFresh(snapshot, now) || !inWindow) {
+      if (!isSnapshotFresh(snapshot, now)) {
+        await transactionRequest(
+          database.transaction(SNAPSHOT_STORE, 'readwrite').objectStore(SNAPSHOT_STORE).delete(id),
+          'Could not expire reservation window snapshot.'
+        );
+      }
+      return undefined;
+    }
+    return {
+      data: snapshot.data,
+      fetchedAt: snapshot.fetchedAt,
+      reservationWindow: snapshot.reservationWindow!,
+    };
+  } finally {
+    closeDatabase(database);
+  }
 }
 
 export async function readSnapshot<T = unknown>(

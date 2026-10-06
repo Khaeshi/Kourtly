@@ -50,6 +50,7 @@ const ReservationSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 ReservationSchema.index({ courtId: 1, date: 1, status: 1 });
+ReservationSchema.index({ courtId: 1, date: 1 });
 ReservationSchema.index({ courtId: 1, date: 1, court: 1 });
 ReservationSchema.index(
   { courtId: 1, date: 1, court: 1, bookingSlots: 1 },

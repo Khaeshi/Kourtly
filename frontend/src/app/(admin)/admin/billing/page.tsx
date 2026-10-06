@@ -8,6 +8,7 @@ import {
   removeItemFromReservationTab, payReservationTab, markReservationUnpaid, payReservationUnpaid, clearReservationTab,
   collectReservationBalance,
   getTabHistoryPaged, getReservationTabHistoryPaged,
+  OfflineUnavailableError,
 } from '@/lib/api';
 import type { Player, CatalogItem, Tab, ReservationTab, PaginatedTabs, PaginatedResTabs } from '@/lib/api';
 import { useSocketEvent } from '@/hooks/useSocketEvent';
@@ -275,6 +276,9 @@ export default function BillingPage() {
   const [openTabs,   setOpenTabs]   = useState<Tab[]>([]);
   const [history,    setHistory]    = useState<Tab[]>([]);
   const [loading,    setLoading]    = useState(true);
+  const [loadError,  setLoadError]  = useState('');
+  const [historyError, setHistoryError] = useState('');
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [activeTab,  setActiveTab]  = useState<string | null>(null);
   const [view,          setView]          = useState<'active' | 'reservations' | 'history'>('active');
   const [openingFor,    setOpeningFor]    = useState('');
@@ -296,20 +300,49 @@ export default function BillingPage() {
   const [histDate,      setHistDate]      = useState('');
 
   const loadAll = useCallback(async () => {
-    const [p, i, t, rt] = await Promise.all([
-      getPlayers(), getItems(), getOpenTabs(), getTodayReservationTabs(),
-    ]);
-    setPlayers(p); setItems(i); setOpenTabs(t);
-    setResTabs(rt); setLoading(false);
+    setLoading(true);
+    setLoadError('');
+    try {
+      const [p, i, t, rt] = await Promise.all([
+        getPlayers(), getItems(), getOpenTabs(), getTodayReservationTabs(),
+      ]);
+      setPlayers(p); setItems(i); setOpenTabs(t);
+      setResTabs(rt);
+    } catch (error) {
+      setPlayers([]); setItems([]); setOpenTabs([]); setResTabs([]);
+      setLoadError(error instanceof OfflineUnavailableError
+        ? 'Not cached yet'
+        : 'Could not load billing data.');
+      if (!(error instanceof OfflineUnavailableError)) {
+        console.error('Could not load billing data.', error);
+      }
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   const loadHistory = useCallback(async () => {
-    const [qh, rh] = await Promise.all([
-      getTabHistoryPaged({ status: histStatus, date: histDate || undefined, page: histPage }),
-      getReservationTabHistoryPaged({ status: histStatus, date: histDate || undefined, page: resHistPage }),
-    ]);
-    setHistoryPaged(qh);
-    setResHistory(rh);
+    setHistoryLoading(true);
+    setHistoryError('');
+    try {
+      const [qh, rh] = await Promise.all([
+        getTabHistoryPaged({ status: histStatus, date: histDate || undefined, page: histPage }),
+        getReservationTabHistoryPaged({ status: histStatus, date: histDate || undefined, page: resHistPage }),
+      ]);
+      setHistoryPaged(qh);
+      setResHistory(rh);
+    } catch (error) {
+      setHistoryPaged(null);
+      setResHistory(null);
+      setHistoryError(error instanceof OfflineUnavailableError
+        ? 'Not cached'
+        : 'Could not load billing history.');
+      if (!(error instanceof OfflineUnavailableError)) {
+        console.error('Could not load billing history.', error);
+      }
+    } finally {
+      setHistoryLoading(false);
+    }
   }, [histStatus, histDate, histPage, resHistPage]);
 
   useEffect(() => { loadAll(); }, [loadAll]);
@@ -360,6 +393,16 @@ export default function BillingPage() {
 
   return (
     <div className="w-full font-sans">
+      {loadError && (
+        <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          {loadError}
+        </p>
+      )}
+      {view === 'history' && historyError && (
+        <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          {historyError}
+        </p>
+      )}
       {splitItem_ && (
         <SplitModal item={splitItem_} openTabs={openTabs} primaryTab={activeTabObj}
           onClose={() => setSplitItem(null)} onDone={loadAll} />
@@ -373,7 +416,7 @@ export default function BillingPage() {
         </div>
         <div className="text-right">
           <div className="text-[0.65rem] font-semibold tracking-widest uppercase text-gray-400 mb-0.5">Open Tabs Total</div>
-          <div className="font-mono text-2xl font-semibold text-yellow-900">{fmt(grandTotal)}</div>
+          <div className="font-mono text-2xl font-semibold text-yellow-900">{loadError ? '—' : fmt(grandTotal)}</div>
         </div>
       </div>
 
@@ -383,7 +426,7 @@ export default function BillingPage() {
           className={`px-4 py-1.5 rounded-md text-xs font-medium border cursor-pointer transition-all ${
             view === 'active' ? 'bg-gray-900 border-gray-900 text-white' : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'
           }`}>
-          Queue Tabs ({openTabs.length})
+          Queue Tabs ({loadError ? '—' : openTabs.length})
         </button>
         <button onClick={() => setView('reservations')}
           className={`px-4 py-1.5 rounded-md text-xs font-medium border cursor-pointer transition-all ${
@@ -391,7 +434,7 @@ export default function BillingPage() {
               ? 'bg-blue-600 border-blue-600 text-white'
               : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'
           }`}>
-          Reservations Today ({resTabs.length})
+          Reservations Today ({loadError ? '—' : resTabs.length})
           {resTabs.length > 0 && view !== 'reservations' && (
             <span className="ml-1.5 inline-flex items-center justify-center w-4 h-4 rounded-full bg-blue-500 text-white text-[0.6rem] font-bold">
               {resTabs.length}
@@ -438,7 +481,11 @@ export default function BillingPage() {
               </div>
             )}
 
-            {loading ? (
+            {historyLoading ? (
+              <div className="p-12 text-center text-gray-400 text-sm">Loading...</div>
+            ) : historyError ? (
+              <div className="p-12 text-center text-amber-700 text-sm">{historyError}</div>
+            ) : loading ? (
               <div className="p-12 text-center text-gray-400 text-sm">Loading...</div>
             ) : openTabs.length === 0 ? (
               <div className="p-12 text-center bg-white border border-dashed border-gray-200 rounded-xl">
@@ -860,7 +907,11 @@ export default function BillingPage() {
                     <span key={h} className="text-[0.65rem] font-bold tracking-widest uppercase text-blue-300">{h}</span>
                   ))}
                 </div>
-                {(resHistory?.tabs ?? []).length === 0 ? (
+                {historyLoading ? (
+                  <div className="p-12 text-center text-gray-400 text-sm">Loading...</div>
+                ) : historyError ? (
+                  <div className="p-12 text-center text-amber-700 text-sm">{historyError}</div>
+                ) : (resHistory?.tabs ?? []).length === 0 ? (
                   <div className="p-12 text-center text-gray-400 text-sm">No records found.</div>
                 ) : (resHistory?.tabs ?? []).map((tab, i) => (
                   <div key={tab._id} className="grid px-5 py-3 items-center hover:bg-blue-50/30 transition-colors"

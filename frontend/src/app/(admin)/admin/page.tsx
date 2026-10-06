@@ -3,8 +3,13 @@ import Link from 'next/link';
 import { Users, Swords, Building2, TrendingUp, Calendar, ShoppingBag } from 'lucide-react';
 import { useState, useEffect, useCallback } from 'react';
 import { format, parseISO } from 'date-fns';
-import { askAnalytics, getPlayers, getQueue } from '@/lib/api';
-import { API_BASE } from '@/lib/config';
+import {
+  askAnalytics,
+  getPlayers,
+  getQueue,
+  OfflineUnavailableError,
+  proxyFetch,
+} from '@/lib/api';
 import type { Player, Match } from '@/lib/api';
 import { useCapabilities } from '@/lib/entitlements';
 import {
@@ -93,6 +98,7 @@ export default function AdminDashboard() {
   // ── Live counts (existing) ─────────────────────────────────────────────────
   const [playerCount, setPlayerCount] = useState<number | string>('—');
   const [matchCount,  setMatchCount]  = useState<number | string>('—');
+  const [courtCount,  setCourtCount]  = useState<number | string>('—');
 
   // ── Analytics ─────────────────────────────────────────────────────────────
   const [period,  setPeriod]  = useState<Period>('week');
@@ -100,6 +106,7 @@ export default function AdminDashboard() {
   const [analyticsLoading, setAnalyticsLoading] = useState(true);
   const [analyticsError,   setAnalyticsError]   = useState('');
   const [payoutTransfers, setPayoutTransfers] = useState<any[]>([]);
+  const [payoutUnavailable, setPayoutUnavailable] = useState(false);
   const [payoutStatusFilter, setPayoutStatusFilter] = useState<'all' | 'queued' | 'succeeded' | 'failed'>('all');
   const [aiQuestion, setAiQuestion] = useState('');
   const [aiAnswer, setAiAnswer] = useState('');
@@ -115,19 +122,33 @@ export default function AdminDashboard() {
         setMatchCount(queue.length);
       }
     };
-    load();
+    void load().catch(error => {
+      console.error('Could not load dashboard player and queue counts.', error);
+      setPlayerCount('Not cached yet');
+      setMatchCount('Not cached yet');
+    });
   }, [capabilities.modules.queue]);
+
+  useEffect(() => {
+    void proxyFetch<{ courtCount?: number }>('/court/me')
+      .then(court => setCourtCount(typeof court.courtCount === 'number' ? court.courtCount : '—'))
+      .catch(error => {
+        console.error('Could not load the court count.', error);
+        setCourtCount(error instanceof OfflineUnavailableError ? 'Not cached yet' : '—');
+      });
+  }, []);
 
   // Load analytics
   const loadAnalytics = useCallback(async () => {
     setAnalyticsLoading(true);
     setAnalyticsError('');
     try {
-      const res = await fetch(`${API_BASE}/analytics/summary?period=${period}`);
-      if (!res.ok) throw new Error('Failed to load analytics');
-      setAnalytics(await res.json());
-    } catch (e: any) {
-      setAnalyticsError(e.message);
+      const result = await proxyFetch<AnalyticsSummary>(`/analytics/summary?period=${period}`);
+      setAnalytics(result);
+    } catch (error) {
+      setAnalytics(null);
+      setAnalyticsError(error instanceof OfflineUnavailableError ? 'Not cached yet' :
+        error instanceof Error ? error.message : 'Could not load analytics.');
     } finally {
       setAnalyticsLoading(false);
     }
@@ -135,20 +156,29 @@ export default function AdminDashboard() {
 
   useEffect(() => { loadAnalytics(); }, [loadAnalytics]);
 
-  const loadPayoutTransfers = useCallback(() => {
+  const loadPayoutTransfers = useCallback(async () => {
     if (!capabilities.modules.item_tabs) {
       setPayoutTransfers([]);
+      setPayoutUnavailable(false);
       return;
     }
-
-    fetch(`/api/proxy/payout-transfers?limit=10&status=${payoutStatusFilter}`)
-      .then(async response => {
-        if (!response.ok) return [];
-        const data = await response.json();
-        return Array.isArray(data) ? data : [];
-      })
-      .then(setPayoutTransfers)
-      .catch(() => setPayoutTransfers([]));
+    setPayoutUnavailable(false);
+    try {
+      const transfers = await proxyFetch<any[]>(
+        `/payout-transfers?limit=10&status=${payoutStatusFilter}`,
+        undefined,
+        { allowSnapshotFallback: false }
+      );
+      setPayoutTransfers(Array.isArray(transfers) ? transfers : []);
+    } catch (error) {
+      if (error instanceof OfflineUnavailableError) {
+        setPayoutTransfers([]);
+        setPayoutUnavailable(true);
+        return;
+      }
+      console.error('Could not load payout transfers.', error);
+      setPayoutTransfers([]);
+    }
   }, [capabilities.modules.item_tabs, payoutStatusFilter]);
 
   useEffect(() => {
@@ -182,7 +212,7 @@ export default function AdminDashboard() {
       sub: 'On court now', color: '#0ea5e9', icon: Swords,
     },
     {
-      label: 'Courts', value: '4',
+      label: 'Courts', value: courtCount,
       sub: 'Available', color: '#10b981', icon: Building2,
     },
     {
@@ -234,6 +264,11 @@ export default function AdminDashboard() {
 
   return (
     <div className="w-full font-sans">
+      {analyticsError && (
+        <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          {analyticsError}
+        </p>
+      )}
 
       {/* ── Header ── */}
       <div className="mb-7 flex items-end justify-between flex-wrap gap-4">
@@ -534,7 +569,9 @@ export default function AdminDashboard() {
             <option value="failed">Failed</option>
           </select>
         </div>
-        {payoutTransfers.length === 0 ? (
+        {payoutUnavailable ? (
+          <p className="text-xs text-gray-400">Not available offline</p>
+        ) : payoutTransfers.length === 0 ? (
           <p className="text-xs text-gray-400">No payout transfers yet.</p>
         ) : (
           <div className="space-y-2">
@@ -549,8 +586,12 @@ export default function AdminDashboard() {
                   {t.status === 'failed' && (
                     <button
                       onClick={async () => {
-                        await fetch(`/api/proxy/payout-transfers/${t._id}/retry`, { method: 'POST' });
-                        loadPayoutTransfers();
+                                    try {
+                                      await proxyFetch(`/payout-transfers/${t._id}/retry`, { method: 'POST' });
+                                    } catch (error) {
+                                      console.error('Could not retry payout transfer.', error);
+                                    }
+                                    loadPayoutTransfers();
                       }}
                       className="text-[10px] px-2 py-1 border border-blue-200 bg-blue-50 text-blue-700 rounded"
                     >

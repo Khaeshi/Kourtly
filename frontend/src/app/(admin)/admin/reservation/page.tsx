@@ -1,7 +1,13 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 import { sileo } from 'sileo';
-import { createReservationBillingTab, getReservations, updateReservation, deleteReservation } from '@/lib/api';
+import {
+  createReservationBillingTab,
+  getReservations,
+  updateReservation,
+  deleteReservation,
+  OfflineUnavailableError,
+} from '@/lib/api';
 import type { Reservation } from '@/lib/api';
 import { Button } from '@/app/components/ui/Button';
 import { useSocketEvent } from '@/hooks/useSocketEvent';
@@ -102,7 +108,7 @@ function DeleteModal({ r, onClose, onDeleted }: { r: Reservation; onClose: () =>
 function DetailModal({ r, onClose, onUpdate, onDeleteRequest, canCreateBillingTab }: {
   r: Reservation; onClose: () => void; onUpdate: () => void; onDeleteRequest: (r: Reservation) => void; canCreateBillingTab: boolean;
 }) {
-  const [notes, setNotes] = useState(r.notes);
+  const [notes, setNotes] = useState(r.notes ?? '');
   const [creatingBillingTab, setCreatingBillingTab] = useState(false);
   const s = STATUS_STYLE[r.status] ?? { label: 'bg-gray-100 border-gray-200 text-gray-500', text: r.status };
 
@@ -219,6 +225,7 @@ export default function ReservationsPage() {
   const capabilities = useCapabilities();
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [loading,      setLoading]      = useState(true);
+  const [loadError,    setLoadError]    = useState('');
   const [selected,     setSelected]     = useState<Reservation | null>(null);
   const [toDelete,     setToDelete]     = useState<Reservation | null>(null);
   const [dateFilter,   setDateFilter]   = useState('');
@@ -227,12 +234,24 @@ export default function ReservationsPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError('');
     const params: { date?: string; status?: string } = {};
     if (dateFilter)             params.date   = dateFilter;
     if (statusFilter !== 'all') params.status = statusFilter;
-    const data = await getReservations(params);
-    setReservations(data);
-    setLoading(false);
+    try {
+      const data = await getReservations(params);
+      setReservations(data);
+    } catch (error) {
+      setReservations([]);
+      setLoadError(error instanceof OfflineUnavailableError
+        ? error.message
+        : 'Could not load reservations.');
+      if (!(error instanceof OfflineUnavailableError)) {
+        console.error('Could not load reservations.', error);
+      }
+    } finally {
+      setLoading(false);
+    }
   }, [dateFilter, statusFilter]);
 
   useEffect(() => { load(); }, [load]);
@@ -249,8 +268,8 @@ export default function ReservationsPage() {
   }, {} as Record<string, Reservation[]>);
 
   const counts = {
-    awaiting:  reservations.filter(r => ['pending', 'pending_admin', 'approved_waiting_payment'].includes(r.status)).length,
-    confirmed: reservations.filter(r => r.status === 'confirmed').length,
+    awaiting:  loadError ? '—' : reservations.filter(r => ['pending', 'pending_admin', 'approved_waiting_payment'].includes(r.status)).length,
+    confirmed: loadError ? '—' : reservations.filter(r => r.status === 'confirmed').length,
   };
 
   return (
@@ -321,6 +340,10 @@ export default function ReservationsPage() {
         {/* Content */}
         {loading ? (
           <div className="p-16 text-center text-gray-300 text-sm">Loading...</div>
+        ) : loadError ? (
+          <div className="p-16 text-center bg-amber-50 border border-amber-200 rounded-xl">
+            <p className="text-sm text-amber-900">{loadError}</p>
+          </div>
         ) : filtered.length === 0 ? (
           <div className="p-16 text-center bg-white border border-dashed border-gray-200 rounded-xl">
             <p className="text-sm text-gray-300">No reservations found.</p>
