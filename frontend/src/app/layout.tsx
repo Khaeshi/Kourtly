@@ -40,9 +40,16 @@ export const metadata: Metadata = {
   you found the right system to manage your court, subscribe now! `,
   manifest: '/manifest.webmanifest',
   icons: {
-    icon: '/Playkoubg.png',
-    apple: '/Playkoubg.png',
+    icon: '/brand/favicon/favicon.svg',
+    apple: '/brand/pwa/apple-touch-icon.png',
   },
+
+  appleWebApp: {
+    capable: true,
+    title: APP_NAME,
+    startupImage: '/brand/pwa/apple-touch-icon.svg',
+    statusBarStyle: 'default',
+  }
 };
 
 export const viewport = {
