@@ -11,7 +11,7 @@ function ArrowIcon() {
 function ShuttleIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" className="w-full h-full">
-      <path d="M12 2L9 9L2 12L9 15L12 22L15 15L22 12L15 9L12 2Z" fill="#E8A33D" />
+      <path d="M12 2L9 9L2 12L9 15L12 22L15 15L22 12L15 9L12 2Z" fill="var(--accent)" />
     </svg>
   );
 }
@@ -35,7 +35,7 @@ export default function SplitHero() {
         transition-[left] duration-[450ms] ease-[cubic-bezier(.23,1,.32,1)]"
         style={{
           backgroundImage:
-            'repeating-linear-gradient(to bottom, rgba(245,241,232,0.5) 0, rgba(245,241,232,0.5) 8px, transparent 8px, transparent 16px)',
+            'repeating-linear-gradient(to bottom, color-mix(in srgb, var(--line) 50%, transparent) 0, color-mix(in srgb, var(--line) 50%, transparent) 8px, transparent 8px, transparent 16px)',
         }}
         aria-hidden="true"
       />
@@ -43,7 +43,7 @@ export default function SplitHero() {
       <div
         className="hidden min-[800px]:block absolute top-0 left-[var(--split)] w-4 h-4 -translate-x-1/2 -translate-y-1/2 z-[6] shuttle-animate
         transition-[left] duration-[850ms] ease-[cubic-bezier(.23,1,.32,1)]"
-        style={{ filter: 'drop-shadow(0 0 6px rgba(232,163,61,0.6))' }}
+        style={{ filter: 'drop-shadow(0 0 6px color-mix(in srgb, var(--accent) 60%, transparent))' }}
         aria-hidden="true"
       >
         <ShuttleIcon />
@@ -52,7 +52,7 @@ export default function SplitHero() {
       {/* Player side */}
       <div
         className="side-player relative flex flex-col gap-4 p-[clamp(2rem,4vw,2.8rem)] max-[480px]:p-[1.6rem_1.4rem]"
-        style={{ background: 'linear-gradient(160deg, var(--teal-light), var(--teal-mid))' }}
+        style={{ background: 'linear-gradient(160deg, var(--surface-raised), var(--surface))' }}
       >
         <span className="text-[0.85rem] font-bold text-[var(--line-dim)]">For Players</span>
         <h2 className="font-display text-[clamp(1.5rem,3vw,1.95rem)] text-[var(--line)]">
@@ -81,7 +81,7 @@ export default function SplitHero() {
       {/* Owner side */}
       <div
         className="side-owner relative flex flex-col gap-4 p-[clamp(2rem,4vw,2.8rem)] max-[480px]:p-[1.6rem_1.4rem]"
-        style={{ background: 'linear-gradient(160deg, #14201d, #0d1613)' }}
+        style={{ background: 'linear-gradient(160deg, var(--surface), var(--page-bg))' }}
       >
         <span className="text-[0.85rem] font-bold text-[var(--line-dim)]">For Court Owners</span>
         <h2 className="font-display text-[clamp(1.5rem,3vw,1.95rem)] text-[var(--line)]">

@@ -44,7 +44,7 @@ export default function LiveCourtBoard() {
     <div
       aria-label="Sample live queue"
       role="group"
-      className="border border-[var(--divider)] bg-[rgba(255,255,255,0.03)] p-5 animate-[kt-pop_.5s_cubic-bezier(.23,1,.32,1)_.1s_both]"
+      className="border border-[var(--divider)] bg-[var(--card-bg)] p-5 animate-[kt-pop_.5s_cubic-bezier(.23,1,.32,1)_.1s_both]"
       style={{ borderRadius: 'var(--r-block)' }}
     >
       <div className="flex items-center justify-between mb-4">
@@ -59,12 +59,12 @@ export default function LiveCourtBoard() {
         {on.map((p, i) => (
           <div
             key={`${p.name}-on`}
-            className={`flex flex-col items-center gap-1 px-1 py-3 bg-[rgba(255,255,255,0.04)] text-[0.8rem] text-[var(--line)] ${
+            className={`flex flex-col items-center gap-1 px-1 py-3 bg-[var(--surface-raised)] text-[0.8rem] text-[var(--line)] ${
               tick > 0 && i === on.length - 1 ? 'animate-[kt-pop_.35s_cubic-bezier(.23,1,.32,1)]' : ''
             }`}
             style={{ borderRadius: 10 }}
           >
-            <span className="grid place-items-center w-[34px] h-[34px] rounded-full bg-[rgba(255,255,255,0.08)] text-[0.85rem]">
+            <span className="grid place-items-center w-[34px] h-[34px] rounded-full bg-[var(--surface)] text-[0.85rem]">
               {p.name[0]}
             </span>
             {p.name}

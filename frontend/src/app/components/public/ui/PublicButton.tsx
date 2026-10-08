@@ -10,9 +10,9 @@ interface PublicButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement
 
 const VARIANT_CLASS: Record<Variant, string> = {
   primary:
-    'bg-[var(--amber)] text-[var(--ink)] border-[var(--amber)] hover:brightness-110',
+    'bg-[var(--accent)] text-[var(--ink)] border-[var(--accent)] hover:bg-[var(--accent-hover)]',
   secondary:
-    'bg-[var(--public-accent-soft)] text-[var(--line)] border-[var(--divider)] hover:bg-[rgba(232,163,61,0.22)]',
+    'bg-[var(--public-accent-soft)] text-[var(--line)] border-[var(--divider)] hover:border-[var(--accent-border)]',
   ghost:
     'bg-transparent text-[var(--line-dim)] border-transparent hover:text-[var(--line)]',
 };

@@ -3,10 +3,10 @@ import React from 'react';
 type Variant = 'info' | 'error' | 'success' | 'warning';
 
 const VARIANT_CLASS: Record<Variant, string> = {
-  info: 'bg-white/5 border-[var(--divider)] text-[var(--line-dim)]',
-  error: 'bg-red-500/10 border-red-500/25 text-red-300',
-  success: 'bg-[rgba(232,163,61,0.1)] border-[rgba(232,163,61,0.35)] text-[var(--amber)]',
-  warning: 'bg-[rgba(232,163,61,0.1)] border-[rgba(232,163,61,0.35)] text-[var(--amber)]',
+  info: 'bg-[var(--public-surface-strong)] border-[var(--divider)] text-[var(--line-dim)]',
+  error: 'bg-[var(--danger-soft)] border-[var(--danger)]/25 text-[var(--danger)]',
+  success: 'bg-[var(--success-soft)] border-[var(--success)]/35 text-[var(--success)]',
+  warning: 'bg-[var(--warning-soft)] border-[var(--warning)]/35 text-[var(--warning)]',
 };
 
 interface InlineNoticeProps {

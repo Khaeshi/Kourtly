@@ -38,40 +38,27 @@ export default function PublicNav({ links = [], alwaysVisible = true }: Props) {
   }, []);
 
   useEffect(() => {
-    const handleScroll = () => setScrolled(window.scrollY > 8);
+    const handleScroll = () => setScrolled(window.scrollY > 64);
     handleScroll();
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
   const navLinkClass =
-    'text-[0.9rem] font-semibold text-[var(--line-dim)] no-underline opacity-75 hover:opacity-100 transition-opacity';
+    'text-[0.9rem] font-semibold text-[var(--nav-link-color)] no-underline opacity-75 hover:text-[var(--nav-link-hover)] hover:opacity-100 transition-opacity';
 
   return (
     <>
-      <nav
-        className="public-nav"
-        style={{
-          background: scrolled ? 'rgba(11, 61, 58, 0.86)' : 'transparent',
-          backdropFilter: scrolled ? 'blur(10px)' : 'none',
-          WebkitBackdropFilter: scrolled ? 'blur(10px)' : 'none',
-          borderBottomColor: scrolled ? 'var(--divider)' : 'transparent',
-          transition: 'background 0.3s ease, border-color 0.3s ease, backdrop-filter 0.3s ease',
-        }}
-      >
+      <nav className={`public-nav ${scrolled ? 'is-scrolled' : ''}`}>
         <Link href="/" className="flex items-center gap-2.5 min-w-0 no-underline">
           <Image
-            src="/Playkoubg.png"
+            src="/brand/logo/kourtly-logo.svg"
             alt={APP_NAME}
-            width={32}
-            height={32}
+            width={160}
+            height={60}
             priority
-            className="w-8 h-8 object-cover shrink-0"
-            style={{ borderRadius: 'var(--r-block)' }}
+            className="h-auto w-[160px] object-contain"
           />
-          <span className="font-display text-[clamp(0.85rem,3vw,1.25rem)] text-[var(--line)] tracking-tight whitespace-nowrap max-[480px]:text-[1.1rem]">
-            {APP_NAME.toUpperCase()}
-          </span>
         </Link>
 
         <div className="nav-links-desktop flex gap-7 items-center">
@@ -97,18 +84,18 @@ export default function PublicNav({ links = [], alwaysVisible = true }: Props) {
                 ) : (
                   <div
                     className="w-8 h-8 flex items-center justify-center text-xs font-bold text-[var(--amber)]"
-                    style={{ borderRadius: 'var(--r-pill)', background: 'rgba(232,163,61,0.14)', border: '1.5px solid rgba(232,163,61,0.35)' }}
+                    style={{ borderRadius: 'var(--r-pill)', background: 'var(--accent-soft)', border: '1.5px solid var(--accent-border)' }}
                   >
                     {user.name?.[0]?.toUpperCase() ?? '?'}
                   </div>
                 )}
-                <ChevronDown size={10} className={`text-[var(--line-dim)] transition-transform ${dropOpen ? 'rotate-180' : ''}`} />
+                <ChevronDown size={10} className={`text-[var(--nav-link-color)] transition-transform ${dropOpen ? 'rotate-180' : ''}`} />
               </button>
 
               {dropOpen && (
                 <div
                   className="absolute top-[calc(100%+10px)] right-0 w-[220px] p-2 z-[300] border border-[var(--divider)]"
-                  style={{ borderRadius: 'var(--r-block)', background: 'rgba(11,61,58,0.97)', backdropFilter: 'blur(20px)', boxShadow: '0 16px 40px rgba(0,0,0,0.5)' }}
+                  style={{ borderRadius: 'var(--r-block)', background: 'var(--surface-raised)', backdropFilter: 'blur(20px)', boxShadow: '0 16px 40px rgba(0,0,0,0.5)' }}
                 >
                   <div className="px-3 pt-2.5 pb-3 mb-1.5 border-b border-[var(--divider)]">
                     <div className="flex items-center gap-2.5">
@@ -116,7 +103,7 @@ export default function PublicNav({ links = [], alwaysVisible = true }: Props) {
                         <Image src={user.image} alt={user.name ?? ''} width={34} height={34} className="rounded-full shrink-0" />
                       ) : (
                         <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-[var(--amber)] shrink-0"
-                          style={{ background: 'rgba(232,163,61,0.14)' }}>
+                          style={{ background: 'var(--accent-soft)' }}>
                           {user.name?.[0]?.toUpperCase() ?? '?'}
                         </div>
                       )}
@@ -126,7 +113,7 @@ export default function PublicNav({ links = [], alwaysVisible = true }: Props) {
                       </div>
                     </div>
                     {(isAdmin || isSuperAdmin) && (
-                      <span className="inline-block mt-2 font-mono-data text-[0.6rem] tracking-[0.1em] uppercase px-2 py-0.5 text-[var(--amber)] border border-[rgba(232,163,61,0.35)]"
+                      <span className="inline-block mt-2 font-mono-data text-[0.6rem] tracking-[0.1em] uppercase px-2 py-0.5 text-[var(--amber)] border border-[var(--accent-border)]"
                         style={{ borderRadius: 'var(--r-pill)' }}>
                         {isSuperAdmin ? 'Super Admin' : 'Admin'}
                       </span>
@@ -162,9 +149,9 @@ export default function PublicNav({ links = [], alwaysVisible = true }: Props) {
           onClick={() => setMenuOpen(!menuOpen)}
           aria-label="Toggle menu"
         >
-          <span className={`block w-[22px] h-[1.5px] bg-[var(--line)] transition-all duration-300 ${menuOpen ? 'rotate-45 translate-x-[4px] translate-y-[5px]' : ''}`} />
-          <span className={`block w-[22px] h-[1.5px] bg-[var(--line)] transition-opacity ${menuOpen ? 'opacity-0' : 'opacity-100'}`} />
-          <span className={`block w-[22px] h-[1.5px] bg-[var(--line)] transition-all duration-300 ${menuOpen ? '-rotate-45 translate-x-[4px] -translate-y-[5px]' : ''}`} />
+          <span className={`block w-[22px] h-[1.5px] bg-[var(--nav-link-color)] transition-all duration-300 ${menuOpen ? 'rotate-45 translate-x-[4px] translate-y-[5px]' : ''}`} />
+          <span className={`block w-[22px] h-[1.5px] bg-[var(--nav-link-color)] transition-opacity ${menuOpen ? 'opacity-0' : 'opacity-100'}`} />
+          <span className={`block w-[22px] h-[1.5px] bg-[var(--nav-link-color)] transition-all duration-300 ${menuOpen ? '-rotate-45 translate-x-[4px] -translate-y-[5px]' : ''}`} />
         </button>
       </nav>
 
@@ -174,7 +161,7 @@ export default function PublicNav({ links = [], alwaysVisible = true }: Props) {
             onClick={() => setMenuOpen(false)} aria-label="Close menu" />
           <div
             className="absolute top-[68px] left-4 right-4 p-4 border border-[var(--divider)] max-[480px]:top-[60px]"
-            style={{ borderRadius: 'var(--r-block)', background: 'rgba(11,61,58,0.97)', boxShadow: '0 16px 40px rgba(0,0,0,0.5)' }}
+            style={{ borderRadius: 'var(--r-block)', background: 'var(--surface-raised)', boxShadow: '0 16px 40px rgba(0,0,0,0.5)' }}
           >
             {links.map((l) => (
               <a key={l.href} href={l.href}
@@ -200,7 +187,7 @@ export default function PublicNav({ links = [], alwaysVisible = true }: Props) {
                   </Link>
                 )}
                 <button type="button"
-                  className="w-full text-left px-4 py-3 text-sm text-red-300/80 hover:bg-red-500/10 transition-colors bg-transparent border-none cursor-pointer"
+                  className="w-full text-left px-4 py-3 text-sm text-[var(--danger)] hover:bg-red-500/10 transition-colors bg-transparent border-none cursor-pointer"
                   style={{ borderRadius: 'var(--r-block)' }}
                   onClick={() => { setMenuOpen(false); signOut({ callbackUrl: '/' }); }}>
                   Sign Out

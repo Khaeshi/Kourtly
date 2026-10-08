@@ -130,14 +130,13 @@ export default function RegisterCourtPage() {
     <div className="public-root min-h-screen flex flex-col items-center justify-center p-6">
       <Link href="/" className="flex items-center gap-2.5 mb-8 no-underline">
         <Image
-          src="/Playkoubg.png"
+          src="/brand/logo/kourtly-logo.svg"
           alt={APP_NAME}
-          width={28}
-          height={28}
+          width={160}
+          height={60}
           priority
-          className="w-7 h-7 rounded-full object-cover border border-blue-400/40"
+          className="h-auto w-[160px] object-contain"
         />
-        <span className="font-bold text-white text-sm">{APP_NAME}</span>
       </Link>
 
       <div className="public-card rounded-2xl shadow-2xl w-full max-w-[540px] overflow-hidden">

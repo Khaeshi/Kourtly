@@ -90,17 +90,15 @@ function SignInContent() {
     <div className="public-root min-h-screen flex items-center justify-center p-6">
       <div className="w-full max-w-[390px] relative">
         <div className="text-center mb-10">
-          <div className="inline-flex items-center gap-2.5 mb-6">
+          <div className="inline-flex items-center mb-6">
             <Image
-              src="/Playkoubg.png"
-              alt={APP_NAME}
-              width={28}
-              height={28}
+              src="/brand/logo/kourtly-logo.svg"
+              alt="Kourtly"
+              width={160}
+              height={60}
               priority
-              className="w-7 h-7 object-cover"
-              style={{ borderRadius: 'var(--r-block)' }}
+              className="h-auto w-[160] object-contain"
             />
-            <span className="font-display text-base text-[var(--line)]">{APP_NAME.toUpperCase()}</span>
           </div>
           <h1 className="font-display text-[clamp(1.8rem,4vw,2.2rem)] text-[var(--line)] mb-2">Welcome back</h1>
           <p className="text-sm text-[var(--line-dim)]">Sign in to access your account</p>

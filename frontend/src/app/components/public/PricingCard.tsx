@@ -45,14 +45,14 @@ export default function PricingCard({
       className="flex flex-col justify-between gap-6 p-[clamp(1.8rem,3vw,2.4rem)] max-[480px]:p-6 border border-[var(--divider)]"
       style={{
         borderRadius: 'var(--r-block)',
-        background: 'linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0))',
+        background: 'linear-gradient(180deg, var(--surface-raised), var(--surface))',
       }}
     >
       <div>
         {icon ?? (
           <div
             className="w-[42px] h-[42px] flex items-center justify-center mb-4 text-[var(--amber)]"
-            style={{ borderRadius: 'var(--r-pill)', background: 'rgba(232,163,61,0.14)' }}
+            style={{ borderRadius: 'var(--r-pill)', background: 'var(--accent-soft)' }}
             aria-hidden="true"
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" className="w-5 h-5">
@@ -62,7 +62,7 @@ export default function PricingCard({
           </div>
         )}
         <span
-          className="inline-block font-mono-data text-[0.7rem] tracking-[0.06em] uppercase text-[var(--amber)] border border-[rgba(232,163,61,0.35)] px-[0.7rem] py-[0.28rem] mb-3.5"
+          className="inline-block font-mono-data text-[0.7rem] tracking-[0.06em] uppercase text-[var(--amber)] border border-[var(--accent-border)] px-[0.7rem] py-[0.28rem] mb-3.5"
           style={{ borderRadius: 'var(--r-pill)' }}
         >
           {badge}
