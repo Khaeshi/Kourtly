@@ -17,6 +17,7 @@ const router = express.Router();
 
 const XENDIT_ACCOUNT_SELECT =
   'name adminEmail registrationStatus xendit.status xendit.webhookConfigured xendit.setupInProgress xendit.webhookSetupInProgress +xendit.subAccountId';
+const SETUP_CLAIM_TTL_MS = 120_000;
 
 function callbackTokenHash(token) {
   return crypto.createHash('sha256').update(token).digest('hex');
@@ -55,18 +56,14 @@ async function linkManagedAccount(courtId, account) {
         'xendit.subAccountId': account.id,
         'xendit.status': account.status,
         'xendit.statusCheckedAt': new Date(),
-        'xendit.setupInProgress': false,
       },
-      $unset: { 'xendit.setupStartedAt': 1 },
     },
     { returnDocument: 'after', runValidators: true },
   ).select('xendit.status').lean();
 }
 
-async function recoverManagedAccount(court) {
-  const account = await listManagedAccountsByEmail(court.adminEmail);
-  if (!account) return null;
-  return linkManagedAccount(court._id, account);
+function isAmbiguousAccountListError(error) {
+  return error?.code === 'XENDIT_ACCOUNT_LIST_AMBIGUOUS';
 }
 
 router.post('/me/xendit/setup', async (req, res) => {
@@ -77,23 +74,23 @@ router.post('/me/xendit/setup', async (req, res) => {
       return res.json({ status: court.xendit.status || '' });
     }
 
-    if (court.xendit?.setupInProgress) {
-      const recovered = await recoverManagedAccount(court);
-      if (recovered) return res.json({ status: recovered.xendit?.status || '' });
-      return res.status(409).json({ error: 'Xendit account setup is still being resolved. Refresh and try again.' });
-    }
-
+    const claimStartedAt = new Date();
+    const staleClaimBefore = new Date(claimStartedAt.getTime() - SETUP_CLAIM_TTL_MS);
     const claimed = await Court.findOneAndUpdate(
       {
         _id: court._id,
         registrationStatus: 'approved',
         'xendit.subAccountId': { $exists: false },
-        'xendit.setupInProgress': { $ne: true },
+        $or: [
+          { 'xendit.setupStartedAt': { $exists: false } },
+          { 'xendit.setupStartedAt': null },
+          { 'xendit.setupStartedAt': { $lte: staleClaimBefore } },
+        ],
       },
       {
         $set: {
           'xendit.setupInProgress': true,
-          'xendit.setupStartedAt': new Date(),
+          'xendit.setupStartedAt': claimStartedAt,
         },
       },
       { returnDocument: 'after' },
@@ -104,64 +101,60 @@ router.post('/me/xendit/setup', async (req, res) => {
       if (latest?.xendit?.subAccountId) {
         return res.json({ status: latest.xendit.status || '' });
       }
-      if (latest?.xendit?.setupInProgress) {
-        const recovered = await recoverManagedAccount(latest);
-        if (recovered) return res.json({ status: recovered.xendit?.status || '' });
-        return res.status(409).json({ error: 'Xendit account setup is still being resolved. Refresh and try again.' });
+      return res.status(409).json({ error: 'setup already in progress' });
+    }
+
+    try {
+      let account;
+      try {
+        account = await listManagedAccountsByEmail(claimed.adminEmail);
+      } catch (error) {
+        if (isAmbiguousAccountListError(error)) {
+          return res.status(409).json({ error: 'Unable to uniquely identify a Xendit account for this venue.' });
+        }
+        return res.status(502).json({ error: 'Could not look up the Xendit account for this venue.' });
       }
-      return res.status(409).json({ error: 'Court is not approved for Xendit setup.' });
-    }
 
-    let existingAccount;
-    try {
-      existingAccount = await listManagedAccountsByEmail(claimed.adminEmail);
-    } catch {
-      await Court.updateOne(
-        { _id: claimed._id, 'xendit.setupInProgress': true },
-        { $set: { 'xendit.setupInProgress': false }, $unset: { 'xendit.setupStartedAt': 1 } },
-      );
-      return res.status(502).json({ error: 'Could not verify whether this admin email already has a Xendit account.' });
-    }
-    if (existingAccount) {
-      await Court.updateOne(
-        { _id: claimed._id, 'xendit.setupInProgress': true },
-        { $set: { 'xendit.setupInProgress': false }, $unset: { 'xendit.setupStartedAt': 1 } },
-      );
-      return res.status(409).json({ error: 'This admin email is already used by a Xendit Managed account.' });
-    }
+      const adoptingExistingAccount = Boolean(account);
+      if (account) {
+        const linkedElsewhere = await Court.exists({
+          _id: { $ne: claimed._id },
+          'xendit.subAccountId': account.id,
+        });
+        if (linkedElsewhere) {
+          return res.status(409).json({ error: 'This email already has a payments account on another venue.' });
+        }
+      } else {
+        try {
+          account = await createManagedAccount({
+            email: claimed.adminEmail,
+            businessName: claimed.name,
+          });
+        } catch {
+          return res.status(502).json({ error: 'Could not confirm Xendit account setup. Retry to check its status.' });
+        }
+      }
 
-    let account;
-    try {
-      account = await createManagedAccount({
-        email: claimed.adminEmail,
-        businessName: claimed.name,
-      });
-    } catch {
-      // Keep the claim so a retry can recover a created account by email if Xendit's response was lost.
-      return res.status(502).json({ error: 'Could not confirm Xendit account setup. Refresh and try again.' });
-    }
-
-    try {
       const linked = await linkManagedAccount(claimed._id, account);
-      if (linked) return res.status(201).json({ status: linked.xendit?.status || '' });
+      const successStatus = adoptingExistingAccount ? 200 : 201;
+      if (linked) return res.status(successStatus).json({ status: linked.xendit?.status || '' });
       const latest = await Court.findById(claimed._id).select(XENDIT_ACCOUNT_SELECT).lean();
       if (latest?.xendit?.subAccountId === account.id) {
-        return res.status(201).json({ status: latest.xendit.status || '' });
+        return res.status(successStatus).json({ status: latest.xendit.status || '' });
       }
-      await Court.updateOne(
-        { _id: claimed._id, 'xendit.setupInProgress': true },
-        { $set: { 'xendit.setupInProgress': false }, $unset: { 'xendit.setupStartedAt': 1 } },
-      );
-      return res.status(409).json({ error: 'Xendit account could not be linked to this court.' });
     } catch (error) {
       if (error?.code === 11000) {
-        await Court.updateOne(
-          { _id: claimed._id, 'xendit.setupInProgress': true },
-          { $set: { 'xendit.setupInProgress': false }, $unset: { 'xendit.setupStartedAt': 1 } },
-        );
-        return res.status(409).json({ error: 'This Xendit account is already linked to another court.' });
+        return res.status(409).json({ error: 'This email already has a payments account on another venue.' });
       }
-      throw error;
+      return res.status(502).json({ error: 'Could not link the Xendit account to this venue.' });
+    } finally {
+      await Court.updateOne(
+        { _id: claimed._id, 'xendit.setupStartedAt': claimStartedAt },
+        {
+          $set: { 'xendit.setupInProgress': false },
+          $unset: { 'xendit.setupStartedAt': 1 },
+        },
+      );
     }
   } catch {
     res.status(502).json({ error: 'Could not complete Xendit account setup.' });

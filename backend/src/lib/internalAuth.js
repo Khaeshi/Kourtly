@@ -39,10 +39,10 @@ export function getInternalAuthHeader() {
 
 export async function getAuthenticatedUser(req) {
   const assertion = verifyInternalAssertion(req.headers[AUTH_HEADER]);
-  console.log('[internalAuth] header present:', !!req.headers[AUTH_HEADER], 'assertion valid:', !!assertion, 'email:', assertion?.email);
+  console.log('[internalAuth] header present:', !!req.headers[AUTH_HEADER], 'assertion valid:', !!assertion);
   if (assertion?.email) {
     const user = await User.findOne({ email: assertion.email.toLowerCase() }).lean();
-    console.log('[internalAuth] user found:', !!user, 'role:', user?.role);
+    console.log('[internalAuth] user found:', !!user, 'userId:', user?._id);
     return user;
   }
 

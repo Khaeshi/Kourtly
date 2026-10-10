@@ -3,6 +3,12 @@ import crypto from 'node:crypto';
 const XENDIT_API_BASE = 'https://api.xendit.co';
 const XENDIT_WEBHOOK_PATH = '/api/payments/xendit/webhook';
 
+function ambiguousManagedAccountListError() {
+  const error = new Error('Multiple Xendit accounts match this email.');
+  error.code = 'XENDIT_ACCOUNT_LIST_AMBIGUOUS';
+  return error;
+}
+
 /**
  * @typedef {Object} XenditAccount
  * @property {string} id
@@ -29,7 +35,7 @@ export function parseManagedAccountList(response, email) {
     throw new Error('Unexpected Xendit account-list response.');
   }
   if (response.has_more === true) {
-    throw new Error('Multiple Xendit accounts match this email.');
+    throw ambiguousManagedAccountListError();
   }
 
   const matches = response.data.filter(account =>
@@ -38,7 +44,7 @@ export function parseManagedAccountList(response, email) {
     account.email.toLowerCase() === email.toLowerCase()
   );
   if (matches.length > 1) {
-    throw new Error('Multiple Xendit accounts match this email.');
+    throw ambiguousManagedAccountListError();
   }
   if (matches.some(account => typeof account.id !== 'string' || !account.id || typeof account.status !== 'string')) {
     throw new Error('Unexpected Xendit account-list response.');

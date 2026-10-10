@@ -35,7 +35,7 @@ async function sendConfirmationEmail(reservation) {
     from: process.env.RESEND_FROM_EMAIL || 'noreply@yourdomain.com',
     to, subject, html,
   });
-  console.log(`[email] Confirmation sent to ${to}`);
+  console.log('[email] Confirmation sent');
 }
 
 // ── Routes ────────────────────────────────────────────────────────────────────
