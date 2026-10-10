@@ -1,5 +1,16 @@
 import mongoose from 'mongoose';
 
+const XenditAccountSchema = new mongoose.Schema({
+  subAccountId: { type: String, default: undefined, select: false },
+  status: { type: String, default: '' },
+  statusCheckedAt: { type: Date, default: null },
+  webhookConfigured: { type: Boolean, default: false },
+  callbackTokenHash: { type: String, default: '', select: false },
+  setupInProgress: { type: Boolean, default: false, select: false },
+  setupStartedAt: { type: Date, default: null, select: false },
+  webhookSetupInProgress: { type: Boolean, default: false, select: false },
+}, { _id: false });
+
 /**
  * Court — one document per subscribing tenant.
  * This is the root of the WaaS model.
@@ -121,6 +132,11 @@ const CourtSchema = new mongoose.Schema({
     isConfigured:     { type: Boolean, default: false },
   },
 
+  xendit: {
+    type: XenditAccountSchema,
+    default: () => ({}),
+  },
+
   // ── Visibility ──────────────────────────────────────────────────────────────
   isPublic:  { type: Boolean, default: false }, 
   isActive:  { type: Boolean, default: true  }, 
@@ -130,5 +146,6 @@ const CourtSchema = new mongoose.Schema({
 // Indexes
 CourtSchema.index({ 'subscription.status': 1 });
 CourtSchema.index({ isPublic: 1, isActive: 1 });
+CourtSchema.index({ 'xendit.subAccountId': 1 }, { unique: true, sparse: true });
 
 export default mongoose.models.Court || mongoose.model('Court', CourtSchema);

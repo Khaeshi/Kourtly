@@ -64,6 +64,31 @@ describe('superadmin routes', () => {
     expect(res.body).toHaveProperty('arr');
   });
 
+  test('GET /api/superadmin/courts exposes account ID but never the callback-token hash', async () => {
+    await Court.create({
+      name: 'Xendit Superadmin Court',
+      slug: 'xendit-superadmin-court',
+      adminEmail: 'xendit-admin@court.com',
+      registrationStatus: 'approved',
+      xendit: {
+        subAccountId: 'managed-account-visible-to-superadmin',
+        status: 'REGISTERED',
+        callbackTokenHash: 'must-not-be-returned',
+      },
+    });
+
+    const response = await request(app)
+      .get('/api/superadmin/courts')
+      .set('x-kourtly-auth', await superadminAuthHeader());
+
+    expect(response.status).toBe(200);
+    expect(response.body[0].xendit).toEqual({
+      status: 'REGISTERED',
+      subAccountId: 'managed-account-visible-to-superadmin',
+    });
+    expect(response.body[0].xendit).not.toHaveProperty('callbackTokenHash');
+  });
+
   test('POST /api/superadmin/courts validates required fields', async () => {
     const res = await request(app)
       .post('/api/superadmin/courts')

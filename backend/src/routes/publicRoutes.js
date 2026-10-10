@@ -12,6 +12,7 @@ import { transitionReservationPayment } from '../lib/reservationStateMachine.js'
 import { createPaymentLink, getPaymentProvider } from '../lib/payments/index.js';
 import { hasModule, MODULES } from '../lib/moduleEntitlements.js';
 import { emitCourtEvent } from '../lib/emitCourtEvent.js'; 
+import { canAcceptOnlinePayments, isSubAccountRoutingEnabled } from '../lib/xenditReadiness.js';
 
 const router = express.Router();
 
@@ -149,7 +150,9 @@ router.get('/courts/:slug/schedule', async (req, res) => {
 // POST /api/public/courts/:slug/reserve — public booking
 router.post('/courts/:slug/reserve', async (req, res) => {
   try {
-    const court = await Court.findOne({ slug: req.params.slug, isActive: true }).lean();
+    const court = await Court.findOne({ slug: req.params.slug, isActive: true })
+      .select('+xendit.subAccountId')
+      .lean();
     if (!court) return res.status(404).json({ error: 'Court not found.' });
     if (!hasModule(court, MODULES.BOOKING)) {
       return res.status(403).json({ code: 'MODULE_NOT_ENABLED', module: MODULES.BOOKING, error: 'Booking is not enabled for this court.' });
@@ -157,7 +160,6 @@ router.post('/courts/:slug/reserve', async (req, res) => {
     if (['expired', 'suspended'].includes(court.subscription.status)) {
       return res.status(403).json({ error: 'This court is not accepting bookings.' });
     }
-
     const {
       courtNum, date, timeSlot, duration = 1, name, phone, email = '', playerCount = 2, notes = '',
       paymentOption = 'downpayment',
@@ -202,6 +204,15 @@ router.post('/courts/:slug/reserve', async (req, res) => {
     });
     if (hasConflict) return res.status(409).json({ error: 'This slot is already booked.' });
 
+    const subAccountRoutingEnabled = isSubAccountRoutingEnabled();
+    if (
+      getPaymentProvider() === 'xendit' &&
+      subAccountRoutingEnabled &&
+      !canAcceptOnlinePayments(court)
+    ) {
+      return res.status(409).json({ error: 'online booking is not available for this venue yet' });
+    }
+
     const reservationFeeAmount = Number(court?.settings?.hourlyRate ?? court?.settings?.reservationFee ?? 0) * Number(duration);
     const downpaymentAmount = Number((reservationFeeAmount * 0.5).toFixed(2));
     const maintenanceFeeAmount = Number((reservationFeeAmount * 0.01).toFixed(2));
@@ -245,6 +256,7 @@ router.post('/courts/:slug/reserve', async (req, res) => {
         failureUrl: `${appBase}${statusPath}`,
         expiryDate,
         metadata: { type: 'reservation', courtId: String(courtId), reservationId: String(reservation._id) },
+        forUserId: subAccountRoutingEnabled ? court.xendit?.subAccountId : undefined,
       });
       transitionReservationPayment(reservation, 'approved_waiting_payment', 'awaiting_payment');
       reservation.paymentLinkId = paymentLink.id || paymentLink.payment_id || '';

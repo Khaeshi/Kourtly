@@ -4,6 +4,7 @@ import User  from '../models/User.js';
 import PayoutTransfer from '../models/PayoutTransfer.js';
 import { MODULES, MODULE_LABELS, resolveCapabilities, TIER_DETAILS, TIERS } from '../lib/moduleEntitlements.js';
 import { getAuthenticatedUser } from '../lib/internalAuth.js';
+import { superadminCourtResponse } from '../lib/courtResponse.js';
 
 const router = express.Router();
 
@@ -20,8 +21,11 @@ router.use(requireSuperAdmin);
 
 router.get('/courts', async (req, res) => {
   try {
-    const courts = await Court.find().sort({ createdAt: -1 }).lean();
-    res.json(courts.map(court => ({ ...court, capabilities: resolveCapabilities(court) })));
+    const courts = await Court.find().select('+xendit.subAccountId').sort({ createdAt: -1 }).lean();
+    res.json(courts.map(court => ({
+      ...superadminCourtResponse(court),
+      capabilities: resolveCapabilities(court),
+    })));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -30,10 +34,11 @@ router.get('/courts', async (req, res) => {
 router.get('/courts/pending', async (req, res) => {
   try {
     const courts = await Court.find({ registrationStatus: 'pending' })
+      .select('+xendit.subAccountId')
       .populate('registeredBy', 'email')
       .sort({ createdAt: -1 })
       .lean();
-    res.json(courts);
+    res.json(courts.map(superadminCourtResponse));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -54,9 +59,9 @@ router.patch('/courts/:id/approve', async (req, res) => {
         },
       },
       { new: true, runValidators: true },
-    );
+    ).select('+xendit.subAccountId');
     if (!court) return res.status(404).json({ error: 'Court not found.' });
-    res.json(court);
+    res.json(superadminCourtResponse(court));
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -73,9 +78,9 @@ router.patch('/courts/:id/reject', async (req, res) => {
         },
       },
       { new: true, runValidators: true },
-    );
+    ).select('+xendit.subAccountId');
     if (!court) return res.status(404).json({ error: 'Court not found.' });
-    res.json(court);
+    res.json(superadminCourtResponse(court));
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -126,9 +131,12 @@ router.patch('/courts/:id/entitlements', async (req, res) => {
       req.params.id,
       { $set: update },
       { new: true, runValidators: true },
-    ).lean();
+    ).select('+xendit.subAccountId').lean();
     if (!court) return res.status(404).json({ error: 'Court not found.' });
-    res.json({ ...court, capabilities: resolveCapabilities(court) });
+    res.json({
+      ...superadminCourtResponse(court),
+      capabilities: resolveCapabilities(court),
+    });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -179,9 +187,9 @@ router.patch('/courts/:id/subscription', async (req, res) => {
     }
     const court = await Court.findByIdAndUpdate(
       req.params.id, { $set: update }, { new: true, runValidators: true }
-    );
+    ).select('+xendit.subAccountId');
     if (!court) return res.status(404).json({ error: 'Court not found.' });
-    res.json(court);
+    res.json(superadminCourtResponse(court));
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -207,7 +215,7 @@ router.post('/courts', async (req, res) => {
       },
       { upsert: true, new: true }
     );
-    res.status(201).json(court);
+    res.status(201).json(superadminCourtResponse(court));
   } catch (err) {
     if (err.code === 11000) return res.status(409).json({ error: 'Slug already exists.' });
     res.status(400).json({ error: err.message });
@@ -223,7 +231,7 @@ router.patch('/courts/:id', async (req, res) => {
     const { adminEmail } = req.body;
     if (!adminEmail) return res.status(400).json({ error: 'adminEmail is required.' });
 
-    const court = await Court.findById(req.params.id);
+    const court = await Court.findById(req.params.id).select('+xendit.subAccountId');
     if (!court) return res.status(404).json({ error: 'Court not found.' });
 
     const oldEmail = court.adminEmail;
@@ -248,7 +256,7 @@ router.patch('/courts/:id', async (req, res) => {
       { upsert: true, new: true }
     );
 
-    res.json(court);
+    res.json(superadminCourtResponse(court));
   } catch (err) {
     res.status(400).json({ error: err.message });
   }

@@ -1,10 +1,263 @@
 import express from 'express';
+import crypto from 'node:crypto';
 import Court from '../models/Court.js';
 import { resolveCapabilities } from '../lib/moduleEntitlements.js';
 import { createPaymentLink } from '../lib/payments/index.js';
 import { TIER_DETAILS, TIER_ORDER, TIERS } from '../lib/moduleEntitlements.js';
+import {
+  configureManagedAccountInvoiceWebhook,
+  createManagedAccount,
+  getManagedAccount,
+  isValidXenditWebhookUrl,
+  listManagedAccountsByEmail,
+} from '../services/xenditService.js';
+import { tenantCourtResponse } from '../lib/courtResponse.js';
 
 const router = express.Router();
+
+const XENDIT_ACCOUNT_SELECT =
+  'name adminEmail registrationStatus xendit.status xendit.webhookConfigured xendit.setupInProgress xendit.webhookSetupInProgress +xendit.subAccountId';
+
+function callbackTokenHash(token) {
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
+
+async function readCourtForXenditSetup(req, res) {
+  if (!req.courtId) {
+    res.status(401).json({ error: 'Missing court context.' });
+    return null;
+  }
+  if (req.userRole !== 'admin') {
+    res.status(403).json({ error: 'Court admin access required.' });
+    return null;
+  }
+  const court = await Court.findById(req.courtId).select(XENDIT_ACCOUNT_SELECT).lean();
+  if (!court) {
+    res.status(404).json({ error: 'Court not found.' });
+    return null;
+  }
+  if (court.registrationStatus !== 'approved') {
+    res.status(403).json({ error: 'Xendit setup is available after court approval.' });
+    return null;
+  }
+  return court;
+}
+
+async function linkManagedAccount(courtId, account) {
+  return Court.findOneAndUpdate(
+    {
+      _id: courtId,
+      registrationStatus: 'approved',
+      'xendit.subAccountId': { $exists: false },
+    },
+    {
+      $set: {
+        'xendit.subAccountId': account.id,
+        'xendit.status': account.status,
+        'xendit.statusCheckedAt': new Date(),
+        'xendit.setupInProgress': false,
+      },
+      $unset: { 'xendit.setupStartedAt': 1 },
+    },
+    { returnDocument: 'after', runValidators: true },
+  ).select('xendit.status').lean();
+}
+
+async function recoverManagedAccount(court) {
+  const account = await listManagedAccountsByEmail(court.adminEmail);
+  if (!account) return null;
+  return linkManagedAccount(court._id, account);
+}
+
+router.post('/me/xendit/setup', async (req, res) => {
+  try {
+    const court = await readCourtForXenditSetup(req, res);
+    if (!court) return;
+    if (court.xendit?.subAccountId) {
+      return res.json({ status: court.xendit.status || '' });
+    }
+
+    if (court.xendit?.setupInProgress) {
+      const recovered = await recoverManagedAccount(court);
+      if (recovered) return res.json({ status: recovered.xendit?.status || '' });
+      return res.status(409).json({ error: 'Xendit account setup is still being resolved. Refresh and try again.' });
+    }
+
+    const claimed = await Court.findOneAndUpdate(
+      {
+        _id: court._id,
+        registrationStatus: 'approved',
+        'xendit.subAccountId': { $exists: false },
+        'xendit.setupInProgress': { $ne: true },
+      },
+      {
+        $set: {
+          'xendit.setupInProgress': true,
+          'xendit.setupStartedAt': new Date(),
+        },
+      },
+      { returnDocument: 'after' },
+    ).select(XENDIT_ACCOUNT_SELECT).lean();
+
+    if (!claimed) {
+      const latest = await Court.findById(court._id).select(XENDIT_ACCOUNT_SELECT).lean();
+      if (latest?.xendit?.subAccountId) {
+        return res.json({ status: latest.xendit.status || '' });
+      }
+      if (latest?.xendit?.setupInProgress) {
+        const recovered = await recoverManagedAccount(latest);
+        if (recovered) return res.json({ status: recovered.xendit?.status || '' });
+        return res.status(409).json({ error: 'Xendit account setup is still being resolved. Refresh and try again.' });
+      }
+      return res.status(409).json({ error: 'Court is not approved for Xendit setup.' });
+    }
+
+    let existingAccount;
+    try {
+      existingAccount = await listManagedAccountsByEmail(claimed.adminEmail);
+    } catch {
+      await Court.updateOne(
+        { _id: claimed._id, 'xendit.setupInProgress': true },
+        { $set: { 'xendit.setupInProgress': false }, $unset: { 'xendit.setupStartedAt': 1 } },
+      );
+      return res.status(502).json({ error: 'Could not verify whether this admin email already has a Xendit account.' });
+    }
+    if (existingAccount) {
+      await Court.updateOne(
+        { _id: claimed._id, 'xendit.setupInProgress': true },
+        { $set: { 'xendit.setupInProgress': false }, $unset: { 'xendit.setupStartedAt': 1 } },
+      );
+      return res.status(409).json({ error: 'This admin email is already used by a Xendit Managed account.' });
+    }
+
+    let account;
+    try {
+      account = await createManagedAccount({
+        email: claimed.adminEmail,
+        businessName: claimed.name,
+      });
+    } catch {
+      // Keep the claim so a retry can recover a created account by email if Xendit's response was lost.
+      return res.status(502).json({ error: 'Could not confirm Xendit account setup. Refresh and try again.' });
+    }
+
+    try {
+      const linked = await linkManagedAccount(claimed._id, account);
+      if (linked) return res.status(201).json({ status: linked.xendit?.status || '' });
+      const latest = await Court.findById(claimed._id).select(XENDIT_ACCOUNT_SELECT).lean();
+      if (latest?.xendit?.subAccountId === account.id) {
+        return res.status(201).json({ status: latest.xendit.status || '' });
+      }
+      await Court.updateOne(
+        { _id: claimed._id, 'xendit.setupInProgress': true },
+        { $set: { 'xendit.setupInProgress': false }, $unset: { 'xendit.setupStartedAt': 1 } },
+      );
+      return res.status(409).json({ error: 'Xendit account could not be linked to this court.' });
+    } catch (error) {
+      if (error?.code === 11000) {
+        await Court.updateOne(
+          { _id: claimed._id, 'xendit.setupInProgress': true },
+          { $set: { 'xendit.setupInProgress': false }, $unset: { 'xendit.setupStartedAt': 1 } },
+        );
+        return res.status(409).json({ error: 'This Xendit account is already linked to another court.' });
+      }
+      throw error;
+    }
+  } catch {
+    res.status(502).json({ error: 'Could not complete Xendit account setup.' });
+  }
+});
+
+router.post('/me/xendit/refresh', async (req, res) => {
+  try {
+    const court = await readCourtForXenditSetup(req, res);
+    if (!court) return;
+
+    let account;
+    if (court.xendit?.subAccountId) {
+      account = await getManagedAccount(court.xendit.subAccountId);
+    } else {
+      account = await listManagedAccountsByEmail(court.adminEmail);
+    }
+
+    if (!account) {
+      await Court.updateOne(
+        { _id: court._id },
+        {
+          $set: {
+            'xendit.status': '',
+            'xendit.statusCheckedAt': new Date(),
+            'xendit.webhookConfigured': false,
+          },
+        },
+      );
+      return res.json({ status: '' });
+    }
+
+    const statusUpdate = {
+      'xendit.status': account.status,
+      'xendit.statusCheckedAt': new Date(),
+      ...(account.status !== 'REGISTERED' || !isValidXenditWebhookUrl()
+        ? { 'xendit.webhookConfigured': false }
+        : {}),
+      ...(!court.xendit?.subAccountId ? { 'xendit.subAccountId': account.id } : {}),
+    };
+    await Court.updateOne({ _id: court._id }, { $set: statusUpdate });
+
+    if (account.status !== 'REGISTERED' || !isValidXenditWebhookUrl()) {
+      return res.json({ status: account.status });
+    }
+    if (court.xendit?.webhookConfigured) {
+      return res.json({ status: account.status });
+    }
+
+    const webhookClaim = await Court.findOneAndUpdate(
+      {
+        _id: court._id,
+        'xendit.subAccountId': account.id,
+        'xendit.webhookConfigured': { $ne: true },
+        'xendit.webhookSetupInProgress': { $ne: true },
+      },
+      { $set: { 'xendit.webhookSetupInProgress': true } },
+      { returnDocument: 'after' },
+    );
+    if (!webhookClaim) return res.json({ status: account.status });
+
+    try {
+      const token = await configureManagedAccountInvoiceWebhook({
+        subAccountId: account.id,
+        url: process.env.XENDIT_WEBHOOK_URL,
+      });
+      await Court.updateOne(
+        { _id: court._id, 'xendit.subAccountId': account.id },
+        {
+          $set: {
+            'xendit.callbackTokenHash': callbackTokenHash(token),
+            'xendit.webhookConfigured': true,
+            'xendit.status': account.status,
+            'xendit.statusCheckedAt': new Date(),
+          },
+          $unset: { 'xendit.webhookSetupInProgress': 1 },
+        },
+      );
+    } catch {
+      await Court.updateOne(
+        { _id: court._id, 'xendit.subAccountId': account.id },
+        {
+          $set: { 'xendit.webhookConfigured': false },
+          $unset: { 'xendit.webhookSetupInProgress': 1 },
+        },
+      );
+      return res.status(502).json({ error: 'Xendit status was refreshed, but webhook setup could not be completed.' });
+    }
+    return res.json({ status: account.status });
+  } catch (error) {
+    if (error?.code === 11000) {
+      return res.status(409).json({ error: 'This Xendit account is already linked to another court.' });
+    }
+    return res.status(502).json({ error: 'Could not refresh Xendit account status.' });
+  }
+});
 
 /**
  * POST /api/court
@@ -56,7 +309,7 @@ router.post('/', async (req, res) => {
     });
 
     const saved = await court.save();
-    res.status(201).json(saved);
+    res.status(201).json(tenantCourtResponse(saved));
   } catch (err) {
     console.error('Create court error:', err);
     res.status(500).json({ error: err.message });
@@ -78,7 +331,7 @@ router.patch('/me/logo', async (req, res) => {
       { new: true }
     );
     if (!court) return res.status(404).json({ error: 'Court not found.' });
-    res.json(court);
+    res.json(tenantCourtResponse(court));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -101,7 +354,7 @@ router.patch('/me/photos', async (req, res) => {
 
     const court = await Court.findByIdAndUpdate(req.courtId, update, { new: true });
     if (!court) return res.status(404).json({ error: 'Court not found.' });
-    res.json(court);
+    res.json(tenantCourtResponse(court));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -145,7 +398,7 @@ router.patch('/me/subscription', async (req, res) => {
       { new: true }
     );
 
-    res.json(updated);
+    res.json(tenantCourtResponse(updated));
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -157,7 +410,7 @@ router.get('/me', async (req, res) => {
   if (!req.courtId) return res.status(401).json({ error: 'Missing court context.' });
   const court = await Court.findById(req.courtId).lean();
   if (!court) return res.status(404).json({ error: 'Court not found.' });
-  res.json(court);
+  res.json(tenantCourtResponse(court));
 });
 
 // GET /api/court/me/capabilities
@@ -258,7 +511,7 @@ router.patch('/me', async (req, res) => {
     { new: true, runValidators: true },
   );
   if (!court) return res.status(404).json({ error: 'Court not found.' });
-  res.json(court);
+  res.json(tenantCourtResponse(court));
 });
 
 // PATCH /api/court/me/payout

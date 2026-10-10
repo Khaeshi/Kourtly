@@ -1,3 +1,5 @@
+import { getXenditMode, isValidXenditWebhookUrl } from '../services/xenditService.js';
+
 function missing(vars) {
   return vars.filter((k) => !process.env[k] || String(process.env[k]).trim() === '');
 }
@@ -11,6 +13,8 @@ export function validateCoreEnv() {
 }
 
 export function validatePaymentEnv() {
+  getXenditMode();
+
   const required = ['XENDIT_SECRET_KEY', 'XENDIT_CALLBACK_TOKEN', 'APP_BASE_URL'];
   const missingVars = missing(required);
 
@@ -20,6 +24,15 @@ export function validatePaymentEnv() {
       throw new Error(msg);
     }
     console.warn(`[env] ${msg}`);
+  }
+
+  if (process.env.NODE_ENV === 'production' && !isValidXenditWebhookUrl()) {
+    throw new Error('XENDIT_WEBHOOK_URL must be a valid public HTTPS Xendit webhook URL.');
+  }
+
+  const rolloutFlag = process.env.XENDIT_XENPLATFORM_ENABLED;
+  if (rolloutFlag && !['true', 'false'].includes(rolloutFlag.trim().toLowerCase())) {
+    throw new Error('XENDIT_XENPLATFORM_ENABLED must be true or false.');
   }
 
   const provider = (process.env.PAYMENT_PROVIDER || 'xendit').toLowerCase();

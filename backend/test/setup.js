@@ -1,9 +1,13 @@
 import mongoose from 'mongoose';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 
+process.env.PUBLIC_COSTLY_RATE_LIMIT_WINDOW_MS = '60000';
+process.env.PUBLIC_COSTLY_RATE_LIMIT_MAX = '100000';
+
 let mongoServer;
 
 beforeAll(async () => {
+  process.env.ALLOW_TEST_AUTH_BYPASS = 'true';
   mongoServer = await MongoMemoryReplSet.create({
     replSet: { count: 1 }, // single-node replica set, minimum needed for transactions
   });

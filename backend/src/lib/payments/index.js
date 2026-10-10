@@ -14,6 +14,7 @@ export async function createPaymentLink({
   failureUrl,
   expiryDate,
   metadata = {},
+  forUserId,
 }) {
   const provider = getPaymentProvider();
   if (provider === 'mock') {
@@ -35,6 +36,7 @@ export async function createPaymentLink({
     failureUrl,
     expiryDate,
     metadata,
+    forUserId,
   });
 }
 

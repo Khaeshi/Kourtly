@@ -1,3 +1,4 @@
+import { jest } from '@jest/globals';
 import request from 'supertest';
 import app from '../../src/app.js';
 import Court from '../../src/models/Court.js';
@@ -14,6 +15,25 @@ afterAll(() => {
   if (previousTestAuthBypass === undefined) delete process.env.ALLOW_TEST_AUTH_BYPASS;
   else process.env.ALLOW_TEST_AUTH_BYPASS = previousTestAuthBypass;
 });
+
+async function withXenditSettings(routingEnabled, callback) {
+  const previous = {
+    PAYMENT_PROVIDER: process.env.PAYMENT_PROVIDER,
+    XENDIT_SECRET_KEY: process.env.XENDIT_SECRET_KEY,
+    XENDIT_XENPLATFORM_ENABLED: process.env.XENDIT_XENPLATFORM_ENABLED,
+  };
+  process.env.PAYMENT_PROVIDER = 'xendit';
+  process.env.XENDIT_SECRET_KEY = 'xnd_development_test';
+  process.env.XENDIT_XENPLATFORM_ENABLED = String(routingEnabled);
+  try {
+    return await callback();
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
 
 describe('reservation routes with tenant middleware', () => {
   test('GET /api/reservations rejects missing x-court-id', async () => {
@@ -173,5 +193,133 @@ describe('reservation routes with tenant middleware', () => {
     expect(res.status).toBe(201);
     expect(res.body.name).toBe('Walk-in');
     expect(res.body.timeSlot).toBe('10:00-11:00');
+  });
+
+  test('admin cannot create a reservation invoice before the court sub-account is ready', async () => {
+    const previous = {
+      PAYMENT_PROVIDER: process.env.PAYMENT_PROVIDER,
+      XENDIT_SECRET_KEY: process.env.XENDIT_SECRET_KEY,
+      XENDIT_XENPLATFORM_ENABLED: process.env.XENDIT_XENPLATFORM_ENABLED,
+    };
+    process.env.PAYMENT_PROVIDER = 'xendit';
+    process.env.XENDIT_SECRET_KEY = 'xnd_development_test';
+    process.env.XENDIT_XENPLATFORM_ENABLED = 'true';
+    try {
+      const court = await Court.create({
+        name: 'Admin Not Ready Court',
+        slug: 'admin-not-ready',
+        adminEmail: 'admin-not-ready@example.com',
+        isActive: true,
+        subscription: { status: 'active' },
+      });
+      const reservation = await Reservation.create({
+        courtId: court._id,
+        name: 'Guest',
+        phone: '09170000000',
+        court: 1,
+        date: '2026-04-14',
+        timeSlot: '13:00-14:00',
+        duration: 1,
+        status: 'pending_admin',
+      });
+
+      const response = await request(app)
+        .post(`/api/reservations/${reservation._id}/approve-payment`)
+        .set('x-court-id', String(court._id))
+        .set('x-user-role', 'admin');
+
+      expect(response.status).toBe(409);
+      expect(response.body.error).toBe('Online payment is not available for this venue yet.');
+      expect(await Reservation.findById(reservation._id).select('paymentStatus').lean())
+        .toMatchObject({ paymentStatus: 'none' });
+    } finally {
+      for (const [key, value] of Object.entries(previous)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
+  });
+
+  test('admin payment with rollout off creates a master-account invoice without a sub-account', async () => {
+    const fetchSpy = jest.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({ id: 'admin-master-invoice', invoice_url: 'https://checkout.example/invoice' }),
+    });
+    try {
+      await withXenditSettings(false, async () => {
+        const court = await Court.create({
+          name: 'Admin Master Invoice Court',
+          slug: 'admin-master-invoice',
+          adminEmail: 'admin-master-invoice@example.com',
+          isActive: true,
+          subscription: { status: 'active' },
+        });
+        const reservation = await Reservation.create({
+          courtId: court._id,
+          name: 'Guest',
+          phone: '09170000000',
+          court: 1,
+          date: '2026-10-12',
+          timeSlot: '13:00-14:00',
+          duration: 1,
+          status: 'pending_admin',
+        });
+
+        const response = await request(app)
+          .post(`/api/reservations/${reservation._id}/approve-payment`)
+          .set('x-court-id', String(court._id))
+          .send({});
+
+        expect(response.status).toBe(200);
+        expect(fetchSpy).toHaveBeenCalledTimes(1);
+        expect(fetchSpy.mock.calls[0][1].headers).not.toHaveProperty('for-user-id');
+      });
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  test('admin payment with rollout on routes the invoice with the court sub-account ID', async () => {
+    const fetchSpy = jest.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({ id: 'admin-sub-account-invoice', invoice_url: 'https://checkout.example/invoice' }),
+    });
+    try {
+      await withXenditSettings(true, async () => {
+        const court = await Court.create({
+          name: 'Admin Sub-account Invoice Court',
+          slug: 'admin-sub-account-invoice',
+          adminEmail: 'admin-sub-account-invoice@example.com',
+          isActive: true,
+          subscription: { status: 'active' },
+          xendit: {
+            subAccountId: 'admin-court-xendit-id',
+            status: 'REGISTERED',
+            webhookConfigured: true,
+          },
+        });
+        const reservation = await Reservation.create({
+          courtId: court._id,
+          name: 'Guest',
+          phone: '09170000000',
+          court: 1,
+          date: '2026-10-12',
+          timeSlot: '13:00-14:00',
+          duration: 1,
+          status: 'pending_admin',
+        });
+
+        const response = await request(app)
+          .post(`/api/reservations/${reservation._id}/approve-payment`)
+          .set('x-court-id', String(court._id))
+          .send({});
+
+        expect(response.status).toBe(200);
+        expect(fetchSpy).toHaveBeenCalledTimes(1);
+        expect(fetchSpy.mock.calls[0][1].headers['for-user-id']).toBe('admin-court-xendit-id');
+      });
+    } finally {
+      fetchSpy.mockRestore();
+    }
   });
 });

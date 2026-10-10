@@ -26,33 +26,32 @@ Current script notes:
 
 ## Payment Environment (Xendit)
 
-Required for production payment flow:
+Configure the Xendit master account and callback:
 
-- `Xendit_API_KEY`
-- `Xendit_WEBHOOK_SECRET`
+- `XENDIT_SECRET_KEY` — `xnd_development_...` for test mode or `xnd_production_...` for live mode.
+- `XENDIT_CALLBACK_TOKEN` — master-account invoice webhook token.
+- `XENDIT_WEBHOOK_URL` — full public HTTPS URL ending in `/api/payments/xendit/webhook`; required in production and optional in local development.
+- `XENDIT_XENPLATFORM_ENABLED` — rollout flag for court sub-account reservation payments; defaults to off.
 - `APP_BASE_URL`
 - `MONGODB_URI`
 
 Runtime behavior:
 
-- In development, missing payment env vars emit warnings.
-- In production, missing payment env vars throw on startup (fail fast).
+- Xendit mode is derived from the secret-key prefix and an unsupported prefix fails startup validation.
+- Production startup requires a valid public HTTPS callback URL without an explicit port.
+- Approved court admins use `POST /api/court/me/xendit/setup` to create/link a Managed account and `POST /api/court/me/xendit/refresh` to refresh its status and configure its invoice callback.
+- Sub-account callback tokens are stored only as SHA-256 hashes.
+- Reservation invoices use the court's sub-account `for-user-id` header only when XenPlatform is enabled and the court account status and invoice webhook are ready.
+- The readiness allowlist currently accepts `REGISTERED` only in development mode and is empty in production until live status values are confirmed. Production reservation payments therefore fail closed.
+- Subscription invoices omit `for-user-id` and stay on the master account.
+- Existing payout recipient settings are unchanged by this initial XenPlatform rollout.
 
 ## Production Readiness Checklist
 
-- Configure Xendit webhook URL to `POST /api/payments/Xendit/webhook`.
-- Set `Xendit_WEBHOOK_SECRET` to match Xendit callback secret.
-- Ensure each court has a configured payout recipient code in admin settings.
-- Verify public booking flow in sandbox:
-  - create reservation
-  - admin approve & generate payment
-  - complete payment
-  - webhook confirms reservation
-  - reservation tab reflects online-paid vs balance due
-- Verify payout transfer monitoring:
-  - admin dashboard recent transfers
-  - superadmin dashboard transfer list
-  - retry failed transfer path
+- Confirm live Managed sub-account status values with Xendit before adding them to the production readiness allowlist.
+- Configure the master-account callback token and public `XENDIT_WEBHOOK_URL`.
+- Keep `XENDIT_XENPLATFORM_ENABLED=false` until the account setup and invoice routing rollout is approved.
+- Complete Xendit onboarding and verify invoice routing in the appropriate environment before enabling reservation payments.
 
 ## Folder Structure
 
