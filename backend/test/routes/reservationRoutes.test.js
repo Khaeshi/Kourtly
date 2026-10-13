@@ -16,15 +16,13 @@ afterAll(() => {
   else process.env.ALLOW_TEST_AUTH_BYPASS = previousTestAuthBypass;
 });
 
-async function withXenditSettings(routingEnabled, callback) {
+async function withXenditSettings(_routingEnabled, callback) {
   const previous = {
     PAYMENT_PROVIDER: process.env.PAYMENT_PROVIDER,
     XENDIT_SECRET_KEY: process.env.XENDIT_SECRET_KEY,
-    XENDIT_XENPLATFORM_ENABLED: process.env.XENDIT_XENPLATFORM_ENABLED,
   };
   process.env.PAYMENT_PROVIDER = 'xendit';
   process.env.XENDIT_SECRET_KEY = 'xnd_development_test';
-  process.env.XENDIT_XENPLATFORM_ENABLED = String(routingEnabled);
   try {
     return await callback();
   } finally {
@@ -199,11 +197,9 @@ describe('reservation routes with tenant middleware', () => {
     const previous = {
       PAYMENT_PROVIDER: process.env.PAYMENT_PROVIDER,
       XENDIT_SECRET_KEY: process.env.XENDIT_SECRET_KEY,
-      XENDIT_XENPLATFORM_ENABLED: process.env.XENDIT_XENPLATFORM_ENABLED,
     };
     process.env.PAYMENT_PROVIDER = 'xendit';
     process.env.XENDIT_SECRET_KEY = 'xnd_development_test';
-    process.env.XENDIT_XENPLATFORM_ENABLED = 'true';
     try {
       const court = await Court.create({
         name: 'Admin Not Ready Court',
@@ -240,46 +236,7 @@ describe('reservation routes with tenant middleware', () => {
     }
   });
 
-  test('admin payment with rollout off creates a master-account invoice without a sub-account', async () => {
-    const fetchSpy = jest.spyOn(globalThis, 'fetch').mockResolvedValue({
-      ok: true,
-      json: async () => ({ id: 'admin-master-invoice', invoice_url: 'https://checkout.example/invoice' }),
-    });
-    try {
-      await withXenditSettings(false, async () => {
-        const court = await Court.create({
-          name: 'Admin Master Invoice Court',
-          slug: 'admin-master-invoice',
-          adminEmail: 'admin-master-invoice@example.com',
-          isActive: true,
-          subscription: { status: 'active' },
-        });
-        const reservation = await Reservation.create({
-          courtId: court._id,
-          name: 'Guest',
-          phone: '09170000000',
-          court: 1,
-          date: '2026-10-12',
-          timeSlot: '13:00-14:00',
-          duration: 1,
-          status: 'pending_admin',
-        });
-
-        const response = await request(app)
-          .post(`/api/reservations/${reservation._id}/approve-payment`)
-          .set('x-court-id', String(court._id))
-          .send({});
-
-        expect(response.status).toBe(200);
-        expect(fetchSpy).toHaveBeenCalledTimes(1);
-        expect(fetchSpy.mock.calls[0][1].headers).not.toHaveProperty('for-user-id');
-      });
-    } finally {
-      fetchSpy.mockRestore();
-    }
-  });
-
-  test('admin payment with rollout on routes the invoice with the court sub-account ID', async () => {
+  test('admin payment routes the invoice with the court sub-account ID', async () => {
     const fetchSpy = jest.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: true,
       json: async () => ({ id: 'admin-sub-account-invoice', invoice_url: 'https://checkout.example/invoice' }),

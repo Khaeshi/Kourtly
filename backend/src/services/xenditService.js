@@ -153,6 +153,12 @@ export async function configureManagedAccountInvoiceWebhook({ subAccountId, url 
   return data.callback_token;
 }
 
+export async function getXenditInvoice(invoiceId, forUserId) {
+  const headers = {};
+  if (forUserId) headers['for-user-id'] = forUserId;
+  return xenditRequest(`/v2/invoices/${encodeURIComponent(invoiceId)}`, { headers });
+}
+
 function getSecretKey() {
   const key = process.env.XENDIT_SECRET_KEY;
   if (!key) throw new Error('XENDIT_SECRET_KEY is not configured.');
@@ -227,4 +233,17 @@ export function isXenditWebhookAuthorized(headers) {
   if (expectedBuf.length !== suppliedBuf.length) return false;
 
   return crypto.timingSafeEqual(expectedBuf, suppliedBuf);
+}
+
+export function isSubAccountWebhookAuthorized(suppliedToken, expectedHash) {
+  if (
+    typeof suppliedToken !== 'string' ||
+    !suppliedToken ||
+    typeof expectedHash !== 'string' ||
+    !/^[a-f0-9]{64}$/i.test(expectedHash)
+  ) return false;
+
+  const suppliedHash = crypto.createHash('sha256').update(suppliedToken).digest();
+  const expectedHashBuffer = Buffer.from(expectedHash, 'hex');
+  return crypto.timingSafeEqual(suppliedHash, expectedHashBuffer);
 }

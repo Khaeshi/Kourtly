@@ -1,10 +1,15 @@
 import express from 'express';
 import mongoose from 'mongoose';
-import Reservation from '../models/Reservation.js';
 import Court from '../models/Court.js';
+import Reservation from '../models/Reservation.js';
+import SubscriptionPayment from '../models/SubscriptionPayment.js';
 import PayoutTransfer from '../models/PayoutTransfer.js';
 import PaymentWebhookEvent from '../models/PaymentWebhookEvent.js';
-import { verifyWebhookSignature } from '../lib/payments/index.js';
+import {
+  getXenditInvoice,
+  isSubAccountWebhookAuthorized,
+  isXenditWebhookAuthorized,
+} from '../services/xenditService.js';
 import { transitionReservationPayment } from '../lib/reservationStateMachine.js';
 import { TIER_DETAILS } from '../lib/moduleEntitlements.js';
 
@@ -22,189 +27,248 @@ function emitReservationEvent(req, publicRef, payload = {}) {
   io.to(`reservation:${publicRef}`).emit('reservation:updated', payload);
 }
 
-router.post('/xendit/webhook', async (req, res) => {
+function webhookError(status, message) {
+  const error = new Error(message);
+  error.status = status;
+  return error;
+}
+
+function validAmount(value, expected) {
+  const amount = Number(value);
+  return Number.isFinite(amount) && amount === Number(expected);
+}
+
+async function reconfirmInvoice(invoiceId, externalId, callbackStatus, expectedAmount, subAccountId) {
+  let invoice;
   try {
-    if (!verifyWebhookSignature(req.body, req.headers)) {
-      return res.status(401).json({ error: 'Unauthorized webhook.' });
+    invoice = await getXenditInvoice(invoiceId, subAccountId);
+  } catch {
+    throw webhookError(503, 'Invoice confirmation unavailable; retry the webhook.');
+  }
+  if (
+    invoice?.id !== invoiceId ||
+    invoice?.external_id !== externalId ||
+    !['PAID', 'SETTLED'].includes(invoice?.status) ||
+    !validAmount(invoice?.amount, expectedAmount)
+  ) {
+    throw webhookError(409, 'Xendit invoice confirmation did not match the payment attempt.');
+  }
+}
+
+router.post('/xendit/webhook', async (req, res) => {
+  let session;
+  try {
+    const { user_id: userId, id, external_id: externalId, status, paid_amount: paidAmount } = req.body || {};
+    if (typeof userId !== 'string' || !userId.trim()) {
+      return res.status(400).json({ error: 'Missing Xendit account ID.' });
+    }
+    if (typeof id !== 'string' || !id || typeof externalId !== 'string' || !externalId) {
+      return res.status(400).json({ error: 'Missing invoice ID or external ID.' });
+    }
+    const webhookId = req.headers['webhook-id'];
+    if (typeof webhookId !== 'string' || !webhookId.trim()) {
+      return res.status(400).json({ error: 'Missing webhook ID.' });
     }
 
-        const { id, status, external_id, paid_amount, metadata = {} } = req.body || {};
-    if (!id) return res.status(400).json({ error: 'Missing webhook fields.' });
+    const masterUserId = process.env.XENDIT_MASTER_USER_ID;
+    if (!masterUserId) {
+      return res.status(503).json({ error: 'Xendit webhook account is not configured.' });
+    }
+    const isMasterAccount = userId === masterUserId;
+    let accountCourt = null;
+    if (isMasterAccount) {
+      if (!isXenditWebhookAuthorized(req.headers)) {
+        return res.status(401).json({ error: 'Unauthorized webhook.' });
+      }
+      if (!externalId.startsWith('SUB-')) {
+        return res.status(403).json({ error: 'Master account events cannot complete reservation payments.' });
+      }
+    } else {
+      accountCourt = await Court.findOne({ 'xendit.subAccountId': userId })
+        .select('_id +xendit.callbackTokenHash')
+        .lean();
+      if (!accountCourt || !isSubAccountWebhookAuthorized(req.headers['x-callback-token'], accountCourt.xendit?.callbackTokenHash)) {
+        return res.status(401).json({ error: 'Unauthorized webhook.' });
+      }
+      if (externalId.startsWith('SUB-')) {
+        console.warn('[webhook] rejected subscription external ID on sub-account path');
+        return res.status(403).json({ error: 'Sub-account events cannot complete subscription payments.' });
+      }
+    }
+    if (!['PAID', 'SETTLED'].includes(status)) {
+      return res.json({ ok: true, ignored: true });
+    }
 
-    const dedupeKey = req.headers['webhook-id'] || id;
+    let reservation = null;
+    let subscriptionPayment = null;
+    let expectedAmount;
+    if (isMasterAccount) {
+      subscriptionPayment = await SubscriptionPayment.findOne({ invoiceId: id, externalId }).lean();
+      if (!subscriptionPayment) {
+        return res.status(409).json({ error: 'No matching subscription payment attempt.' });
+      }
+      expectedAmount = subscriptionPayment.expectedAmount;
+    } else {
+      reservation = await Reservation.findOne({ paymentLinkId: id, paymentExternalId: externalId }).lean();
+      if (!reservation) {
+        return res.status(409).json({ error: 'No matching reservation payment attempt.' });
+      }
+      if (String(reservation.courtId) !== String(accountCourt._id)) {
+        return res.status(403).json({ error: 'Payment account does not match the reservation venue.' });
+      }
+      expectedAmount = reservation.paymentExpectedAmount;
+    }
 
-    let alreadyClaimed = false;
-    try {
-      await PaymentWebhookEvent.create({
-        eventId: dedupeKey,
-        eventType: String(status || ''),
+    if (
+      !Number.isFinite(Number(expectedAmount)) ||
+      Number(expectedAmount) <= 0 ||
+      !validAmount(paidAmount, expectedAmount)
+    ) {
+      return res.status(409).json({ error: 'Paid amount does not match the stored payment attempt.' });
+    }
+    await reconfirmInvoice(id, externalId, status, expectedAmount, isMasterAccount ? undefined : userId);
+
+    const resolvedEventId = JSON.stringify([userId, webhookId]);
+    session = await mongoose.startSession();
+    let reservationResult = null;
+    await session.withTransaction(async () => {
+      await PaymentWebhookEvent.create([{
+        eventId: resolvedEventId,
+        accountId: userId,
+        providerEventId: webhookId,
+        eventType: status,
         processed: false,
-      });
-    } catch (err) {
-      if (err.code === 11000) {
-        alreadyClaimed = true;
-      } else {
-        throw err;
-      }
-    }
+      }], { session });
 
-    if (alreadyClaimed) {
-      const existing = await PaymentWebhookEvent.findOne({ eventId: dedupeKey }).lean();
-      if (existing?.processed) return res.json({ ok: true, deduped: true });
-      return res.status(409).json({ error: 'Webhook already being processed, retry.' });
-    }
+      if (isMasterAccount) {
+        const attempt = await SubscriptionPayment.findOne({ invoiceId: id, externalId }).session(session);
+        if (!attempt) throw webhookError(409, 'No matching subscription payment attempt.');
+        if (attempt.status !== 'paid') {
+          const court = await Court.findById(attempt.courtId).session(session);
+          if (!court) throw webhookError(409, 'Subscription payment references an unknown venue.');
+          const now = new Date(req.body.paid_at);
+          if (Number.isNaN(now.getTime())) throw webhookError(400, 'Invalid provider payment timestamp.');
+          attempt.status = 'paid';
+          attempt.providerPaidAt = now;
+          attempt.paymentChannel = String(req.body.payment_channel || '');
+          attempt.paymentMethod = String(req.body.payment_method || '');
+          attempt.paidAmount = Number(paidAmount);
+          attempt.paymentId = String(req.body.payment_id || '');
+          await attempt.save({ session });
 
-    /**
-     * @description Subscription handling: If the webhook metadata indicates that this is a subscription payment, 
-     * we update the court's subscription status and relevant fields. 
-     * We also mark the webhook event as processed. 
-     * This ensures that subscription payments are handled correctly and that the court's subscription 
-     * status is accurately reflected in the system.
-     */
-        if (String(external_id || '').startsWith('SUB-')) {
-      const parts = String(external_id).split('-');
-      const subCourtId = parts[1];
-      const subTier = parts[2];
-
-      if (!subCourtId) {
-        return res.status(400).json({ error: 'Malformed subscription external_id.' });
-      }
-
-      if (status === 'PAID' || status === 'SETTLED') {
-        const now = new Date();
-        const nextBilling = new Date(now);
-        nextBilling.setDate(nextBilling.getDate() + 30);
-        const updatedCourt = await Court.findOneAndUpdate(
-          { _id: subCourtId },
-          {
-            $set: {
-              'subscription.status': 'active',
-              ...(subTier ? { 'subscription.tier': subTier } : {}),
-              ...(subTier && TIER_DETAILS[subTier]?.price ? { 'subscription.amount': TIER_DETAILS[subTier].price } : {}),
-              'subscription.pendingTier': null,
-              'subscription.pendingTierEffectiveAt': null,
-              'subscription.startDate': now,
-              'subscription.nextBilling': nextBilling,
-            },
-          },
-          { new: true }
-        );
-        if (!updatedCourt) {
-          console.error(`[webhook] subscription payment ${id} referenced unknown courtId ${subCourtId}`);
+          const nextBilling = new Date(now);
+          nextBilling.setDate(nextBilling.getDate() + 30);
+          court.subscription.status = 'active';
+          court.subscription.tier = attempt.tier;
+          court.subscription.amount = TIER_DETAILS[attempt.tier]?.price || attempt.expectedAmount;
+          court.subscription.pendingTier = null;
+          court.subscription.pendingTierEffectiveAt = null;
+          court.subscription.startDate = now;
+          court.subscription.nextBilling = nextBilling;
+          await court.save({ session });
         }
-      }
-      await PaymentWebhookEvent.updateOne(
-        { eventId: dedupeKey },
-        { $set: { processed: true, eventType: String(status || '') } }
-      );
-      return res.json({ ok: true, kind: 'subscription' });
-    }
+      } else {
+        const paidReservation = await Reservation.findOne({
+          paymentLinkId: id,
+          paymentExternalId: externalId,
+        }).session(session);
+        if (!paidReservation || String(paidReservation.courtId) !== String(accountCourt._id)) {
+          throw webhookError(409, 'Payment account does not match the reservation venue.');
+        }
+        if (paidReservation.paymentStatus !== 'paid') {
+          const paidAt = new Date(req.body.paid_at);
+          if (Number.isNaN(paidAt.getTime())) throw webhookError(400, 'Invalid provider payment timestamp.');
+          const onlinePaid = Number(paidAmount);
+          const isLate = ['cancelled', 'expired'].includes(paidReservation.status) ||
+            ['cancelled', 'expired'].includes(paidReservation.paymentStatus);
+          if (isLate) {
+            paidReservation.status = 'payment_conflict';
+            paidReservation.paymentStatus = 'paid';
+            paidReservation.paymentReceivedAfterCancellation = true;
+          } else if (
+            ['approved_waiting_payment', 'pending_admin'].includes(paidReservation.status) &&
+            ['awaiting_payment', 'none'].includes(paidReservation.paymentStatus)
+          ) {
+            transitionReservationPayment(paidReservation, 'confirmed', 'paid');
+          } else {
+            throw webhookError(409, 'Reservation is not in a payable state.');
+          }
 
-    if (!external_id) return res.status(400).json({ error: 'Missing webhook external_id for reservation payment.' });
-    const reservationId = String(external_id).split('-')[0];
-    const reservation = await Reservation.findById(reservationId);
-    if (!reservation) return res.status(404).json({ error: 'Reservation not found.' });
-    if (reservation.paymentLinkId && reservation.paymentLinkId !== id) {
-      return res.status(409).json({ error: 'Invoice mismatch.' });
-    }
-    if (reservation.paymentStatus === 'paid') return res.json({ ok: true, deduped: true });
+          paidReservation.amountPaidOnline = onlinePaid;
+          paidReservation.remainingBalanceAmount = Math.max(
+            0,
+            Number(paidReservation.reservationFeeAmount || 0) - onlinePaid,
+          );
+          paidReservation.adminNetAmount = Math.max(
+            0,
+            onlinePaid - Number(paidReservation.maintenanceFeeAmount || 0),
+          );
+          paidReservation.paidAt = paidAt;
+          paidReservation.providerPaidAt = paidAt;
+          paidReservation.paymentChannel = String(req.body.payment_channel || '');
+          paidReservation.paymentMethod = String(req.body.payment_method || '');
+          paidReservation.paidAmount = onlinePaid;
+          paidReservation.paymentId = String(req.body.payment_id || '');
+          await paidReservation.save({ session });
 
-
-    /**
-     * @description PAID or SETTLED status handling: If the invoice has been paid or settled, we transition the reservation's payment status to 'paid' and update relevant fields. We also create a PayoutTransfer for the court's admin. This is done within a MongoDB transaction to ensure atomicity. If any part of the transaction fails, all changes are rolled back to maintain data integrity.
-     * @note This is crucial for ensuring that the reservation's payment status accurately reflects the payment state and that the court's admin receives the correct payout. The transaction ensures that either all changes are applied or none, preventing partial updates that could lead to inconsistencies.
-     * @see transitionReservationPayment function for state transition logic.
-     */
-    if (status === 'PAID' || status === 'SETTLED') {
-      if (
-        !['approved_waiting_payment', 'pending_admin'].includes(reservation.status) ||
-        !['awaiting_payment', 'none'].includes(reservation.paymentStatus)
-      ) {
-        return res.status(409).json({ error: `Cannot mark paid from status "${reservation.status}/${reservation.paymentStatus}".` });
-      }
-
-      const onlinePaid = Number(paid_amount || 0);
-      const remaining = Math.max(0, Number(reservation.reservationFeeAmount || 0) - onlinePaid);
-
-      const session = await mongoose.startSession();
-      try {
-        await session.withTransaction(async () => {
-          transitionReservationPayment(reservation, 'confirmed', 'paid');
-          reservation.amountPaidOnline = onlinePaid;
-          reservation.remainingBalanceAmount = remaining;
-          reservation.adminNetAmount = Math.max(0, onlinePaid - Number(reservation.maintenanceFeeAmount || 0));
-          reservation.paidAt = new Date();
-          await reservation.save({ session });
-
-          const court = await Court.findById(reservation.courtId).session(session).lean();
-
+          const court = await Court.findById(paidReservation.courtId).session(session).lean();
           await PayoutTransfer.create([{
-            courtId: reservation.courtId,
-            reservationId: reservation._id,
+            courtId: paidReservation.courtId,
+            reservationId: paidReservation._id,
             recipientCode: court?.payout?.recipientCode || '',
-            amount: Number(reservation.adminNetAmount || 0),
+            amount: Number(paidReservation.adminNetAmount || 0),
             status: 'queued',
           }], { session });
-
-          await PaymentWebhookEvent.updateOne(
-            { eventId: dedupeKey },
-            { $set: { processed: true, reservationId: reservation._id, eventType: String(status || '') } },
-            { session }
-          );
-        });
-      } finally {
-        await session.endSession();
+          reservationResult = {
+            _id: paidReservation._id,
+            courtId: paidReservation.courtId,
+            publicRef: paidReservation.publicRef,
+            paymentReceivedAfterCancellation: paidReservation.paymentReceivedAfterCancellation,
+          };
+        }
       }
 
-      // Emit only after the transaction has committed
-      emitCourtEventById(req, reservation.courtId, 'reservation:updated', {
-        action: 'paid',
-        reservationId: reservation._id,
-      });
-      emitReservationEvent(req, reservation.publicRef, { action: 'paid', reservationId: reservation._id });
-      emitCourtEventById(req, reservation.courtId, 'billing:tab_updated', {
-        action: 'reservation_synced',
-        reservationId: reservation._id,
-      });
-      emitCourtEventById(req, reservation.courtId, 'analytics:refresh', {
-        source: 'payments',
-      });
-
-      return res.json({ ok: true });
-    }
-
-    /**
-     * @description EXPIRED status handling: If the invoice has expired, we mark the reservation as expired only if it hasn't been paid yet. If it has been paid, we return a 409 conflict error to indicate that the operation is not allowed. This ensures that we don't accidentally expire a reservation that has already been settled.
-     * @note This is important for maintaining data integrity and ensuring that the reservation's payment status is accurately reflected in the system.
-     * @see transitionReservationPayment function for state transition logic.
-     * @see PaymentWebhookEvent model for tracking webhook events and their processing status.
-     * @see emitCourtEventById and emitReservationEvent functions for real-time updates to clients.
-     */
-    if (status === 'EXPIRED') {
-      if (reservation.paymentStatus === 'paid') {
-        return res.status(409).json({ error: 'Cannot expire an already paid reservation.' });
-      }
-      transitionReservationPayment(reservation, 'expired', 'expired');
-      await reservation.save();
       await PaymentWebhookEvent.updateOne(
-        { eventId: dedupeKey },
-        { $set: { processed: true, reservationId: reservation._id, eventType: String(status || '') } }
+        { eventId: resolvedEventId },
+        {
+          $set: {
+            processed: true,
+            ...(reservationResult ? { reservationId: reservationResult._id } : {}),
+            eventType: status,
+          },
+        },
+        { session },
       );
-      emitCourtEventById(req, reservation.courtId, 'reservation:updated', {
-        action: 'expired',
-        reservationId: reservation._id,
+    });
+
+    if (reservationResult) {
+      const eventPayload = {
+        action: reservationResult.paymentReceivedAfterCancellation ? 'payment_conflict' : 'paid',
+        reservationId: reservationResult._id,
+        paymentReceivedAfterCancellation: reservationResult.paymentReceivedAfterCancellation,
+      };
+      emitCourtEventById(req, reservationResult.courtId, 'reservation:updated', eventPayload);
+      emitReservationEvent(req, reservationResult.publicRef, eventPayload);
+      emitCourtEventById(req, reservationResult.courtId, 'billing:tab_updated', {
+        action: 'reservation_synced',
+        reservationId: reservationResult._id,
       });
-      return res.json({ ok: true });
+      emitCourtEventById(req, reservationResult.courtId, 'analytics:refresh', { source: 'payments' });
     }
-    return res.json({ ok: true, ignored: status });
-  } catch (err) {
-    if (String(err.message || '').includes('Invalid reservation status transition') ||
-        String(err.message || '').includes('Invalid payment status transition')) {
-      return res.status(409).json({ error: err.message });
+    return res.json({ ok: true, kind: isMasterAccount ? 'subscription' : 'reservation' });
+  } catch (error) {
+    if (error?.code === 11000) {
+      const event = await PaymentWebhookEvent.findOne({
+        eventId: JSON.stringify([req.body?.user_id, req.headers['webhook-id']]),
+      }).lean();
+      if (event?.processed) return res.json({ ok: true, deduped: true });
+      return res.status(409).json({ error: 'Webhook delivery is already being processed; retry.' });
     }
-    res.status(500).json({ error: err.message });
+    if (error?.status) return res.status(error.status).json({ error: error.message });
+    return res.status(503).json({ error: 'Webhook processing failed; retry the delivery.' });
+  } finally {
+    if (session) await session.endSession();
   }
 });
 
 export default router;
-

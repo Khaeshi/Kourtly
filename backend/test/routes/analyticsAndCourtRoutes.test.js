@@ -1,6 +1,8 @@
+import { jest } from '@jest/globals';
 import request from 'supertest';
 import app from '../../src/app.js';
 import Court from '../../src/models/Court.js';
+import SubscriptionPayment from '../../src/models/SubscriptionPayment.js';
 import Player from '../../src/models/Player.js';
 import Reservation from '../../src/models/Reservation.js';
 import Tab from '../../src/models/Tab.js';
@@ -71,5 +73,52 @@ describe('analytics and court routes', () => {
       .send({ plan: 'monthly' });
 
     expect(res.status).toBe(403);
+  });
+
+  test('subscription upgrade stores the invoice attempt before returning its checkout URL', async () => {
+    const previousEnv = {
+      PAYMENT_PROVIDER: process.env.PAYMENT_PROVIDER,
+      XENDIT_SECRET_KEY: process.env.XENDIT_SECRET_KEY,
+      APP_BASE_URL: process.env.APP_BASE_URL,
+    };
+    process.env.PAYMENT_PROVIDER = 'xendit';
+    process.env.XENDIT_SECRET_KEY = 'xnd_development_test';
+    process.env.APP_BASE_URL = 'https://app.example';
+    const fetchSpy = jest.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({ id: 'subscription-invoice-1', invoice_url: 'https://checkout.example/invoice' }),
+    });
+    try {
+      const court = await Court.create({
+        name: 'Subscription Attempt Court',
+        slug: 'subscription-attempt-court',
+        adminEmail: 'subscription-attempt@example.com',
+        isActive: true,
+        subscription: { status: 'trial', tier: 'basic' },
+      });
+      const response = await request(app)
+        .post('/api/court/me/subscription/upgrade')
+        .set('x-court-id', String(court._id))
+        .set('x-user-role', 'admin')
+        .send({ tier: 'standard' });
+
+      expect(response.status).toBe(200);
+      expect(response.body.paymentId).toBe('subscription-invoice-1');
+      expect(await SubscriptionPayment.findOne({ invoiceId: 'subscription-invoice-1' }).lean())
+        .toMatchObject({
+          externalId: expect.stringMatching(/^SUB-/),
+          courtId: court._id,
+          tier: 'standard',
+          expectedAmount: 3500,
+          status: 'pending',
+        });
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      jest.restoreAllMocks();
+      for (const [key, value] of Object.entries(previousEnv)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
   });
 });

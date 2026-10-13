@@ -30,8 +30,8 @@ Configure the Xendit master account and callback:
 
 - `XENDIT_SECRET_KEY` — `xnd_development_...` for test mode or `xnd_production_...` for live mode.
 - `XENDIT_CALLBACK_TOKEN` — master-account invoice webhook token.
+- `XENDIT_MASTER_USER_ID` — Xendit user ID for the master account; required by payment environment validation.
 - `XENDIT_WEBHOOK_URL` — full public HTTPS URL ending in `/api/payments/xendit/webhook`; required in production and optional in local development.
-- `XENDIT_XENPLATFORM_ENABLED` — rollout flag for court sub-account reservation payments; defaults to off.
 - `APP_BASE_URL`
 - `MONGODB_URI`
 
@@ -41,17 +41,17 @@ Runtime behavior:
 - Production startup requires a valid public HTTPS callback URL without an explicit port.
 - Approved court admins use `POST /api/court/me/xendit/setup` to create/link a Managed account and `POST /api/court/me/xendit/refresh` to refresh its status and configure its invoice callback.
 - Sub-account callback tokens are stored only as SHA-256 hashes.
-- Reservation invoices use the court's sub-account `for-user-id` header only when XenPlatform is enabled and the court account status and invoice webhook are ready.
+- Reservation invoices always use the court's sub-account `for-user-id` header; online reservation payments are rejected until the court account status and invoice webhook are ready.
 - The readiness allowlist currently accepts `REGISTERED` only in development mode and is empty in production until live status values are confirmed. Production reservation payments therefore fail closed.
 - Subscription invoices omit `for-user-id` and stay on the master account.
+- Webhooks are routed by `user_id`: the master callback token can complete only a stored subscription attempt, while a court's hashed callback token can complete only a matching reservation invoice.
 - Existing payout recipient settings are unchanged by this initial XenPlatform rollout.
 
 ## Production Readiness Checklist
 
 - Confirm live Managed sub-account status values with Xendit before adding them to the production readiness allowlist.
 - Configure the master-account callback token and public `XENDIT_WEBHOOK_URL`.
-- Keep `XENDIT_XENPLATFORM_ENABLED=false` until the account setup and invoice routing rollout is approved.
-- Complete Xendit onboarding and verify invoice routing in the appropriate environment before enabling reservation payments.
+- Complete Xendit onboarding and verify invoice routing in the appropriate environment before accepting reservation payments.
 
 ## Folder Structure
 

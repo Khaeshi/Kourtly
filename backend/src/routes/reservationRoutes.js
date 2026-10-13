@@ -16,7 +16,7 @@ import {
 import { createPaymentLink, getPaymentProvider } from '../lib/payments/index.js';
 import { emitCourtEvent } from '../lib/emitCourtEvent.js';
 import { transitionReservationPayment } from '../lib/reservationStateMachine.js';
-import { canAcceptOnlinePayments, isSubAccountRoutingEnabled } from '../lib/xenditReadiness.js';
+import { canAcceptOnlinePayments } from '../lib/xenditReadiness.js';
 
 const router = express.Router();
 const PAYMENT_HOLD_MINUTES = Math.max(1, Number(process.env.PAYMENT_HOLD_MINUTES || 10));
@@ -323,10 +323,8 @@ router.post('/:id/approve-payment', async (req, res) => {
     if (!court?.slug) {
       return res.status(400).json({ error: 'Court slug not found for reservation payment redirect.' });
     }
-    const subAccountRoutingEnabled = isSubAccountRoutingEnabled();
     if (
       getPaymentProvider() === 'xendit' &&
-      subAccountRoutingEnabled &&
       !canAcceptOnlinePayments(court)
     ) {
       return res.status(409).json({ error: 'Online payment is not available for this venue yet.' });
@@ -354,8 +352,9 @@ router.post('/:id/approve-payment', async (req, res) => {
 
     const appBase = process.env.APP_BASE_URL || 'http://localhost:3000';
     const statusPath = `/book/${court.slug}/status/${reservation.publicRef}`;
+    const externalId = `${reservation._id}-${Date.now()}`;
     const paymentLink = await createPaymentLink({
-      referenceId: `${reservation._id}-${Date.now()}`,
+      referenceId: externalId,
       amount,
       description: `Reservation ${reservation.publicRef}`,
       payerEmail: reservation.email,
@@ -367,11 +366,13 @@ router.post('/:id/approve-payment', async (req, res) => {
         courtId: String(reservation.courtId),
         reservationId: String(reservation._id),
       },
-      forUserId: subAccountRoutingEnabled ? court.xendit?.subAccountId : undefined,
+      forUserId: court.xendit?.subAccountId,
     });
 
     transitionReservationPayment(reservation, 'approved_waiting_payment', 'awaiting_payment');
     reservation.paymentLinkId = paymentLink.id || paymentLink.payment_id || '';
+    reservation.paymentExternalId = externalId;
+    reservation.paymentExpectedAmount = amount;
     reservation.paymentUrl = paymentLink.payment_url || paymentLink.checkout_url || '';
     reservation.paymentQrString = paymentLink.qr_string || '';
     reservation.paymentExpiresAt = expiryDate;

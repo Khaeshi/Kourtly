@@ -15,7 +15,12 @@ export function validateCoreEnv() {
 export function validatePaymentEnv() {
   getXenditMode();
 
-  const required = ['XENDIT_SECRET_KEY', 'XENDIT_CALLBACK_TOKEN', 'APP_BASE_URL'];
+  const required = ['XENDIT_SECRET_KEY', 'XENDIT_CALLBACK_TOKEN', 'XENDIT_MASTER_USER_ID', 'APP_BASE_URL'];
+  /* @author Khaesey Angel Tablante
+   * const missingMasterUserId = missing(['XENDIT_MASTER_USER_ID']);
+  if (missingMasterUserId.length) {
+    throw new Error('Missing required env vars: XENDIT_MASTER_USER_ID');
+  } Note: This is a hard strict, only apply when necessary */
   const missingVars = missing(required);
 
   if (missingVars.length) {
@@ -28,11 +33,6 @@ export function validatePaymentEnv() {
 
   if (process.env.NODE_ENV === 'production' && !isValidXenditWebhookUrl()) {
     throw new Error('XENDIT_WEBHOOK_URL must be a valid public HTTPS Xendit webhook URL.');
-  }
-
-  const rolloutFlag = process.env.XENDIT_XENPLATFORM_ENABLED;
-  if (rolloutFlag && !['true', 'false'].includes(rolloutFlag.trim().toLowerCase())) {
-    throw new Error('XENDIT_XENPLATFORM_ENABLED must be true or false.');
   }
 
   const provider = (process.env.PAYMENT_PROVIDER || 'xendit').toLowerCase();

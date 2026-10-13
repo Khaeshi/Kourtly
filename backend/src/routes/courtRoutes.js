@@ -1,6 +1,7 @@
 import express from 'express';
 import crypto from 'node:crypto';
 import Court from '../models/Court.js';
+import SubscriptionPayment from '../models/SubscriptionPayment.js';
 import { resolveCapabilities } from '../lib/moduleEntitlements.js';
 import { createPaymentLink } from '../lib/payments/index.js';
 import { TIER_DETAILS, TIER_ORDER, TIERS } from '../lib/moduleEntitlements.js';
@@ -101,7 +102,7 @@ router.post('/me/xendit/setup', async (req, res) => {
       if (latest?.xendit?.subAccountId) {
         return res.json({ status: latest.xendit.status || '' });
       }
-      return res.status(409).json({ error: 'setup already in progress' });
+      return res.status(409).json({ error: 'Could not link the Xendit account to this venue.' });
     }
 
     try {
@@ -433,10 +434,11 @@ router.post('/me/subscription/upgrade', async (req, res) => {
     if (!target.price) return res.status(400).json({ error: 'This tier requires a tailored quote. Please contact support.' });
 
     const expiryDate = new Date(Date.now() + 24 * 60 * 60 * 1000);
-      const payment = await createPaymentLink({
+    const externalId = `SUB-${court._id}-${tier}-${Date.now()}`;
+    const payment = await createPaymentLink({
       amount: target.price,
       description: `${target.label} subscription for ${court.name}`,
-      referenceId: `SUB-${court._id}-${tier}-${Date.now()}`,
+      referenceId: externalId,
       payerEmail: court.adminEmail,
       successUrl: `${process.env.APP_BASE_URL || 'http://localhost:3000'}/admin/settings?upgrade=success`,
       failureUrl: `${process.env.APP_BASE_URL || 'http://localhost:3000'}/admin/settings?upgrade=failed`,
@@ -444,7 +446,17 @@ router.post('/me/subscription/upgrade', async (req, res) => {
       metadata: { type: 'subscription', courtId: String(court._id), tier }, // kept for visibility in Xendit's own dashboard only, not read back by the webhook
     });
 
-    res.json({ tier, paymentUrl: payment.payment_url || payment.checkout_url || '', paymentId: payment.id || payment.payment_id || '' });
+    const invoiceId = payment.id || payment.payment_id || '';
+    if (!invoiceId) throw new Error('The payment provider did not return an invoice ID.');
+    await SubscriptionPayment.create({
+      invoiceId,
+      externalId,
+      courtId: court._id,
+      tier,
+      expectedAmount: target.price,
+    });
+
+    res.json({ tier, paymentUrl: payment.payment_url || payment.checkout_url || '', paymentId: invoiceId });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }

@@ -5,10 +5,6 @@ export const ONLINE_PAYMENT_ALLOWED_STATUSES = Object.freeze({
   production: Object.freeze([]),
 });
 
-export function isSubAccountRoutingEnabled() {
-  return process.env.XENDIT_XENPLATFORM_ENABLED?.trim().toLowerCase() === 'true';
-}
-
 export function canAcceptOnlinePayments(court) {
   const mode = getXenditMode();
   return Boolean(

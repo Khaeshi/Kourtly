@@ -16,15 +16,13 @@ function signedInAs(email) {
   return `${payload}.${signature}`;
 }
 
-async function withXenditSettings(routingEnabled, callback) {
+async function withXenditSettings(callback) {
   const previous = {
     PAYMENT_PROVIDER: process.env.PAYMENT_PROVIDER,
     XENDIT_SECRET_KEY: process.env.XENDIT_SECRET_KEY,
-    XENDIT_XENPLATFORM_ENABLED: process.env.XENDIT_XENPLATFORM_ENABLED,
   };
   process.env.PAYMENT_PROVIDER = 'xendit';
   process.env.XENDIT_SECRET_KEY = 'xnd_development_test';
-  process.env.XENDIT_XENPLATFORM_ENABLED = String(routingEnabled);
   try {
     return await callback();
   } finally {
@@ -215,11 +213,9 @@ describe('public routes', () => {
     const previous = {
       PAYMENT_PROVIDER: process.env.PAYMENT_PROVIDER,
       XENDIT_SECRET_KEY: process.env.XENDIT_SECRET_KEY,
-      XENDIT_XENPLATFORM_ENABLED: process.env.XENDIT_XENPLATFORM_ENABLED,
     };
     process.env.PAYMENT_PROVIDER = 'xendit';
     process.env.XENDIT_SECRET_KEY = 'xnd_development_test';
-    process.env.XENDIT_XENPLATFORM_ENABLED = 'true';
     try {
       await Court.create({
         name: 'Not Ready Court',
@@ -255,29 +251,29 @@ describe('public routes', () => {
     }
   });
 
-  test('rollout off creates a master-account invoice for a court without a sub-account', async () => {
+  test('public booking rejects an unready court instead of routing an invoice to the master account', async () => {
     const fetchSpy = jest.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: true,
       json: async () => ({ id: 'master-invoice', invoice_url: 'https://checkout.example/invoice' }),
     });
     try {
-      await withXenditSettings(false, async () => {
+      await withXenditSettings(async () => {
         await makePublicBookingCourt('master-invoice-court');
         const response = await request(app)
           .post('/api/public/courts/master-invoice-court/reserve')
           .send(validPublicBooking());
 
-        expect(response.status).toBe(201);
-        expect(fetchSpy).toHaveBeenCalledTimes(1);
-        expect(fetchSpy.mock.calls[0][1].headers).not.toHaveProperty('for-user-id');
+        expect(response.status).toBe(409);
+        expect(response.body.error).toBe('online booking is not available for this venue yet');
+        expect(fetchSpy).not.toHaveBeenCalled();
       });
     } finally {
       fetchSpy.mockRestore();
     }
   });
 
-  test('rollout on rejects an unready court only after a valid conflict-free booking request', async () => {
-    await withXenditSettings(true, async () => {
+  test('rejects an unready court only after a valid conflict-free booking request', async () => {
+    await withXenditSettings(async () => {
       await makePublicBookingCourt('not-ready-after-checks');
       const response = await request(app)
         .post('/api/public/courts/not-ready-after-checks/reserve')
@@ -289,13 +285,13 @@ describe('public routes', () => {
     });
   });
 
-  test('rollout on routes a ready court invoice with its sub-account ID', async () => {
+  test('routes a ready court invoice with its sub-account ID', async () => {
     const fetchSpy = jest.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: true,
       json: async () => ({ id: 'sub-account-invoice', invoice_url: 'https://checkout.example/invoice' }),
     });
     try {
-      await withXenditSettings(true, async () => {
+      await withXenditSettings(async () => {
         await makePublicBookingCourt('sub-account-invoice-court', {
           subAccountId: 'court-xendit-id',
           status: 'REGISTERED',
@@ -314,8 +310,8 @@ describe('public routes', () => {
     }
   });
 
-  test('invalid booking returns 400 and overlapping booking returns already booked with rollout on', async () => {
-    await withXenditSettings(true, async () => {
+  test('invalid booking returns 400 and overlapping booking returns already booked for an unready court', async () => {
+    await withXenditSettings(async () => {
       await makePublicBookingCourt('not-ready-invalid-conflict');
 
       const invalid = await request(app)

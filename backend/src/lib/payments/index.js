@@ -1,4 +1,4 @@
-import { createXenditInvoice, isXenditWebhookAuthorized } from '../../services/xenditService.js';
+import { createXenditInvoice } from '../../services/xenditService.js';
 
 export function getPaymentProvider() {
   if (process.env.PAYMENT_PROVIDER) return process.env.PAYMENT_PROVIDER.toLowerCase();
@@ -38,10 +38,4 @@ export async function createPaymentLink({
     metadata,
     forUserId,
   });
-}
-
-export function verifyWebhookSignature(payload, headers) {
-  const provider = getPaymentProvider();
-  if (provider !== 'xendit') return false;
-  return isXenditWebhookAuthorized(headers);
 }
