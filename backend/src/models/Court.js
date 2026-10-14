@@ -9,6 +9,7 @@ const XenditAccountSchema = new mongoose.Schema({
   setupInProgress: { type: Boolean, default: false, select: false },
   setupStartedAt: { type: Date, default: null, select: false },
   webhookSetupInProgress: { type: Boolean, default: false, select: false },
+  webhookSetupStartedAt: { type: Date, default: null, select: false },
 }, { _id: false });
 
 /**

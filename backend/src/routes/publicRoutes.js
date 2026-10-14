@@ -267,7 +267,8 @@ router.post('/courts/:slug/reserve', async (req, res) => {
       await reservation.save();
     } catch (paymentError) {
       await Reservation.deleteOne({ _id: reservation._id });
-      throw paymentError;
+      console.error('[payment] invoice creation failed:', paymentError?.message);
+      throw new Error('We could not start the payment. Please try again in a moment.');
     }
 
     req.courtId = String(courtId); 
