@@ -97,7 +97,9 @@ function SignInContent() {
               width={160}
               height={60}
               priority
-              className="h-auto w-[160] object-contain"
+              unoptimized
+              style={{width: 160, height: 'auto'}}
+              className="object-contain"
             />
           </div>
           <h1 className="font-display text-[clamp(1.8rem,4vw,2.2rem)] text-[var(--line)] mb-2">Welcome back</h1>

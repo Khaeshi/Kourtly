@@ -16,97 +16,90 @@ function ShuttleIcon() {
   );
 }
 
+/**
+ * The text column is a fixed width: 40% of the hero (the narrowest a side ever gets) minus both paddings.
+ * Because that width never changes, the copy never re-wraps and the box never changes height while the
+ * columns expand and shrink. Only the panels, the divider and the shuttle move.
+ */
+const COPY = 'flex flex-col gap-4 min-[800px]:w-[calc(40cqw-2*clamp(2rem,4vw,2.8rem))]';
+
 export default function SplitHero() {
   return (
     <div className="max-w-[1180px] mx-auto mt-[2.6rem] px-[clamp(1rem,4vw,2rem)] max-[480px]:mt-8 max-[480px]:px-[0.9rem]">
-      {/* Split hero section */}
       <div
         className="relative grid grid-cols-1 overflow-hidden border border-[var(--divider)]
           [--split:50%]
+          min-[800px]:[container-type:inline-size]
           min-[800px]:grid-cols-[1fr_1fr]
           min-[800px]:transition-[grid-template-columns] min-[800px]:duration-[450ms] min-[800px]:ease-[cubic-bezier(.23,1,.32,1)]
-          min-[800px]:has-[.side-player:hover]:grid-cols-[1.25fr_.75fr] min-[800px]:has-[.side-player:hover]:[--split:62.5%]
-          min-[800px]:has-[.side-owner:hover]:grid-cols-[.75fr_1.25fr] min-[800px]:has-[.side-owner:hover]:[--split:37.5%]"
+          min-[800px]:has-[.side-player:hover]:grid-cols-[1.2fr_.8fr] min-[800px]:has-[.side-player:hover]:[--split:60%]
+          min-[800px]:has-[.side-owner:hover]:grid-cols-[.8fr_1.2fr] min-[800px]:has-[.side-owner:hover]:[--split:40%]"
         style={{ borderRadius: 'var(--r-block)' }}
       >
-      {/* Net divider */}
-      <div
-        className="hidden min-[800px]:block absolute top-0 bottom-0 left-[var(--split)] w-[2px] -translate-x-1/2 z-[5]
-        transition-[left] duration-[450ms] ease-[cubic-bezier(.23,1,.32,1)]"
-        style={{
-          backgroundImage:
-            'repeating-linear-gradient(to bottom, color-mix(in srgb, var(--line) 50%, transparent) 0, color-mix(in srgb, var(--line) 50%, transparent) 8px, transparent 8px, transparent 16px)',
-        }}
-        aria-hidden="true"
-      />
-      {/* Shuttlecock */}
-      <div
-        className="hidden min-[800px]:block absolute top-0 left-[var(--split)] w-4 h-4 -translate-x-1/2 -translate-y-1/2 z-[6] shuttle-animate
-        transition-[left] duration-[850ms] ease-[cubic-bezier(.23,1,.32,1)]"
-        style={{ filter: 'drop-shadow(0 0 6px color-mix(in srgb, var(--accent) 60%, transparent))' }}
-        aria-hidden="true"
-      >
-        <ShuttleIcon />
-      </div>
+        {/* Net divider */}
+        <div
+          className="hidden min-[800px]:block absolute top-0 bottom-0 left-[var(--split)] w-[2px] -translate-x-1/2 z-[5]
+          transition-[left] duration-[450ms] ease-[cubic-bezier(.23,1,.32,1)]"
+          style={{
+            backgroundImage:
+              'repeating-linear-gradient(to bottom, color-mix(in srgb, var(--line) 50%, transparent) 0, color-mix(in srgb, var(--line) 50%, transparent) 8px, transparent 8px, transparent 16px)',
+          }}
+          aria-hidden="true"
+        />
+        {/* Shuttlecock */}
+        <div
+          className="hidden min-[800px]:block absolute top-0 left-[var(--split)] w-4 h-4 -translate-x-1/2 -translate-y-1/2 z-[6] shuttle-animate
+          transition-[left] duration-[850ms] ease-[cubic-bezier(.23,1,.32,1)]"
+          style={{ filter: 'drop-shadow(0 0 6px color-mix(in srgb, var(--accent) 60%, transparent))' }}
+          aria-hidden="true"
+        >
+          <ShuttleIcon />
+        </div>
 
-      {/* Player side */}
-      <div
-        className="side-player relative flex flex-col gap-4 p-[clamp(2rem,4vw,2.8rem)] max-[480px]:p-[1.6rem_1.4rem]"
-        style={{ background: 'linear-gradient(160deg, var(--surface-raised), var(--surface))' }}
-      >
-        <span className="text-[0.85rem] font-bold text-[var(--line-dim)]">For Players</span>
-        <h2 className="font-display text-[clamp(1.5rem,3vw,1.95rem)] text-[var(--line)]">
-          Find courts near you.<br />Book now.
-        </h2>
-        <p className="text-[var(--line-dim)] text-[0.95rem] max-w-[36ch] max-[480px]:max-w-none">
-          Browse courts, check real-time availability, and reserve your slot in under 2 minutes. No app needed.
-        </p>
-        <Link href="/usercourts" className="pub-cta pub-cta-primary mt-1">
-          Let&apos;s get started
-          <ArrowIcon />
-        </Link>
-        <div className="flex gap-5 flex-wrap mt-1 max-[480px]:gap-4">
-          <div className="text-[0.78rem] text-[var(--line-dim)]">
-            <strong className="block text-[var(--line)] text-base">Real-time</strong>slots
-          </div>
-          <div className="text-[0.78rem] text-[var(--line-dim)]">
-            <strong className="block text-[var(--line)] text-base">Multiple</strong>sports
-          </div>
-          <div className="text-[0.78rem] text-[var(--line-dim)]">
-            <strong className="block text-[var(--line)] text-base">Instant</strong>booking
+        {/* Player side */}
+        <div
+          className="side-player relative p-[clamp(2rem,4vw,2.8rem)] max-[480px]:p-[1.6rem_1.4rem]"
+          style={{ background: 'linear-gradient(160deg, var(--surface-raised), var(--surface))' }}
+        >
+          <div className={COPY}>
+            <span className="text-[0.85rem] font-bold text-[var(--success)]">For Players</span>
+            <h2 className="font-display t-h3 text-[var(--line)]">
+              Find courts near you.<br />Book now.
+            </h2>
+            <p className="text-[var(--line-dim)] t-body">
+              Check real-time availability and reserve your slot in under 2 minutes. No app needed.
+            </p>
+            <Link href="/usercourts" className="pub-cta pub-cta-primary mt-1">
+              Find a court
+              <ArrowIcon />
+            </Link>
+            <p className="text-[0.85rem] text-[var(--line-dim)] mt-1">
+              Real-time slots · Badminton, pickleball, tennis · Instant booking
+            </p>
           </div>
         </div>
-      </div>
 
-      {/* Owner side */}
-      <div
-        className="side-owner relative flex flex-col gap-4 p-[clamp(2rem,4vw,2.8rem)] max-[480px]:p-[1.6rem_1.4rem]"
-        style={{ background: 'linear-gradient(160deg, var(--surface), var(--page-bg))' }}
-      >
-        <span className="text-[0.85rem] font-bold text-[var(--line-dim)]">For Court Owners</span>
-        <h2 className="font-display text-[clamp(1.5rem,3vw,1.95rem)] text-[var(--line)]">
-          Run your court.<br />Online.
-        </h2>
-        <p className="text-[var(--line-dim)] text-[0.95rem] max-w-[36ch] max-[480px]:max-w-none">
-          Manage bookings, queues, billing, and analytics. Start with a 14-day free trial, no credit card needed.
-        </p>
-        <Link href="/for-courts" className="pub-cta pub-cta-ghost mt-1">
-          Start with Kourtly
-          <ArrowIcon />
-        </Link>
-        <div className="flex gap-5 flex-wrap mt-1 max-[480px]:gap-4">
-          <div className="text-[0.78rem] text-[var(--line-dim)]">
-            <strong className="block text-[var(--line)] text-base">₱2,000</strong>per month
-          </div>
-          <div className="text-[0.78rem] text-[var(--line-dim)]">
-            <strong className="block text-[var(--line)] text-base">14-day</strong>free trial
-          </div>
-          <div className="text-[0.78rem] text-[var(--line-dim)]">
-            <strong className="block text-[var(--line)] text-base">Queue +</strong>billing
+        {/* Owner side (paper) */}
+        <div className="side-owner public-paper relative p-[clamp(2rem,4vw,2.8rem)] max-[480px]:p-[1.6rem_1.4rem]">
+          <div className={COPY}>
+            <span className="text-[0.85rem] font-bold text-[var(--accent)]">For Court Owners</span>
+            <h2 className="font-display t-h3 text-[var(--line)]">
+              Run your court.<br />Online.
+            </h2>
+            <p className="text-[var(--line-dim)] t-body">
+              Bookings, queues, billing, and analytics in one place. Start with a 14-day free trial, no credit card needed.
+            </p>
+            <Link href="/for-courts" className="pub-cta pub-cta-ink mt-1">
+              List your court
+              <ArrowIcon />
+            </Link>
+            <p className="mt-1 flex flex-wrap items-baseline gap-x-2">
+              <span className="font-display text-[2.2rem] text-[var(--line)]">₱2,000</span>
+              <span className="text-[0.85rem] text-[var(--line-dim)]">per month, Basic plan</span>
+            </p>
           </div>
         </div>
       </div>
     </div>
-  </div>
-);
+  );
 }

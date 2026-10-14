@@ -135,7 +135,9 @@ export default function RegisterCourtPage() {
           width={160}
           height={60}
           priority
-          className="h-auto w-[160px] object-contain"
+          unoptimized
+          style={{width: 160, height: 'auto'}}
+          className="object-contain"
         />
       </Link>
 
