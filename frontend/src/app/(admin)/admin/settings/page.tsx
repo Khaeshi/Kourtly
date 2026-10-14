@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { sileo } from 'sileo';
 import { Upload, X } from 'lucide-react';
@@ -25,13 +25,7 @@ interface Court {
   contact:  { phone: string; email: string; facebook: string; instagram: string; website: string; };
   subscription: { status: string; plan: string; amount: number; tier?: string; trialEnds: string; nextBilling: string | null; };
   settings: { timezone: string; currency: string; reservationFee?: number; hourlyRate?: number; weeklySummary?: boolean; };
-  payout?: {
-    recipientCode: string;
-    accountName: string;
-    channelCode: string;
-    accountNumberLast4: string;
-    isConfigured: boolean;
-  };
+  adminEmail?: string;
 }
 
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
@@ -52,6 +46,123 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       </div>
       <div className="px-6 py-5 flex flex-col gap-4">{children}</div>
     </div>
+  );
+}
+
+function useIsOffline() {
+  const [offline, setOffline] = useState(false);
+  useEffect(() => {
+    const update = () => setOffline(!navigator.onLine);
+    update();
+    window.addEventListener('online', update);
+    window.addEventListener('offline', update);
+    return () => {
+      window.removeEventListener('online', update);
+      window.removeEventListener('offline', update);
+    };
+  }, []);
+  return offline;
+}
+
+type PaymentsState = { status: string; ready: boolean };
+
+function OnlinePaymentsSection({ offline, adminEmail }: { offline: boolean; adminEmail?: string }) {
+  const [state, setState] = useState<PaymentsState | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    if (offline) return;
+    try {
+      const data = await proxyFetch<PaymentsState>('/court/me/xendit', undefined, { allowSnapshotFallback: false });
+      setState(data);
+      setFailed(false);
+    } catch {
+      setFailed(true);
+    }
+  }, [offline]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  if (offline) {
+    return (
+      <Section title="Online Payments (Xendit)">
+        <p className="text-sm text-gray-500">Reconnect to view or manage online payments. This section is not available offline.</p>
+      </Section>
+    );
+  }
+
+  const run = async (action: 'setup' | 'refresh') => {
+    setBusy(true);
+    try {
+      await proxyFetch(`/court/me/xendit/${action}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+      }, { allowSnapshotFallback: false });
+      await load();
+      sileo.success({ title: action === 'setup' ? 'Invitation sent' : 'Status updated' });
+    } catch (error) {
+      sileo.error({ title: 'Could not update online payments', description: error instanceof Error ? error.message : 'Please try again.' });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const status = state?.status ?? '';
+  let tone = 'border-gray-200 bg-gray-50 text-gray-700';
+  let title = 'Checking...';
+  let body = '';
+  let action: 'setup' | 'refresh' | null = null;
+  let label = '';
+
+  if (failed && !state) {
+    title = 'Could not load status';
+    body = 'Reload this page to try again.';
+  } else if (state?.ready) {
+    tone = 'border-green-200 bg-green-50 text-green-800';
+    title = 'Online payments are active';
+    body = 'Customers can pay for reservations online. The money goes to your own Xendit account, and you withdraw it to your bank from your Xendit dashboard.';
+    action = 'refresh'; label = 'Refresh status';
+  } else if (state && !status) {
+    title = 'Not set up';
+    body = `We will send a Xendit invitation to ${adminEmail || 'your court admin email'}. Use an email that only the venue owner controls, because that email owns the account that receives your money. When you sign up at Xendit, enter the venue name your customers recognize.`;
+    action = 'setup'; label = 'Set up online payments';
+  } else if (status === 'INVITED') {
+    tone = 'border-amber-200 bg-amber-50 text-amber-800';
+    title = 'Waiting for you at Xendit';
+    body = 'Open the Xendit invitation in your email and finish signing up, then check the status here.';
+    action = 'refresh'; label = 'Check status';
+  } else if (status === 'REGISTERED') {
+    tone = 'border-amber-200 bg-amber-50 text-amber-800';
+    title = 'Almost ready';
+    body = 'Your Xendit account is registered. Check the status once more to finish connecting it to Kourtly.';
+    action = 'refresh'; label = 'Check status';
+  } else if (state) {
+    tone = 'border-amber-200 bg-amber-50 text-amber-800';
+    title = 'Xendit is reviewing your account';
+    body = `Current status: ${status}. Online payments turn on once Xendit approves your account.`;
+    action = 'refresh'; label = 'Check status';
+  }
+
+  return (
+    <Section title="Online Payments (Xendit)">
+      <div className={`rounded-lg border px-4 py-3 ${tone}`}>
+        <p className="text-sm font-semibold">{title}</p>
+        {body && <p className="text-xs mt-1">{body}</p>}
+      </div>
+      {action && (
+        <div>
+          <button type="button" onClick={() => run(action!)} disabled={busy}
+            className="text-[0.78rem] font-medium bg-gray-900 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors cursor-pointer disabled:opacity-50 border-none">
+            {busy ? 'Working...' : label}
+          </button>
+        </div>
+      )}
+      <p className="text-xs text-gray-500">
+        Xendit charges a processing fee on each payment, deducted from your Xendit balance. Kourtly never sees or stores your bank details.
+      </p>
+    </Section>
   );
 }
 
@@ -92,6 +203,7 @@ async function uploadImageToCloudinary(file: File): Promise<string> {
 export default function SettingsPage() {
   const { update: updateSession } = useSession();
   const capabilities = useCapabilities();
+  const offline = useIsOffline();
   const reportedTier = capabilities.currentTier ?? capabilities.tier;
   const activeTier = TIER_ORDER.includes(reportedTier as typeof TIER_ORDER[number])
     ? reportedTier as typeof TIER_ORDER[number]
@@ -114,10 +226,6 @@ export default function SettingsPage() {
     address: '', city: '', province: '',
     phone: '', email: '', facebook: '', instagram: '', website: '',
     hourlyRate: '210',
-    payoutRecipientCode: '',
-    payoutAccountName: '',
-    payoutChannelCode: '',
-    payoutAccountNumber: '',
     weeklySummary: true,
   });
 
@@ -141,10 +249,6 @@ export default function SettingsPage() {
           instagram:      c.contact?.instagram ?? '',
           website:        c.contact?.website   ?? '',
           hourlyRate:     String(c.settings?.hourlyRate ?? c.settings?.reservationFee ?? 210),
-          payoutRecipientCode: c.payout?.recipientCode ?? '',
-          payoutAccountName: c.payout?.accountName ?? '',
-          payoutChannelCode: c.payout?.channelCode ?? '',
-          payoutAccountNumber: '',
           weeklySummary: c.settings?.weeklySummary ?? true,
         });
       } catch (error) {
@@ -184,19 +288,6 @@ export default function SettingsPage() {
       }, { allowSnapshotFallback: false });
       sileo.success({ title: 'Settings saved' });
       setCourt(updated);
-
-      if (form.payoutRecipientCode) {
-        await proxyFetch('/court/me/payout', {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            recipientCode: form.payoutRecipientCode,
-            accountName: form.payoutAccountName,
-            channelCode: form.payoutChannelCode,
-            accountNumber: form.payoutAccountNumber,
-          }),
-        }, { allowSnapshotFallback: false });
-      }
     } catch {
       sileo.error({ title: 'Failed to save settings' });
     } finally {
@@ -454,30 +545,7 @@ export default function SettingsPage() {
         </Field>
       </Section>
 
-      <Section title="Payout Destination (Xendit Recipient)">
-        <p className="text-xs text-gray-500">
-          Configure recipient details for reservation payout disbursements. Sensitive bank credentials are not stored here.
-        </p>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <Field label="Recipient Code *" hint="Provided by Xendit recipient setup">
-            <input value={form.payoutRecipientCode} onChange={e => set('payoutRecipientCode', e.target.value)} className={INPUT} />
-          </Field>
-          <Field label="Channel Code" hint="e.g. BDO, BPI, GCASH, MAYA">
-            <input value={form.payoutChannelCode} onChange={e => set('payoutChannelCode', e.target.value)} className={INPUT} />
-          </Field>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <Field label="Account Name">
-            <input value={form.payoutAccountName} onChange={e => set('payoutAccountName', e.target.value)} className={INPUT} />
-          </Field>
-          <Field label="Account Number" hint="Stored as last 4 digits only">
-            <input value={form.payoutAccountNumber} onChange={e => set('payoutAccountNumber', e.target.value)} className={INPUT} />
-          </Field>
-        </div>
-        <p className="text-xs text-gray-400">
-          Current: {court?.payout?.isConfigured ? `Configured (${court?.payout?.channelCode || 'N/A'} ••••${court?.payout?.accountNumberLast4 || '----'})` : 'Not configured'}
-        </p>
-      </Section>
+      <OnlinePaymentsSection offline={offline} adminEmail={court?.adminEmail} />
 
       <Section title="Weekly Summary Email">
         <div className="flex items-center justify-between gap-3">

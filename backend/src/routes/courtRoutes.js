@@ -2,9 +2,8 @@ import express from 'express';
 import crypto from 'node:crypto';
 import Court from '../models/Court.js';
 import SubscriptionPayment from '../models/SubscriptionPayment.js';
-import { resolveCapabilities } from '../lib/moduleEntitlements.js';
 import { createPaymentLink } from '../lib/payments/index.js';
-import { TIER_DETAILS, TIER_ORDER, TIERS } from '../lib/moduleEntitlements.js';
+import { TIER_DETAILS, TIER_ORDER, TIERS, resolveCapabilities } from '../lib/moduleEntitlements.js';
 import {
   configureManagedAccountInvoiceWebhook,
   createManagedAccount,
@@ -13,6 +12,7 @@ import {
   listManagedAccountsByEmail,
 } from '../services/xenditService.js';
 import { tenantCourtResponse } from '../lib/courtResponse.js';
+import { canAcceptOnlinePayments } from '../lib/xenditReadiness.js';
 
 const router = express.Router();
 
@@ -102,7 +102,7 @@ router.post('/me/xendit/setup', async (req, res) => {
       if (latest?.xendit?.subAccountId) {
         return res.json({ status: latest.xendit.status || '' });
       }
-      return res.status(409).json({ error: 'Could not link the Xendit account to this venue.' });
+      return res.status(409).json({ error: 'setup already in progress' });
     }
 
     try {
@@ -143,6 +143,7 @@ router.post('/me/xendit/setup', async (req, res) => {
       if (latest?.xendit?.subAccountId === account.id) {
         return res.status(successStatus).json({ status: latest.xendit.status || '' });
       }
+      return res.status(409).json({ error: 'Could not link the Xendit account to this venue.' });
     } catch (error) {
       if (error?.code === 11000) {
         return res.status(409).json({ error: 'This email already has a payments account on another venue.' });
@@ -159,6 +160,22 @@ router.post('/me/xendit/setup', async (req, res) => {
     }
   } catch {
     res.status(502).json({ error: 'Could not complete Xendit account setup.' });
+  }
+});
+
+router.get('/me/xendit', async (req, res) => {
+  try {
+    if (!req.courtId) return res.status(401).json({ error: 'Missing court context.' });
+    if (req.userRole !== 'admin') return res.status(403).json({ error: 'Court admin access required.' });
+    const court = await Court.findById(req.courtId)
+      .select('xendit.status xendit.webhookConfigured +xendit.subAccountId')
+      .lean();
+    if (!court) return res.status(404).json({ error: 'Court not found.' });
+    let ready = false;
+    try { ready = canAcceptOnlinePayments(court); } catch { ready = false; }
+    res.json({ status: court.xendit?.status || '', ready });
+  } catch {
+    res.status(500).json({ error: 'Could not load online payment status.' });
   }
 });
 
