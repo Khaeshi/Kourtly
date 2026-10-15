@@ -19,7 +19,7 @@ export default function PublicFooter({ compact = false }: PublicFooterProps) {
       {!compact && (
         <div className="max-w-[1180px] mx-auto pt-[clamp(2.75rem,6vw,4rem)] pb-[clamp(2rem,4vw,2.75rem)] flex justify-between items-start flex-wrap gap-10">
           <div className="max-w-[420px]">
-            <img src="/brand/logo/kourtly-logo.png" alt="Kourtly" width={160} height={60} className="w-[160px] h-auto object-contain mb-7" />
+            <img src="/brand/logo/kourtly-logo-on-dark.svg" alt="Kourtly" width={160} height={60} className="w-[160px] h-auto object-contain mb-7" />
             <p className="font-display t-h2 text-[var(--line)]">
               More bookings.
               <br />

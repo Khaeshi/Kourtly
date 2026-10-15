@@ -52,7 +52,7 @@ export default function PublicNav({ links = [], alwaysVisible = true }: Props) {
       <nav className={`public-nav ${scrolled ? 'is-scrolled' : ''}`}>
         <Link href="/" className="flex items-center gap-2.5 min-w-0 no-underline">
           <Image
-            src="/brand/logo/kourtly-logo.svg"
+            src="/brand/logo/kourtly-logo-on-dark.svg"
             alt={APP_NAME}
             width={160}
             height={60}
@@ -67,6 +67,7 @@ export default function PublicNav({ links = [], alwaysVisible = true }: Props) {
           {links.map((l) => (
             <a key={l.href} href={l.href} className={navLinkClass}>{l.label}</a>
           ))}
+          <Link href="/" className={navLinkClass}>Home</Link>
           <Link href="/courts" className={navLinkClass}>Find Courts</Link>
           <Link href="/for-courts" className={navLinkClass}>Court Owners</Link>
 
