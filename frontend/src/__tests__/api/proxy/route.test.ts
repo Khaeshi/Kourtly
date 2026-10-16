@@ -27,7 +27,7 @@ describe('proxy route handlers', () => {
     expect(body.error).toBe('Unauthorized');
   });
 
-  test('forwards GET with tenant headers and query string', async () => {
+  test('forwards GET with a signed auth header and the query string', async () => {
     mockedAuth.mockResolvedValue({
       user: { courtId: 'court123', role: 'admin', email: 'admin@test.com' },
     } as never);
@@ -41,19 +41,19 @@ describe('proxy route handlers', () => {
     const res = await GET(req, { params: Promise.resolve({ path: ['players'] }) });
     const body = await res.json();
 
+    expect(res.status).toBe(200);
+    expect(body).toEqual([{ id: 1 }]);
     expect(global.fetch).toHaveBeenCalledWith(
       'http://localhost:5000/api/players?status=active',
       expect.objectContaining({
         method: 'GET',
-        headers: expect.objectContaining({
-          'x-court-id': 'court123',
-          'x-user-role': 'admin',
-          'x-user-email': 'admin@test.com',
-        }),
-      })
+        headers: expect.objectContaining({ 'x-kourtly-auth': expect.any(String) }),
+      }),
     );
-    expect(res.status).toBe(200);
-    expect(body).toEqual([{ id: 1 }]);
+    const sentHeaders = (global.fetch as jest.Mock).mock.calls[0][1].headers;
+    expect(sentHeaders).not.toHaveProperty('x-court-id');
+    expect(sentHeaders).not.toHaveProperty('x-user-role');
+    expect(sentHeaders).not.toHaveProperty('x-user-email');
   });
 
   test('forwards POST body and handles DELETE without body', async () => {
@@ -93,4 +93,3 @@ describe('proxy route handlers', () => {
     expect(delCall[1].body).toBeUndefined();
   });
 });
-

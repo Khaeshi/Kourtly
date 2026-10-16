@@ -1,168 +1,130 @@
 'use client';
-import { useState, useEffect, useCallback, use } from 'react';
-import { addDays, format, getDay, parseISO } from 'date-fns';
+import { useState, useEffect, useCallback, useMemo, use, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import PublicNav from '@/app/components/public/PublicNav';
 import PublicFooter from '@/app/components/public/PublicFooter';
+import { InlineNotice, KeyValueSummary } from '@/app/components/public/ui';
+import BookingNav from '@/app/components/public/booking/BookingNav';
+import BookingStepper from '@/app/components/public/booking/BookingStepper';
+import BookingCalendar from '@/app/components/public/booking/BookingCalendar';
+import BookingSummary, { SummaryLine } from '@/app/components/public/booking/BookingSummary';
+import JoyCompanion, { type JoyState } from '@/app/components/public/booking/JoyCompanion';
 import {
-  InlineNotice,
-  KeyValueSummary,
-  PublicBadge,
-  PublicButton,
-  PublicField,
-  PublicInput,
-  PublicSelect,
-  PublicStepper,
-  PublicTextarea,
-} from '@/app/components/public/ui';
+  type Court, type ScheduleRule, type CourtAvailability,
+  MAX_PLAYERS, todayStr, bookingMaxDateStr, toMinutes, fmtMins, fmtSlotRange,
+  fmtDateLong, fmtDateShort, fmtDateChip, peso, validSlotsForSchedule,
+  validateName, validatePhone, validateEmail, validateNotes, suggestEmail,
+} from '@/app/components/public/booking/booking-utils';
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-const ALL_SLOTS = [
-  '09:00-10:00','10:00-11:00','11:00-12:00','12:00-13:00',
-  '13:00-14:00','14:00-15:00','15:00-16:00','16:00-17:00',
-  '17:00-18:00','18:00-19:00','19:00-20:00','20:00-21:00',
-  '21:00-22:00','22:00-23:00',
+const STEP_LABELS = ['Date', 'Court', 'Duration', 'Time', 'Details'];
+const JOY_HINTS = [
+  'Pick a day. I will check if we are open.',
+  'Which court do you want?',
+  'How long are we playing?',
+  'Greyed slots are already taken.',
+  'Almost done! Check your number.',
 ];
 
-function todayStr() { return format(new Date(), 'yyyy-MM-dd'); }
-function bookingMaxDateStr() { return format(addDays(new Date(), 13), 'yyyy-MM-dd'); }
-function toMinutes(t: string) { const [h,m] = t.split(':').map(Number); return h*60+m; }
-function fmtMins(m: number) {
-  const h = Math.floor(m/60), min = m%60, ampm = h>=12?'PM':'AM';
-  return `${h>12?h-12:h===0?12:h}:${String(min).padStart(2,'0')} ${ampm}`;
-}
-function fmtSlotRange(slot: string, dur: number) {
-  const s = toMinutes(slot.split('-')[0]);
-  return `${fmtMins(s)} – ${fmtMins(s + dur*60)}`;
-}
-function fmtDateLong(d: string)  { return format(parseISO(d), 'EEEE, MMMM d, yyyy'); }
-function fmtDateShort(d: string) { return format(parseISO(d), 'MMM d, yyyy'); }
+type JoyNote = { state: JoyState; message: string } | null;
 
-function validSlotsForDuration(dur: number, date?: string) {
-  const isToday = date === todayStr();
-  const nowMins = isToday ? new Date().getHours()*60 + new Date().getMinutes() : 0;
-  return ALL_SLOTS.filter(slot => {
-    const s = toMinutes(slot.split('-')[0]);
-    if (s + dur*60 > 23*60) return false;
-    if (isToday && s+60 <= nowMins) return false;
-    return true;
-  });
-}
+const h2 = 'm-0 mb-1 text-[clamp(1.35rem,2.6vw,1.7rem)] font-extrabold text-[var(--line)]';
+const sub = 'mb-5 mt-0 text-[0.95rem] text-[var(--line-dim)]';
+const hintCls = 'mt-3 text-[0.88rem] text-[var(--danger)]';
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// ── Duration step ─────────────────────────────────────────────────────────────
 
-interface Court {
-  _id: string; name: string; slug: string;
-  sports: string[]; courtCount: number;
-  description: string; logoUrl: string; amenities: string[];
-  location: { city: string; province: string; };
-  contact:  { phone: string; email: string; facebook: string; };
-  settings: { reservationFee?: number; hourlyRate?: number; };
-}
-
-interface ScheduleRule {
-  dayOfWeek: number; dayName: string;
-  isClosed: boolean; openTime: string; closeTime: string;
-}
-
-interface CourtAvailability {
-  court: number;
-  isFullyClosed: boolean;
-  availableSlots: string[];
-  blockedSlots: string[];
-}
-
-// ── Duration Step ─────────────────────────────────────────────────────────────
-
-function DurationStep({ duration, setDuration, date, courtNum, slug, schedule, onBack, onNext }: {
+function DurationStep({ duration, setDuration, date, courtNum, slug, schedule, rate, onJoy, onNext }: {
   duration: number; setDuration: (d: number) => void;
-  date: string; courtNum: number; slug: string;
-  schedule: ScheduleRule[];
-  onBack: () => void; onNext: () => void;
+  date: string; courtNum: number; slug: string; schedule: ScheduleRule[]; rate: number;
+  onJoy: (n: JoyNote) => void; onNext: () => void;
 }) {
   const [availMap, setAvailMap] = useState<Record<number, string[]>>({});
-  const [loading,  setLoading]  = useState(true);
+  const [loading, setLoading] = useState(true);
+  const [hint, setHint] = useState('');
 
   useEffect(() => {
-    Promise.all([1,2,3,4].map(async d => {
+    let cancelled = false;
+    Promise.all([1, 2, 3, 4].map(async (d) => {
       const res = await fetch(`/api/public/courts/${slug}/availability?date=${date}&duration=${d}`);
       const data = await res.json();
       const c = (data.courts ?? []).find((x: CourtAvailability) => x.court === courtNum);
-      return { d, available: c?.availableSlots ?? [] };
+      return { d, available: (c?.availableSlots ?? []) as string[] };
     }))
-    .then(results => setAvailMap(Object.fromEntries(results.map(r => [r.d, r.available]))))
-    .finally(() => setLoading(false));
+      .then((results) => { if (!cancelled) setAvailMap(Object.fromEntries(results.map((r) => [r.d, r.available]))); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, [date, courtNum, slug]);
 
-  const selectedAvail = (availMap[duration] ?? []).filter(s => validSlotsForSchedule(duration, date, schedule).includes(s));
-  const hasSlots = selectedAvail.length > 0;
+  const countFor = (h: number) => (availMap[h] ?? []).filter((s) => validSlotsForSchedule(h, date, schedule).includes(s)).length;
+  const hasSlots = countFor(duration) > 0;
+
+  useEffect(() => {
+    if (!loading && !hasSlots) onJoy({ state: 'noSlots', message: `No slots for ${duration}h. Try a shorter time.` });
+    else onJoy(null);
+  }, [loading, hasSlots, duration, onJoy]);
+
+  const next = () => {
+    if (!loading && !hasSlots) { setHint('No slots for this duration. Try a shorter one or another date.'); return; }
+    onNext();
+  };
 
   return (
-    <div className="booking-anim">
-      <p className="section-head eyebrow mb-1">Select Duration</p>
-      <p className="text-[var(--line-faint)] text-xs mb-6 font-mono-data">{fmtDateShort(date)} · Court {courtNum}</p>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-        {[1,2,3,4].map(h => {
-          const avail   = availMap[h] ?? [];
-          const validAvail = avail.filter(s => validSlotsForSchedule(h, date, schedule).includes(s));
-          const noSlots = !loading && validAvail.length === 0;
+    <div>
+      <h2 className={h2}>How long do you want to play?</h2>
+      <p className={sub}>{fmtDateChip(date)} · Court {courtNum}</p>
+      <div className="mb-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {[1, 2, 3, 4].map((h) => {
+          const n = countFor(h);
+          const none = !loading && n === 0;
+          const on = duration === h;
           return (
-            <button key={h} disabled={noSlots}
-              className={`duration-btn ${duration===h ? 'selected' : ''} ${noSlots ? 'unavailable' : ''}`}
-              onClick={() => setDuration(h)}>
-              <span className="font-display text-2xl block mb-1">{h}</span>
-              <span className="font-mono-data text-[0.65rem] tracking-widest uppercase opacity-60 block mb-2">{h===1?'hour':'hours'}</span>
-              {loading ? <span className="block w-12 h-3 mx-auto rounded bg-[var(--public-surface-strong)] animate-pulse"/> :
-               noSlots ? <span className="font-mono-data text-[0.6rem] tracking-widest uppercase text-red-400/60">No slots</span> :
-               <span className={`font-mono-data text-[0.6rem] tracking-widest uppercase ${duration===h?'text-[var(--amber)]/75':'text-[var(--line-faint)]'}`}>{validAvail.length} slot{validAvail.length!==1?'s':''}</span>}
+            <button
+              key={h}
+              type="button"
+              disabled={none}
+              aria-pressed={on}
+              onClick={() => { setDuration(h); setHint(''); }}
+              className="cursor-pointer rounded-[18px] border p-4 text-left disabled:cursor-not-allowed disabled:opacity-40 sm:p-5"
+              style={on ? { background: 'var(--amber)', color: 'var(--ink)', borderColor: 'var(--amber)' } : { background: 'var(--surface)', color: 'var(--line)', borderColor: 'var(--divider-strong)' }}
+            >
+              <span className="font-display block text-[2.4rem]">{h}</span>
+              <span className="mb-3 block text-[0.9rem] font-bold">{h === 1 ? 'hour' : 'hours'}</span>
+              <span className="font-mono-data block text-[0.9rem] font-bold">{peso(rate * h)}</span>
+              <span className={`mt-1.5 block text-[0.8rem] ${on ? '' : 'text-[var(--line-dim)]'}`}>
+                {loading ? 'Checking…' : none ? 'No slots' : `${n} start time${n === 1 ? '' : 's'}`}
+              </span>
             </button>
           );
         })}
       </div>
-      {!loading && hasSlots && (
-        <div className="mb-6 public-card p-4">
-          <p className="font-mono-data text-[0.6rem] tracking-widest uppercase text-[var(--line-faint)] mb-3">Available times for {duration}h</p>
-          <div className="flex flex-wrap gap-2">
-            {selectedAvail.map(slot => (
-              <PublicBadge key={slot} className="text-[var(--amber)] border-[rgba(232,163,61,0.35)] bg-[rgba(232,163,61,0.1)]">
-                {fmtSlotRange(slot, duration)}
-              </PublicBadge>
-            ))}
-          </div>
-        </div>
-      )}
-      {!loading && !hasSlots && (
-        <InlineNotice variant="error" className="mb-6">
-          <p className="text-sm font-medium mb-1">No available slots for {duration}h</p>
-          <p className="text-xs opacity-80">Try a shorter duration or different date.</p>
-        </InlineNotice>
-      )}
-      <div className="flex gap-3">
-        <PublicButton variant="ghost" onClick={onBack}>← Back</PublicButton>
-        <PublicButton variant="secondary" disabled={!hasSlots && !loading} onClick={onNext}>Continue →</PublicButton>
-      </div>
+      <p className="mb-6 mt-0 text-[0.85rem] text-[var(--line-dim)]">Longer sessions have fewer start times because the court must be free for the whole session.</p>
+      {hint && <p role="alert" className={hintCls}>{hint}</p>}
+      <button type="button" onClick={next} className="pub-cta pub-cta-primary">Choose a time →</button>
     </div>
   );
 }
 
-// ── Time Step ─────────────────────────────────────────────────────────────────
+// ── Time step ─────────────────────────────────────────────────────────────────
 
-function TimeStep({ date, courtNum, duration, slug, schedule, timeSlot, setTimeSlot, onBack, onNext }: {
-  date: string; courtNum: number; duration: number; slug: string;
-  schedule: ScheduleRule[];
-  timeSlot: string; setTimeSlot: (s: string) => void;
-  onBack: () => void; onNext: () => void;
+const PERIODS = [
+  { label: 'Morning', test: (m: number) => m < 12 * 60 },
+  { label: 'Afternoon', test: (m: number) => m >= 12 * 60 && m < 17 * 60 },
+  { label: 'Evening', test: (m: number) => m >= 17 * 60 },
+];
+
+function TimeStep({ date, courtNum, duration, slug, schedule, timeSlot, setTimeSlot, takenMessage, onNext }: {
+  date: string; courtNum: number; duration: number; slug: string; schedule: ScheduleRule[];
+  timeSlot: string; setTimeSlot: (s: string) => void; takenMessage: string; onNext: () => void;
 }) {
   const [availability, setAvailability] = useState<CourtAvailability | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error,   setError]   = useState('');
+  const [error, setError] = useState('');
+  const [hint, setHint] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
     try {
-      const res  = await fetch(`/api/public/courts/${slug}/availability?date=${date}&duration=${duration}`);
+      const res = await fetch(`/api/public/courts/${slug}/availability?date=${date}&duration=${duration}`);
       const data = await res.json();
       const c = (data.courts ?? []).find((x: CourtAvailability) => x.court === courtNum);
       setAvailability(c ?? null);
@@ -176,138 +138,210 @@ function TimeStep({ date, courtNum, duration, slug, schedule, timeSlot, setTimeS
   const blockedSlots = availability?.blockedSlots ?? [];
   const availableSlots = new Set(availability?.availableSlots ?? []);
 
+  const next = () => {
+    if (!timeSlot) { setHint('Pick a start time to continue.'); return; }
+    onNext();
+  };
+
   return (
-    <div className="booking-anim">
-      <p className="section-head eyebrow mb-1">Select Start Time</p>
-      <p className="text-[var(--line-faint)] text-xs mb-2 font-mono-data">{fmtDateShort(date)} · Court {courtNum} · {duration}h session</p>
-      <div className="mb-5 flex items-center gap-2">
-        <span className="font-mono-data text-[0.6rem] tracking-widest uppercase text-[var(--line-faint)]">Your session is</span>
-        <PublicBadge className="text-[var(--amber)] border-[rgba(232,163,61,0.35)] bg-[rgba(232,163,61,0.1)]">{duration} hour{duration>1?'s':''}</PublicBadge>
-      </div>
+    <div>
+      <h2 className={h2}>Choose a start time</h2>
+      <p className={sub}>{fmtDateChip(date)} · Court {courtNum} · {duration} hour{duration > 1 ? 's' : ''}</p>
+
+      {takenMessage && <InlineNotice variant="error" className="mb-4"><p className="text-sm font-medium">{takenMessage}</p></InlineNotice>}
+
       {loading ? (
-        <div className="space-y-2 mb-6">{[...Array(6)].map((_,i) => <div key={i} className="h-14 rounded-[var(--r-block)] bg-[var(--public-surface)] animate-pulse"/>)}</div>
+        <div className="mb-6 space-y-2">{[...Array(4)].map((_, i) => <div key={i} className="h-14 animate-pulse rounded-[var(--r-block)] bg-[var(--public-surface)]" />)}</div>
       ) : error ? (
         <InlineNotice variant="error" className="mb-6">
           <p className="text-sm">{error}</p>
-          <button onClick={load} className="font-mono-data text-[0.7rem] opacity-80 hover:opacity-100 mt-2 transition-opacity">Try again →</button>
+          <button type="button" onClick={load} className="mt-2 text-[0.8rem] opacity-80 transition-opacity hover:opacity-100">Try again →</button>
         </InlineNotice>
+      ) : slots.length === 0 ? (
+        <InlineNotice variant="error" className="mb-6"><p className="text-sm">No start times for this duration. Go back and try a shorter one.</p></InlineNotice>
       ) : (
-        <div className="space-y-2 mb-6">
-          {slots.map(slot => {
-            const blocked  = !availableSlots.has(slot) || blockedSlots.includes(slot);
-            const sel      = timeSlot === slot;
+        <div className="mb-5 max-h-[340px] overflow-y-auto overscroll-contain border-t border-[var(--divider)] pr-2">
+          {PERIODS.map((p) => {
+            const list = slots.filter((s) => p.test(toMinutes(s.split('-')[0])));
+            if (list.length === 0) return null;
             return (
-              <button key={slot} disabled={blocked}
-                className={`time-range-btn ${sel?'selected':''} ${blocked?'blocked':''}`}
-                onClick={() => setTimeSlot(slot)}>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <span className={`text-sm font-medium ${sel?'text-[var(--amber)]':blocked?'text-[var(--line-faint)]':'text-[var(--line-dim)]'}`}>
-                      {fmtSlotRange(slot, duration)}
-                    </span>
-                    <span className={`font-mono-data text-[0.6rem] tracking-widest uppercase ${sel?'text-[var(--amber)]/60':blocked?'text-[var(--line-faint)]':'text-[var(--line-faint)]'}`}>{duration}h</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {blocked && <PublicBadge className="opacity-60">Booked</PublicBadge>}
-                    {sel && <PublicBadge className="text-[var(--amber)] border-[rgba(232,163,61,0.35)] bg-[rgba(232,163,61,0.12)]">Selected ✓</PublicBadge>}
-                  </div>
+              <div key={p.label}>
+                <p className="mb-2.5 mt-4 text-[0.75rem] font-bold uppercase tracking-[0.08em] text-[var(--line-dim)]">{p.label}</p>
+                <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+                  {list.map((slot) => {
+                    const start = toMinutes(slot.split('-')[0]);
+                    const blocked = !availableSlots.has(slot) || blockedSlots.includes(slot);
+                    const on = timeSlot === slot;
+                    return (
+                      <button
+                        key={slot}
+                        type="button"
+                        disabled={blocked}
+                        aria-pressed={on}
+                        onClick={() => { setTimeSlot(slot); setHint(''); }}
+                        className="cursor-pointer rounded-xl border px-2 py-3 text-center disabled:cursor-not-allowed disabled:opacity-45"
+                        style={on ? { background: 'var(--amber)', color: 'var(--ink)', borderColor: 'var(--amber)' } : { background: 'var(--page-bg)', color: 'var(--line)', borderColor: 'var(--divider-strong)' }}
+                      >
+                        <span className={`font-mono-data block text-[0.95rem] font-bold ${blocked ? 'line-through' : ''}`}>{fmtMins(start)}</span>
+                        <span className={`mt-0.5 block text-[0.72rem] ${on ? '' : 'text-[var(--line-dim)]'}`}>{blocked ? 'Booked' : `to ${fmtMins(start + duration * 60)}${on ? ' ✓' : ''}`}</span>
+                      </button>
+                    );
+                  })}
                 </div>
-              </button>
+              </div>
             );
           })}
         </div>
       )}
-      <div className="flex gap-3 mb-3">
-        <PublicButton variant="ghost" onClick={onBack}>← Back</PublicButton>
-        <PublicButton variant="secondary" className="flex-1 sm:flex-none" disabled={!timeSlot} onClick={onNext}>Continue →</PublicButton>
-      </div>
-      <p className="font-mono-data text-[0.65rem] text-[var(--line-faint)]">Greyed slots are unavailable for your chosen duration.</p>
+
+      {hint && <p role="alert" className={hintCls}>{hint}</p>}
+      <button type="button" onClick={next} className="pub-cta pub-cta-primary mt-1">Continue →</button>
     </div>
   );
 }
 
-// ── Main Page ─────────────────────────────────────────────────────────────────
+// ── Field wrapper ─────────────────────────────────────────────────────────────
+
+function Field({ id, label, optional, error, hint, children }: { id: string; label: string; optional?: boolean; error?: string; hint?: ReactNode; children: ReactNode }) {
+  return (
+    <div>
+      <label htmlFor={id} className="mb-1.5 block text-[0.9rem] font-bold">
+        {label}{optional && <span className="font-medium text-[var(--line-dim)]"> (optional)</span>}
+      </label>
+      {children}
+      {error ? <p id={`${id}-msg`} role="alert" className="mb-0 mt-1.5 text-[0.82rem] text-[var(--danger)]">{error}</p>
+        : hint ? <p id={`${id}-msg`} className="mb-0 mt-1.5 text-[0.82rem] text-[var(--line-dim)]">{hint}</p> : null}
+    </div>
+  );
+}
+
+const inputStyle = (error: string) => (error ? { borderColor: 'var(--danger)' } : undefined);
+
+// ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function BookingPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params);
   const router = useRouter();
 
-  const [court,    setCourt]    = useState<Court | null>(null);
+  const [court, setCourt] = useState<Court | null>(null);
   const [schedule, setSchedule] = useState<ScheduleRule[]>([]);
-  const [loading,  setLoading]  = useState(true);
+  const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
 
-  const [step,       setStep]       = useState(1);
-  const [date,       setDate]       = useState('');
-  const [courtNum,   setCourtNum]   = useState<number | null>(null);
-  const [duration,   setDuration]   = useState(1);
-  const [timeSlot,   setTimeSlot]   = useState('');
+  const [step, setStep] = useState(1);
+  const [dir, setDir] = useState<'fwd' | 'back'>('fwd');
+  const [date, setDate] = useState('');
+  const [courtNum, setCourtNum] = useState<number | null>(null);
+  const [duration, setDuration] = useState(1);
+  const [timeSlot, setTimeSlot] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [success,    setSuccess]    = useState(false);
-  const [closedDay,  setClosedDay]  = useState(false);
+  const [success, setSuccess] = useState(false);
+  const [closedDay, setClosedDay] = useState(false);
   const [checkingSched, setCheckingSched] = useState(false);
+  const [hint, setHint] = useState('');
+  const [joyNote, setJoyNote] = useState<JoyNote>(null);
+  const [submitError, setSubmitError] = useState('');
+  const [takenMessage, setTakenMessage] = useState('');
 
-  const [form, setForm] = useState({ name:'', phone:'', email:'', playerCount:'2', notes:'' });
+  const [form, setForm] = useState({ name: '', phone: '', email: '', playerCount: '2', notes: '' });
+  const [touched, setTouched] = useState<Record<string, boolean>>({});
+  const [attempted, setAttempted] = useState(false);
 
   // Load court + schedule
   useEffect(() => {
     Promise.all([
-      fetch(`/api/public/courts/${slug}`).then(r => r.json()),
-      fetch(`/api/public/courts/${slug}/schedule`).then(r => r.json()),
+      fetch(`/api/public/courts/${slug}`).then((r) => r.json()),
+      fetch(`/api/public/courts/${slug}/schedule`).then((r) => r.json()),
     ]).then(([c, s]) => {
       if (c.error) { setNotFound(true); return; }
       setCourt(c);
       setSchedule(Array.isArray(s) ? s : []);
     }).catch(() => setNotFound(true))
-    .finally(() => setLoading(false));
+      .finally(() => setLoading(false));
   }, [slug]);
 
-  // Check if date is closed
+  // Check if the selected date is closed
   useEffect(() => {
     if (!date || !slug) return;
     setCheckingSched(true); setClosedDay(false);
     fetch(`/api/public/courts/${slug}/availability?date=${date}&duration=1`)
-      .then(r => r.json())
-      .then(data => setClosedDay(data.isFullyClosed ?? false))
+      .then((r) => r.json())
+      .then((data) => setClosedDay(data.isFullyClosed ?? false))
       .finally(() => setCheckingSched(false));
   }, [date, slug]);
 
   useEffect(() => { setTimeSlot(''); }, [duration]);
 
-  const courtList = court ? Array.from({ length: court.courtCount }, (_, i) => i+1) : [];
+  // Step changes: scroll to top, clear stale hints
+  useEffect(() => {
+    window.scrollTo({ top: 0 });
+    setHint('');
+    setJoyNote((n) => (n?.state === 'taken' ? n : null));
+  }, [step]);
+
+  const go = useCallback((n: number) => {
+    setDir(n > step ? 'fwd' : 'back');
+    setStep(n);
+  }, [step]);
+
+  const errors = useMemo(() => ({
+    name: validateName(form.name),
+    phone: validatePhone(form.phone),
+    email: validateEmail(form.email),
+    notes: validateNotes(form.notes),
+  }), [form]);
+  const visibleError = (k: keyof typeof errors) => (touched[k] || attempted ? errors[k] : '');
+  const firstVisibleError = (['name', 'phone', 'email', 'notes'] as const).map(visibleError).find(Boolean) ?? '';
+  const emailSuggestion = touched.email ? suggestEmail(form.email) : null;
+
   const hourlyRate = court?.settings?.hourlyRate ?? court?.settings?.reservationFee ?? 210;
   const totalFee = hourlyRate * duration;
+  const courtList = court ? Array.from({ length: court.courtCount }, (_, i) => i + 1) : [];
+  const closedDow = useCallback((dow: number) => schedule.find((r) => r.dayOfWeek === dow)?.isClosed === true, [schedule]);
+
+  const touch = (k: string) => setTouched((t) => ({ ...t, [k]: true }));
 
   const handleSubmit = async (paymentOption: 'downpayment' | 'full') => {
-    if (!date || !courtNum || !timeSlot || !form.name || !form.phone) return;
-    if (!navigator.onLine) {
-      alert('You are offline. Reconnect to submit a booking request.');
-      return;
-    }
+    if (submitting) return;
+    setAttempted(true);
+    setSubmitError('');
+    const order = [['name', 'bk-name'], ['phone', 'bk-phone'], ['email', 'bk-email'], ['notes', 'bk-notes']] as const;
+    const bad = order.find(([k]) => errors[k]);
+    if (bad) { document.getElementById(bad[1])?.focus(); return; }
+    if (!date || !courtNum || !timeSlot) return;
+    if (!navigator.onLine) { setSubmitError('You are offline. Reconnect to submit a booking request.'); return; }
+
     setSubmitting(true);
     try {
       const res = await fetch(`/api/public/courts/${slug}/reserve`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          courtNum, date, timeSlot, duration,
-          paymentOption,
-          name:        form.name,
-          phone:       form.phone,
-          email:       form.email,
+          courtNum, date, timeSlot, duration, paymentOption,
+          name: form.name.trim(),
+          phone: form.phone.trim(),
+          email: form.email.trim(),
           playerCount: Number(form.playerCount),
-          notes:       form.notes,
+          notes: form.notes.trim(),
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Booking failed');
-      setSuccess(true);
-      if (data.publicRef) {
-        router.push(`/book/${slug}/status/${data.publicRef}`);
+      if (!res.ok) {
+        const msg = data.error || 'Booking failed. Please try again.';
+        if (res.status === 409 || /already|taken|booked|unavailable/i.test(msg)) {
+          // The slot was taken while the form was open: back to the Time step with fresh availability
+          setTimeSlot('');
+          setTakenMessage('Someone just booked that slot. Pick another time.');
+          setJoyNote({ state: 'taken', message: 'Someone just booked that slot.' });
+          go(4);
+          return;
+        }
+        throw new Error(msg);
       }
+      setSuccess(true);
+      if (data.publicRef) router.push(`/book/${slug}/status/${data.publicRef}`);
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Booking failed. Please try again.';
-      alert(message);
+      setSubmitError(err instanceof Error ? err.message : 'Booking failed. Please try again.');
     } finally {
       setSubmitting(false);
     }
@@ -315,16 +349,34 @@ export default function BookingPage({ params }: { params: Promise<{ slug: string
 
   const resetAll = () => {
     setSuccess(false); setStep(1); setDate(''); setCourtNum(null);
-    setDuration(1); setTimeSlot('');
-    setForm({ name:'', phone:'', email:'', playerCount:'2', notes:'' });
+    setDuration(1); setTimeSlot(''); setTouched({}); setAttempted(false); setTakenMessage('');
+    setForm({ name: '', phone: '', email: '', playerCount: '2', notes: '' });
   };
+
+  // ── Joy ──
+  let joy: { state: JoyState; message: string } = { state: 'idle', message: JOY_HINTS[step - 1] };
+  if (success) joy = { state: 'done', message: 'You are booked!' };
+  else if (submitting) joy = { state: 'working', message: 'Holding your time for 10 minutes.' };
+  else if (step === 5 && firstVisibleError) joy = { state: 'invalid', message: firstVisibleError };
+  else if (joyNote) joy = joyNote;
+  else if (step === 1 && date && !checkingSched && closedDay) joy = { state: 'closed', message: 'We are closed that day. Pick another date.' };
+
+  // ── Summary values ──
+  const summaryRows = [
+    { label: 'Date', value: date ? fmtDateChip(date) : null },
+    { label: 'Court', value: courtNum ? `Court ${courtNum}` : null },
+    { label: 'Duration', value: step >= 3 ? `${duration} hour${duration > 1 ? 's' : ''}` : null },
+    { label: 'Time', value: timeSlot && step >= 4 ? fmtSlotRange(timeSlot, duration) : null },
+    { label: 'Rate / hr', value: peso(hourlyRate) },
+  ];
+  const summaryTotal = step >= 3 ? totalFee : null;
 
   // ── Loading ──
   if (loading) return (
     <>
-      <PublicNav />
-      <div className="flex-1 flex items-center justify-center booking-grid-bg min-h-[50vh]">
-        <p className="font-mono-data text-[var(--line-faint)] text-sm">Loading...</p>
+      <BookingNav />
+      <div className="flex min-h-[50vh] flex-1 items-center justify-center">
+        <p className="text-sm text-[var(--line-faint)]">Loading…</p>
       </div>
     </>
   );
@@ -332,43 +384,36 @@ export default function BookingPage({ params }: { params: Promise<{ slug: string
   // ── Not found ──
   if (notFound) return (
     <>
-      <PublicNav />
-      <div className="flex-1 flex flex-col items-center justify-center gap-4 booking-grid-bg min-h-[50vh]">
-        <p className="font-mono-data text-[var(--line-dim)] text-sm">Court not found.</p>
+      <BookingNav />
+      <div className="flex min-h-[50vh] flex-1 flex-col items-center justify-center gap-4">
+        <p className="text-sm text-[var(--line-dim)]">Court not found.</p>
         <Link href="/usercourts" className="pub-cta pub-cta-ghost">← Find courts</Link>
       </div>
       <PublicFooter compact />
     </>
   );
 
-  // ── Success ──
+  // ── Success (shown briefly before the status page opens) ──
   if (success) return (
     <>
-      <PublicNav />
-      <div className="flex-1 flex items-center justify-center p-4 sm:p-6 booking-grid-bg">
-        <div className="text-center w-full max-w-sm">
-          <div className="booking-fade-up w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-[rgba(232,163,61,0.12)] border border-[rgba(232,163,61,0.35)] flex items-center justify-center mx-auto mb-6 sm:mb-8">
-            <span className="text-[var(--amber)] text-2xl sm:text-3xl">✓</span>
-          </div>
-          <h2 className="booking-fade-up-2 font-display text-3xl sm:text-4xl text-[var(--line)] mb-3">Booking Received</h2>
-          <p className="booking-fade-up-2 text-[var(--line-dim)] text-sm mb-2">at <span className="text-[var(--line)]">{court?.name}</span></p>
-          <p className="booking-fade-up-2 text-[var(--line-faint)] text-sm mb-6 sm:mb-8 px-2">
-            Complete payment to secure your reservation. The court owner can cancel it if needed.
-          </p>
+      <BookingNav />
+      <div className="flex flex-1 items-center justify-center p-4 sm:p-6">
+        <div className="w-full max-w-sm text-center">
+          <h2 className="font-display t-h3 mb-3 text-[var(--line)]">Booking Received</h2>
+          <p className="mb-2 text-sm text-[var(--line-dim)]">at <span className="text-[var(--line)]">{court?.name}</span></p>
+          <p className="mb-6 px-2 text-sm text-[var(--line-faint)] sm:mb-8">Complete payment to secure your reservation. The court owner can cancel it if needed.</p>
           <KeyValueSummary
-            className="booking-fade-up-3 mb-6 sm:mb-8 text-left"
+            className="mb-6 text-left sm:mb-8"
             rows={([
-              ['Court',    `Court ${courtNum}`],
-              ['Date',     fmtDateShort(date)],
-              ['Time',     fmtSlotRange(timeSlot, duration)],
+              ['Court', `Court ${courtNum}`],
+              ['Date', fmtDateShort(date)],
+              ['Time', fmtSlotRange(timeSlot, duration)],
               ['Duration', `${duration}h`],
-              ['Name',     form.name],
-              ['Phone',    form.phone],
-            ] as [string,string][])}
+              ['Name', form.name],
+              ['Phone', form.phone],
+            ] as [string, string][])}
           />
-          <button onClick={resetAll} className="booking-fade-up-3 text-[var(--amber)] hover:brightness-110 text-sm transition-all">
-            ← Book another slot
-          </button>
+          <button type="button" onClick={resetAll} className="cursor-pointer border-none bg-transparent text-sm text-[var(--amber)] transition-all hover:brightness-110">← Book another slot</button>
         </div>
       </div>
       <PublicFooter compact />
@@ -376,192 +421,197 @@ export default function BookingPage({ params }: { params: Promise<{ slug: string
   );
 
   // ── Main ──
+  const prevLabel = step > 1 ? STEP_LABELS[step - 2] : undefined;
+  const stepAnim = dir === 'fwd' ? 'step-fwd' : 'step-back';
+
   return (
     <>
-      <PublicNav />
+      <BookingNav backLabel={prevLabel} onBack={step > 1 ? () => go(step - 1) : undefined} />
 
-      <div className="booking-grid-bg flex-1">
-        <div className="max-w-2xl mx-auto px-[clamp(1.25rem,5vw,3rem)] py-10 sm:py-16 booking-safe-bottom">
-
-          {/* Header */}
-          <div className="mb-10 sm:mb-16 booking-anim">
-            <Link href="/usercourts" className="inline-flex items-center gap-1.5 text-[0.82rem] text-[var(--line-faint)] no-underline hover:text-[var(--amber)] transition-colors mb-6">
-              ← All courts
-            </Link>
-            <div className="inline-flex items-center gap-2.5 mb-5 public-chip">
-              {court?.logoUrl ? (
-                <img src={court.logoUrl} alt={court.name} className="w-6 h-6 rounded object-cover" />
-              ) : (
-                <div className="w-6 h-6 rounded bg-[rgba(232,163,61,0.14)] flex items-center justify-center">
-                  <div className="w-2.5 h-2.5 bg-[var(--amber)] rounded-sm" />
-                </div>
-              )}
-              <span className="text-sm sm:text-base text-[var(--amber)] font-semibold tracking-wide">
-                {court?.name ?? 'Court'}
-              </span>
-            </div>
-            <div className="flex items-center gap-3 mb-6 sm:mb-8 flex-wrap">
-              <span className="section-head eyebrow mb-0">Court Booking</span>
-              {court?.sports?.map(s => (
-                <PublicBadge key={s} className="capitalize">{s}</PublicBadge>
-              ))}
-            </div>
-            <h1 className="font-display text-[clamp(2rem,5vw,3.2rem)] text-[var(--line)] leading-tight mb-3">
-              Reserve at <span className="text-[var(--amber)]">{court?.name ?? 'Court'}</span>
-            </h1>
-            <p className="text-[var(--line-dim)] text-sm">
-              {court?.location?.city && `${court.location.city} · `}
-              {court?.courtCount} court{court?.courtCount !== 1 ? 's' : ''} available
+      <div className="flex-1">
+        <div className="mx-auto max-w-[1080px] px-[clamp(1.25rem,5vw,3rem)] pb-16" style={{ paddingBottom: 'max(4rem, env(safe-area-inset-bottom))' }}>
+          <header className="pb-7 pt-8">
+            <p className="t-eyebrow mb-2 text-[var(--success)]">
+              {(court?.sports ?? []).join(' · ')}{court?.sports?.length ? ' · ' : ''}{court?.courtCount} court{court?.courtCount !== 1 ? 's' : ''}
             </p>
-          </div>
+            <h1 className="font-display m-0 text-[clamp(1.9rem,4vw,3rem)] text-[var(--line)]">{court?.name}</h1>
+            {court?.location?.city && <p className="mb-0 mt-1.5 text-[0.95rem] text-[var(--line-dim)]">{court.location.city}{court.location.province ? `, ${court.location.province}` : ''}</p>}
+          </header>
 
-          <PublicStepper labels={['Date', 'Court', 'Duration', 'Time', 'Details']} step={step} />
+          <BookingStepper labels={STEP_LABELS} step={step} onStepClick={go} />
 
-          {/* Step 1 — Date */}
-          {step === 1 && (
-            <div className="booking-anim">
-              <p className="section-head eyebrow mb-4">Select Date</p>
-              <PublicInput type="date" min={todayStr()} max={bookingMaxDateStr()} className="mb-4" value={date}
-                onChange={e => {
-                  const selectedDate = e.target.value;
-                  if (selectedDate >= todayStr() && selectedDate <= bookingMaxDateStr()) setDate(selectedDate);
-                }}/>
-              {date && checkingSched && (
-                <InlineNotice className="mb-4">
-                  <p className="text-xs">Checking schedule...</p>
-                </InlineNotice>
-              )}
-              {date && !checkingSched && closedDay && (
-                <InlineNotice variant="error" className="mb-4">
-                  <p className="text-sm font-medium">Venue closed on this date</p>
-                  <p className="text-xs mt-1 opacity-80">Please choose a different date.</p>
-                </InlineNotice>
-              )}
-              {date && !checkingSched && !closedDay && (
-                <InlineNotice variant="success" className="mb-6">
-                  <p className="text-sm">{fmtDateLong(date)}</p>
-                </InlineNotice>
-              )}
-              <PublicButton variant="secondary" className="w-full sm:w-auto" disabled={!date || checkingSched || closedDay}
-                onClick={() => setStep(2)}>Continue →</PublicButton>
-            </div>
-          )}
-
-          {/* Step 2 — Court */}
-          {step === 2 && (
-            <div className="booking-anim">
-              <p className="section-head eyebrow mb-1">Select Court</p>
-              <p className="text-[var(--line-faint)] text-xs mb-5 font-mono-data">{fmtDateLong(date)}</p>
-              <div className="grid grid-cols-2 gap-3 mb-6">
-                {courtList.map(c => (
-                  <button key={c} className={`court-btn ${courtNum===c?'selected':''}`}
-                    onClick={() => { setCourtNum(c); setTimeSlot(''); }}>
-                    <div className="font-mono-data text-[0.55rem] tracking-widest uppercase text-[var(--line-faint)] mb-1">Court</div>
-                    <div className="font-display text-3xl sm:text-4xl text-[var(--line)] mb-2">{c}</div>
-                    {courtNum===c && <div className="font-mono-data text-[0.55rem] text-[var(--amber)] tracking-widest uppercase">Selected ✓</div>}
-                  </button>
-                ))}
-              </div>
-              <div className="flex gap-3">
-                <PublicButton variant="ghost" onClick={() => setStep(1)}>← Back</PublicButton>
-                <PublicButton variant="secondary" className="flex-1 sm:flex-none" disabled={!courtNum} onClick={() => setStep(3)}>Continue →</PublicButton>
-              </div>
-            </div>
-          )}
-
-          {/* Step 3 — Duration */}
-          {step === 3 && courtNum && (
-            <DurationStep
-              duration={duration} setDuration={setDuration}
-              date={date} courtNum={courtNum} slug={slug} schedule={schedule}
-              onBack={() => setStep(2)} onNext={() => setStep(4)}
-            />
-          )}
-
-          {/* Step 4 — Time */}
-          {step === 4 && courtNum && (
-            <TimeStep
-              date={date} courtNum={courtNum} duration={duration} slug={slug} schedule={schedule}
-              timeSlot={timeSlot} setTimeSlot={setTimeSlot}
-              onBack={() => setStep(3)} onNext={() => setStep(5)}
-            />
-          )}
-
-          {/* Step 5 — Details */}
-          {step === 5 && (
-            <div className="booking-anim">
-              <p className="section-head eyebrow mb-1">Your Details</p>
-              <p className="text-[var(--line-faint)] text-xs mb-6 font-mono-data">Court {courtNum} · {fmtDateShort(date)} · {fmtSlotRange(timeSlot, duration)}</p>
-              <div className="space-y-4 mb-6">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <PublicField label="Full Name *">
-                    <PublicInput placeholder="Juan dela Cruz" value={form.name}
-                      onChange={e => setForm({...form, name: e.target.value})}/>
-                  </PublicField>
-                  <PublicField label="Phone *">
-                    <PublicInput placeholder="09XX XXX XXXX" type="tel" value={form.phone}
-                      onChange={e => setForm({...form, phone: e.target.value})}/>
-                  </PublicField>
+          <div className="grid items-start gap-10 md:grid-cols-[1fr_300px] lg:grid-cols-[1fr_340px]">
+            <div key={step} className={stepAnim}>
+              {step >= 2 && (
+                <div className="mb-5 md:hidden">
+                  <SummaryLine parts={[date ? fmtDateChip(date) : null, courtNum ? `Court ${courtNum}` : null, step >= 3 ? `${duration}h` : null, timeSlot && step >= 4 ? fmtSlotRange(timeSlot, duration) : null]} total={summaryTotal} />
                 </div>
-                <PublicField label="Email (optional)">
-                  <PublicInput type="email" placeholder="juan@email.com" value={form.email}
-                    onChange={e => setForm({...form, email: e.target.value})}/>
-                </PublicField>
-                <PublicField label="Players">
-                  <PublicSelect value={form.playerCount}
-                    onChange={e => setForm({...form, playerCount: e.target.value})}>
-                    {[1,2,3,4,5,6].map(n => <option key={n} value={n}>{n} player{n>1?'s':''}</option>)}
-                  </PublicSelect>
-                </PublicField>
-                <PublicField label="Notes (optional)">
-                  <PublicTextarea rows={3} placeholder="Any special requests..."
-                    value={form.notes} onChange={e => setForm({...form, notes: e.target.value})}/>
-                </PublicField>
-              </div>
+              )}
 
-              <KeyValueSummary
-                className="mb-6"
-                title="Booking Summary"
-                rows={[
-                  ['Venue', court?.name ?? ''],
-                  ['Court', `Court ${courtNum}`],
-                  ['Date', fmtDateShort(date)],
-                  ['Time', fmtSlotRange(timeSlot, duration)],
-                  ['Duration', `${duration}h`],
-                  ['Rate/hr', `₱${hourlyRate}`],
-                  ['Total', `₱${totalFee}`],
-                ]}
-              />
+              {/* Step 1: Date */}
+              {step === 1 && (
+                <div>
+                  <h2 className={h2}>Pick a date</h2>
+                  <p className={sub}>Choose a day to see open courts and times.</p>
+                  <BookingCalendar value={date} onChange={(d) => { setDate(d); setHint(''); }} min={todayStr()} max={bookingMaxDateStr()} closedDow={closedDow} />
+                  <p className="mb-0 mt-3 text-[0.82rem] text-[var(--line-dim)]">Bookings open up to 14 days ahead.</p>
+                  {date && checkingSched && <InlineNotice className="mt-4"><p className="text-xs">Checking schedule…</p></InlineNotice>}
+                  {date && !checkingSched && closedDay && (
+                    <InlineNotice variant="error" className="mt-4">
+                      <p className="text-sm font-medium">Venue closed on this date</p>
+                      <p className="mt-1 text-xs opacity-80">Please choose a different date.</p>
+                    </InlineNotice>
+                  )}
+                  {date && !checkingSched && !closedDay && <InlineNotice variant="success" className="mt-4"><p className="text-sm">{fmtDateLong(date)}</p></InlineNotice>}
+                  {hint && <p role="alert" className={hintCls}>{hint}</p>}
+                  <button
+                    type="button"
+                    className="pub-cta pub-cta-primary mt-5"
+                    onClick={() => {
+                      if (!date) { setHint('Pick a date to continue.'); return; }
+                      if (checkingSched) return;
+                      if (closedDay) { setHint('The venue is closed on that date. Pick another day.'); return; }
+                      go(2);
+                    }}
+                  >
+                    Continue →
+                  </button>
+                </div>
+              )}
 
-              <div className="flex flex-col gap-3">
-                <PublicButton variant="ghost" className="order-2 sm:order-1" onClick={() => setStep(4)}>← Back</PublicButton>
-                <PublicButton variant="primary" className="order-1 sm:order-2 w-full"
-                  disabled={!form.name || !form.phone || submitting} onClick={() => handleSubmit('downpayment')}>
-                  {submitting ? 'Submitting...' : `Pay 50% Now (₱${(totalFee * 0.5).toFixed(2)}) + Fee`}
-                </PublicButton>
-                <PublicButton variant="primary" className="order-1 sm:order-2 w-full"
-                  disabled={!form.name || !form.phone || submitting} onClick={() => handleSubmit('full')}>
-                  {submitting ? 'Submitting...' : `Pay Full Amount (₱${totalFee.toFixed(2)}) + Fee`}
-                </PublicButton>
-              </div>
-              <p className="font-mono-data text-[0.65rem] text-[var(--line-faint)] mt-4">Payment opens next. Your time is held for 10 minutes.</p>
+              {/* Step 2: Court */}
+              {step === 2 && (
+                <div>
+                  <h2 className={h2}>Choose a court</h2>
+                  <p className={sub}>{fmtDateChip(date)} · {court?.courtCount} court{court?.courtCount !== 1 ? 's' : ''} · {peso(hourlyRate)} / hr each</p>
+                  <div className="mb-5 grid grid-cols-2 gap-3.5">
+                    {courtList.map((c) => {
+                      const on = courtNum === c;
+                      return (
+                        <button
+                          key={c}
+                          type="button"
+                          aria-pressed={on}
+                          onClick={() => { setCourtNum(c); setTimeSlot(''); setHint(''); }}
+                          className="flex min-h-[84px] cursor-pointer items-center justify-between rounded-[18px] border px-6 py-5 text-left"
+                          style={on ? { background: 'var(--amber)', color: 'var(--ink)', borderColor: 'var(--amber)' } : { background: 'var(--surface)', color: 'var(--line)', borderColor: 'var(--divider-strong)' }}
+                        >
+                          <span className="font-display text-[2rem] sm:text-[2.2rem]">Court {c}</span>
+                          {on && <b className="text-[0.85rem]">Selected ✓</b>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {hint && <p role="alert" className={hintCls}>{hint}</p>}
+                  <button type="button" className="pub-cta pub-cta-primary" onClick={() => (courtNum ? go(3) : setHint('Pick a court to continue.'))}>Continue →</button>
+                </div>
+              )}
+
+              {/* Step 3: Duration */}
+              {step === 3 && courtNum && (
+                <DurationStep
+                  duration={duration} setDuration={setDuration}
+                  date={date} courtNum={courtNum} slug={slug} schedule={schedule} rate={hourlyRate}
+                  onJoy={setJoyNote} onNext={() => go(4)}
+                />
+              )}
+
+              {/* Step 4: Time */}
+              {step === 4 && courtNum && (
+                <TimeStep
+                  date={date} courtNum={courtNum} duration={duration} slug={slug} schedule={schedule}
+                  timeSlot={timeSlot} setTimeSlot={(s) => { setTimeSlot(s); setTakenMessage(''); setJoyNote(null); }}
+                  takenMessage={takenMessage} onNext={() => go(5)}
+                />
+              )}
+
+              {/* Step 5: Details */}
+              {step === 5 && (
+                <div>
+                  <h2 className={h2}>Your details</h2>
+                  <p className={sub}>Court {courtNum} · {fmtDateChip(date)} · {fmtSlotRange(timeSlot, duration)}</p>
+
+                  <div className="mb-6 grid gap-5">
+                    <div className="grid gap-5 sm:grid-cols-2">
+                      <Field id="bk-name" label="Full name" error={visibleError('name')}>
+                        <input
+                          id="bk-name" className="public-input" placeholder="Juan dela Cruz" autoComplete="name" maxLength={80}
+                          value={form.name} aria-invalid={!!visibleError('name')} aria-describedby={visibleError('name') ? 'bk-name-msg' : undefined} style={inputStyle(visibleError('name'))}
+                          onChange={(e) => setForm({ ...form, name: e.target.value })} onBlur={() => touch('name')}
+                        />
+                      </Field>
+                      <Field id="bk-phone" label="Mobile number" error={visibleError('phone')}>
+                        <input
+                          id="bk-phone" className="public-input" placeholder="0917 123 4567" type="tel" inputMode="tel" autoComplete="tel"
+                          value={form.phone} aria-invalid={!!visibleError('phone')} aria-describedby={visibleError('phone') ? 'bk-phone-msg' : undefined} style={inputStyle(visibleError('phone'))}
+                          onChange={(e) => setForm({ ...form, phone: e.target.value })} onBlur={() => touch('phone')}
+                        />
+                      </Field>
+                    </div>
+
+                    <Field
+                      id="bk-email" label="Email" optional error={visibleError('email')}
+                      hint={emailSuggestion && !visibleError('email') ? (
+                        <>Did you mean <b className="text-[var(--amber)]">{emailSuggestion}</b>?{' '}
+                          <button type="button" className="cursor-pointer border-none bg-transparent p-0 font-bold text-[var(--amber)]" onClick={() => setForm({ ...form, email: emailSuggestion })}>Use this</button></>
+                      ) : undefined}
+                    >
+                      <input
+                        id="bk-email" className="public-input" placeholder="juan@email.com" type="email" autoComplete="email"
+                        value={form.email} aria-invalid={!!visibleError('email')} aria-describedby={visibleError('email') || emailSuggestion ? 'bk-email-msg' : undefined} style={inputStyle(visibleError('email'))}
+                        onChange={(e) => setForm({ ...form, email: e.target.value })} onBlur={() => touch('email')}
+                      />
+                    </Field>
+
+                    <div>
+                      <span id="bk-players-label" className="mb-1.5 block text-[0.9rem] font-bold">Players</span>
+                      <div className="flex items-center gap-3.5" role="group" aria-labelledby="bk-players-label">
+                        <button type="button" aria-label="Fewer players" onClick={() => setForm({ ...form, playerCount: String(Math.max(1, Number(form.playerCount) - 1)) })} className="h-[50px] w-[50px] cursor-pointer rounded-xl border border-[var(--divider-strong)] bg-transparent text-[1.4rem] text-[var(--line)]">−</button>
+                        <span className="w-9 text-center text-[1.4rem] font-extrabold" aria-live="polite">{form.playerCount}</span>
+                        <button type="button" aria-label="More players" onClick={() => setForm({ ...form, playerCount: String(Math.min(MAX_PLAYERS, Number(form.playerCount) + 1)) })} className="h-[50px] w-[50px] cursor-pointer rounded-xl border border-[var(--divider-strong)] bg-transparent text-[1.4rem] text-[var(--line)]">+</button>
+                        <span className="text-[0.82rem] text-[var(--line-dim)]">Up to {MAX_PLAYERS} players per court</span>
+                      </div>
+                    </div>
+
+                    <Field id="bk-notes" label="Notes" optional error={visibleError('notes')}>
+                      <textarea
+                        id="bk-notes" rows={3} className="public-input resize-none" placeholder="Anything the court should know?"
+                        value={form.notes} aria-invalid={!!visibleError('notes')} aria-describedby={visibleError('notes') ? 'bk-notes-msg' : undefined} style={inputStyle(visibleError('notes'))}
+                        onChange={(e) => setForm({ ...form, notes: e.target.value })} onBlur={() => touch('notes')}
+                      />
+                      <p className="mb-0 mt-1 text-right text-[0.78rem] text-[var(--line-dim)]">{form.notes.length} / 200</p>
+                    </Field>
+                  </div>
+
+                  <div className="mb-7 md:hidden">
+                    <BookingSummary rows={summaryRows} total={summaryTotal} venue={court?.name} />
+                  </div>
+
+                  {submitError && <InlineNotice variant="error" className="mb-4"><p className="text-sm">{submitError}</p></InlineNotice>}
+
+                  <div className="flex max-w-[460px] flex-col gap-3">
+                    <button type="button" aria-busy={submitting} className="pub-cta pub-cta-primary w-full justify-center" onClick={() => handleSubmit('downpayment')}>
+                      {submitting ? 'Submitting…' : `Pay 50% now (₱${(totalFee * 0.5).toFixed(2)}) + fee`}
+                    </button>
+                    <button type="button" aria-busy={submitting} className="pub-cta pub-cta-ghost w-full justify-center" onClick={() => handleSubmit('full')}>
+                      {submitting ? 'Submitting…' : `Pay full amount (₱${totalFee.toFixed(2)}) + fee`}
+                    </button>
+                  </div>
+                  <p className="mb-0 mt-4 text-[0.8rem] text-[var(--line-dim)]">Payment opens next. Your time is held for 10 minutes.</p>
+                </div>
+              )}
             </div>
-          )}
+
+            {/* Summary (plain text) with Joy under it. Desktop and tablet only. */}
+            <aside className="hidden md:sticky md:top-24 md:block" aria-label="Booking summary">
+              <BookingSummary rows={summaryRows} total={summaryTotal} venue={step === 5 ? court?.name : undefined} />
+              <JoyCompanion state={joy.state} message={joy.message} />
+            </aside>
+          </div>
         </div>
       </div>
 
       <PublicFooter compact />
     </>
   );
-}
-
-function validSlotsForSchedule(dur: number, date: string, rules: ScheduleRule[]) {
-  const rule = rules.find(r => r.dayOfWeek === getDay(parseISO(date)));
-  if (!rule || rule.isClosed) return [];
-  const openMins = toMinutes(rule.openTime);
-  const closeMins = toMinutes(rule.closeTime);
-  return validSlotsForDuration(dur, date).filter(slot => {
-    const start = toMinutes(slot.split('-')[0]);
-    return start >= openMins && start + dur * 60 <= closeMins;
-  });
 }
