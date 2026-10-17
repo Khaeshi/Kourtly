@@ -1,11 +1,10 @@
 import nextJest from 'next/jest.js';
-import type { Config } from 'jest';
 
 const createJestConfig = nextJest({
   dir: './',
 });
 
-const config: Config = {
+export default createJestConfig({
   testEnvironment: 'jsdom',
   setupFilesAfterEnv: ['<rootDir>/jest.setup.ts'],
   testMatch: ['<rootDir>/src/**/*.test.{ts,tsx}'],
@@ -14,6 +13,4 @@ const config: Config = {
     '^@/lib/(.*)$': '<rootDir>/src/lib/$1',
     '^@/(.*)$': '<rootDir>/src/$1',
   },
-};
-
-export default createJestConfig(config);
+});
