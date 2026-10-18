@@ -11,6 +11,7 @@ const ReservationSchema = new mongoose.Schema({
   bookingSlots: { type: [String], default: [] },           // one key per occupied hour, used to claim a payment hold
   duration:    { type: Number, default: 1 },
   playerCount: { type: Number, default: 2 },
+  paymentCheckedAt: { type: Date, default: null },
   status: {
     type:    String,
     enum:    [

@@ -1,11 +1,13 @@
+import mongoose from 'mongoose';
 import express from 'express';
 import Court        from '../models/Court.js';
 import Reservation  from '../models/Reservation.js';
 import ScheduleRule  from '../models/ScheduleRule.js';
 import ScheduleBlock from '../models/ScheduleBlock.js';
-import User         from '../models/User.js';
+import { getXenditInvoice } from '../services/xenditService.js';
+import { applyReservationPayment, validAmount } from '../lib/reservationPayment.js';
 import {
-  ALL_SLOTS, toMinutes, getDayOfWeek,
+ALL_SLOTS, toMinutes, getDayOfWeek,
   resolveSchedule, getBlockedSlots, getValidStartSlots,
 } from '../utils/scheduleUtils.js';
 import { transitionReservationPayment } from '../lib/reservationStateMachine.js';
@@ -26,6 +28,29 @@ function buildPublicRef() {
   return `RSV-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`.toUpperCase();
 }
 
+function toPublicReservationView(reservation) {
+  return {
+  _id: reservation._id,
+  publicRef: reservation.publicRef,
+  name: reservation.name,
+  court: reservation.court,
+  date: reservation.date,
+  timeSlot: reservation.timeSlot,
+  duration: reservation.duration,
+  status: reservation.status,
+  paymentStatus: reservation.paymentStatus,
+  paymentOption: reservation.paymentOption,
+  reservationFeeAmount: reservation.reservationFeeAmount,
+  downpaymentAmount: reservation.downpaymentAmount,
+  maintenanceFeeAmount: reservation.maintenanceFeeAmount,
+  amountPaidOnline: reservation.amountPaidOnline,
+  remainingBalanceAmount: reservation.remainingBalanceAmount,
+  paymentUrl: reservation.paymentUrl,
+  paymentExpiresAt: reservation.paymentExpiresAt,
+  mockPaymentAvailable: getPaymentProvider() === 'mock',
+  };
+}
+
 // ── Court Directory ───────────────────────────────────────────────────────────
 
 // GET /api/public/courts — landing page listing
@@ -37,10 +62,6 @@ router.get('/courts', async (req, res) => {
     }).select('name slug sports courtCount location contact description logoUrl amenities settings.hourlyRate settings.currency subscription.tier subscription.modules').lean();
     res.json(courts.filter(court => hasModule(court, MODULES.BOOKING)));
   } catch (err) {
-    if (String(err.message || '').includes('Invalid reservation status transition') ||
-        String(err.message || '').includes('Invalid payment status transition')) {
-      return res.status(409).json({ error: err.message });
-    }
     res.status(500).json({ error: err.message });
   }
 });
@@ -202,13 +223,13 @@ router.post('/courts/:slug/reserve', async (req, res) => {
       const exEnd   = exStart + e.duration * 60;
       return startMins < exEnd && endMins > exStart;
     });
-    if (hasConflict) return res.status(409).json({ error: 'This slot is already booked.' });
 
+    if (hasConflict) return res.status(409).json({ error: 'This slot is already booked.', code: 'SLOT_TAKEN' });
     if (
       getPaymentProvider() === 'xendit' &&
       !canAcceptOnlinePayments(court)
     ) {
-      return res.status(409).json({ error: 'online booking is not available for this venue yet' });
+      return res.status(409).json({ error: 'online booking is not available for this venue yet', code: 'VENUE_NOT_READY' });
     }
 
     const reservationFeeAmount = Number(court?.settings?.hourlyRate ?? court?.settings?.reservationFee ?? 0) * Number(duration);
@@ -282,7 +303,7 @@ router.post('/courts/:slug/reserve', async (req, res) => {
     });
   } catch (err) {
     if (err?.code === 11000) {
-      return res.status(409).json({ error: 'This court time is currently being held for another payment session.' });
+      return res.status(409).json({ error: 'This court time is currently being held for another payment session.', code: 'SLOT_HELD' });
     }
     res.status(400).json({ error: err.message });
   }
@@ -311,61 +332,100 @@ router.get('/courts/:slug/reservations/:publicRef', async (req, res) => {
         { $set: { status: reservation.status, paymentStatus: reservation.paymentStatus } }
       );
     }
-
-    res.json({
-      _id: reservation._id,
-      publicRef: reservation.publicRef,
-      name: reservation.name,
-      court: reservation.court,
-      date: reservation.date,
-      timeSlot: reservation.timeSlot,
-      duration: reservation.duration,
-      status: reservation.status,
-      paymentStatus: reservation.paymentStatus,
-      paymentOption: reservation.paymentOption,
-      reservationFeeAmount: reservation.reservationFeeAmount,
-      downpaymentAmount: reservation.downpaymentAmount,
-      maintenanceFeeAmount: reservation.maintenanceFeeAmount,
-      amountPaidOnline: reservation.amountPaidOnline,
-      remainingBalanceAmount: reservation.remainingBalanceAmount,
-      paymentUrl: reservation.paymentUrl,
-      paymentExpiresAt: reservation.paymentExpiresAt,
-      mockPaymentAvailable: getPaymentProvider() === 'mock',
-    });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message });
   }
+  res.json(toPublicReservationView(reservation));
 });
 
-// Development-only payment simulation for local testing without a merchant account.
-router.post('/courts/:slug/reservations/:publicRef/mock-pay', async (req, res) => {
+const CHECK_COOLDOWN_MS = 10_000;
+const CHECK_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+router.post('/courts/:slug/reservations/:publicRef/check-payment', async (req, res) => {
+  let session;
   try {
-    if (getPaymentProvider() !== 'mock') return res.status(404).json({ error: 'Mock payments are disabled.' });
-    const court = await Court.findOne({ slug: req.params.slug, isActive: true }).lean();
+    if (getPaymentProvider() !== 'xendit') return res.status(404).json({ error: 'Not available.' });
+    const court = await Court.findOne({ slug: req.params.slug, isActive: true })
+      .select('+xendit.subAccountId').lean();
     if (!court) return res.status(404).json({ error: 'Court not found.' });
-    const reservation = await Reservation.findOne({ courtId: court._id, publicRef: req.params.publicRef });
+    const reservation = await Reservation.findOne({
+      courtId: court._id, publicRef: req.params.publicRef,
+    }).lean();
     if (!reservation) return res.status(404).json({ error: 'Reservation not found.' });
-    if (reservation.status === 'pending_admin') {
-      transitionReservationPayment(reservation, 'approved_waiting_payment', 'awaiting_payment');
+
+    const subAccountId = court.xendit?.subAccountId;
+    const tooOld = reservation.paymentExpiresAt &&
+      Date.now() - new Date(reservation.paymentExpiresAt).getTime() > CHECK_WINDOW_MS;
+    const checkable = reservation.paymentStatus !== 'paid' && reservation.paymentLinkId &&
+      reservation.paymentExternalId && subAccountId && !tooOld;
+    if (!checkable) return res.json({ ...toPublicReservationView(reservation), checked: false });
+
+    const claimed = await Reservation.findOneAndUpdate(
+      {
+        _id: reservation._id,
+        paymentStatus: { $ne: 'paid' },
+        $or: [{ paymentCheckedAt: null }, { paymentCheckedAt: { $lte: new Date(Date.now() - CHECK_COOLDOWN_MS) } }],
+      },
+      { $set: { paymentCheckedAt: new Date() } },
+    ).select('_id').lean();
+    if (!claimed) return res.json({ ...toPublicReservationView(reservation), checked: false });
+
+    let invoice;
+    try {
+      invoice = await getXenditInvoice(reservation.paymentLinkId, subAccountId);
+    } catch {
+      return res.status(503).json({ error: 'Could not reach the payment provider. Try again shortly.' });
     }
-    if (reservation.status !== 'approved_waiting_payment' || reservation.paymentStatus !== 'awaiting_payment') {
-      return res.status(409).json({ error: 'This reservation is not awaiting payment.' });
+    if (invoice?.id !== reservation.paymentLinkId || invoice?.external_id !== reservation.paymentExternalId) {
+      return res.status(409).json({ error: 'Payment record does not match this reservation.' });
     }
-    const payableBase = reservation.paymentOption === 'full'
-      ? Number(reservation.reservationFeeAmount || 0)
-      : Number(reservation.downpaymentAmount || 0);
-    transitionReservationPayment(reservation, 'confirmed', 'paid');
-    reservation.amountPaidOnline = payableBase + Number(reservation.maintenanceFeeAmount || 0);
-    reservation.remainingBalanceAmount = Math.max(0, Number(reservation.reservationFeeAmount || 0) - payableBase);
-    reservation.paidAt = new Date();
-    await reservation.save();
-    req.courtId = String(court._id);
-    emitReservationEvent(req, reservation.publicRef, { action: 'paid', reservationId: reservation._id });
-    emitCourtEvent(req, 'reservation:updated', { action: 'paid', reservationId: reservation._id, status: reservation.status });
-    emitCourtEvent(req, 'analytics:refresh', { source: 'reservations' });
-    res.json({ ok: true, status: reservation.status, paymentStatus: reservation.paymentStatus });
+    if (!['PAID', 'SETTLED'].includes(invoice.status)) {
+      return res.json({ ...toPublicReservationView(reservation), checked: true });
+    }
+    const paidAmount = invoice.paid_amount ?? invoice.amount;
+    if (!validAmount(invoice.amount, reservation.paymentExpectedAmount) ||
+        !validAmount(paidAmount, reservation.paymentExpectedAmount)) {
+      return res.status(409).json({ error: 'Paid amount does not match the stored payment attempt.' });
+    }
+
+    let result = null;
+    session = await mongoose.startSession();
+    await session.withTransaction(async () => {
+      result = await applyReservationPayment({
+        session,
+        accountCourtId: court._id,
+        invoiceId: reservation.paymentLinkId,
+        externalId: reservation.paymentExternalId,
+        payment: {
+          amount: paidAmount,
+          paidAt: invoice.paid_at,
+          channel: invoice.payment_channel,
+          method: invoice.payment_method,
+          paymentId: invoice.payment_id,
+        },
+      });
+    });
+
+    if (result) {
+      req.courtId = String(court._id);
+      const payload = {
+        action: result.paymentReceivedAfterCancellation ? 'payment_conflict' : 'paid',
+        reservationId: result._id,
+        paymentReceivedAfterCancellation: result.paymentReceivedAfterCancellation,
+      };
+      emitReservationEvent(req, result.publicRef, payload);
+      emitCourtEvent(req, 'reservation:updated', payload);
+      emitCourtEvent(req, 'billing:tab_updated', { action: 'reservation_synced', reservationId: result._id });
+      emitCourtEvent(req, 'analytics:refresh', { source: 'payments' });
+    }
+    const fresh = await Reservation.findById(reservation._id).lean();
+    return res.json({ ...toPublicReservationView(fresh), checked: true });
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    if (err?.status) return res.status(err.status).json({ error: err.message });
+    console.error('[payment] check failed:', err?.message);
+    return res.status(503).json({ error: 'Could not check the payment. Try again shortly.' });
+  } finally {
+    if (session) await session.endSession();
   }
 });
 

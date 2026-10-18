@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { use, useCallback, useEffect, useState } from 'react';
+import { use, useCallback, useEffect, useState, useRef } from 'react';
 import { io } from 'socket.io-client';
 import PublicFooter from '@/app/components/public/PublicFooter';
 import { InlineNotice } from '@/app/components/public/ui';
@@ -33,6 +33,7 @@ const STATUS_LABEL: Record<string, string> = {
   pending_admin: 'Waiting for approval',
   cancelled: 'Cancelled',
   expired: 'Expired',
+  payment_conflict: 'Payment received, venue is reviewing',
 };
 const PAYMENT_LABEL: Record<string, string> = { paid: 'Paid', awaiting_payment: 'Awaiting payment' };
 const human = (map: Record<string, string>, v: string) => map[v] ?? v.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
@@ -56,6 +57,34 @@ export default function ReservationStatusPage({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [mockPaying, setMockPaying] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const [checkNote, setCheckNote] = useState('');
+  const autoChecked = useRef(false);
+
+const checkPayment = useCallback(async (silent = false) => {
+  if (!silent) { setChecking(true); setCheckNote(''); }
+  try {
+    const res = await fetch(`/api/public/courts/${slug}/reservations/${publicRef}/check-payment`, { method: 'POST' });
+    const payload = await res.json();
+    if (!res.ok) throw new Error(payload.error || 'Could not check payment');
+    setData(payload);
+    if (!silent) {
+      if (payload.checked === false) setCheckNote('Checked a moment ago. Try again in a few seconds.');
+      else if (payload.paymentStatus !== 'paid') setCheckNote('No payment received yet.');
+    }
+  } catch (e: unknown) {
+    if (!silent) setCheckNote(e instanceof Error ? e.message : 'Could not check payment');
+  } finally {
+    if (!silent) setChecking(false);
+  }
+}, [slug, publicRef]);
+
+useEffect(() => {
+  if (!data || autoChecked.current) return;
+  if (data.paymentStatus === 'paid' || !data.paymentUrl || data.mockPaymentAvailable) return;
+  autoChecked.current = true;
+  checkPayment(true);
+}, [data, checkPayment]);
 
   // `silent` reloads (socket updates, after a test payment) keep the page on screen instead of flashing "Loading"
   const load = useCallback(async (silent = false) => {
@@ -115,6 +144,7 @@ export default function ReservationStatusPage({
   const showMockPay = data.mockPaymentAvailable && awaitingPayment;
   const paid = data.status === 'confirmed' && data.paymentStatus === 'paid';
   const ended = data.status === 'cancelled' || data.status === 'expired';
+  const canCheck = data.paymentStatus !== 'paid' && !!data.paymentUrl && !data.mockPaymentAvailable;
 
   let joy: { state: JoyState; message: string } = { state: 'idle', message: 'I will update this page when something changes.' };
   if (paid) joy = { state: 'done', message: 'You are booked!' };
@@ -181,6 +211,15 @@ export default function ReservationStatusPage({
                 <button type="button" onClick={simulatePayment} disabled={mockPaying} className="pub-cta pub-cta-primary mb-6 no-underline">
                   {mockPaying ? 'Processing test payment…' : 'Simulate payment (test)'}
                 </button>
+              )}
+
+              {canCheck && (
+                <div className="mb-6">
+                  <button type="button" onClick={() => checkPayment()} disabled={checking} className="pub-cta pub-cta-ghost no-underline">
+                    {checking ? 'Checking…' : 'I already paid, check my payment'}
+                  </button>
+                  {checkNote && <p className="mb-0 mt-2 text-[0.85rem] text-[var(--line-dim)]">{checkNote}</p>}
+                </div>
               )}
 
               {ended && (

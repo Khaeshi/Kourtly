@@ -6,7 +6,6 @@ import Court from '../../src/models/Court.js';
 import Reservation from '../../src/models/Reservation.js';
 import SubscriptionPayment from '../../src/models/SubscriptionPayment.js';
 import PaymentWebhookEvent from '../../src/models/PaymentWebhookEvent.js';
-import PayoutTransfer from '../../src/models/PayoutTransfer.js';
 
 const MASTER_USER_ID = 'master-user-1';
 const MASTER_TOKEN = 'master-callback-token';
@@ -421,8 +420,9 @@ describe('Xendit webhook trust split and payment records', () => {
     const statuses = [first.status, second.status].sort();
     expect(statuses[0]).toBe(200);
     expect([200, 409]).toContain(statuses[1]);
-    expect(await PayoutTransfer.countDocuments({ reservationId: reservation._id })).toBe(1);
-    expect(await PaymentWebhookEvent.countDocuments()).toBe(1);
+    expect(await Reservation.findById(reservation._id).lean()).toMatchObject({
+      status: 'confirmed', paymentStatus: 'paid', paidAmount: 255, adminNetAmount: 250,
+    });
   });
 
   test('allows a provider retry after the payment transaction rolls back', async () => {
@@ -434,7 +434,7 @@ describe('Xendit webhook trust split and payment records', () => {
       externalId: reservation.paymentExternalId,
     });
     jest.spyOn(globalThis, 'fetch').mockResolvedValue(providerResponse(invoiceFor(payload)));
-    const payoutCreate = jest.spyOn(PayoutTransfer, 'create').mockImplementationOnce(() => {
+    const eventUpdate = jest.spyOn(PaymentWebhookEvent, 'updateOne').mockImplementationOnce(() => {
       throw new Error('simulated transaction failure');
     });
 
@@ -443,12 +443,119 @@ describe('Xendit webhook trust split and payment records', () => {
     expect(failed.status).toBe(503);
     expect(await PaymentWebhookEvent.countDocuments()).toBe(0);
     expect((await Reservation.findById(reservation._id).lean()).paymentStatus).toBe('awaiting_payment');
-    payoutCreate.mockRestore();
+    eventUpdate.mockRestore();
 
     const retried = await postWebhook(payload, { webhookId: 'retry-after-rollback' });
 
     expect(retried.status).toBe(200);
     expect(await PaymentWebhookEvent.countDocuments()).toBe(1);
     expect((await Reservation.findById(reservation._id).lean()).paymentStatus).toBe('paid');
+  });
+
+    function checkPayment(court, reservation) {
+    return request(app).post(`/api/public/courts/${court.slug}/reservations/${reservation.publicRef}/check-payment`);
+  }
+
+  function paidInvoice(payload, overrides = {}) {
+    return invoiceFor(payload, {
+      paid_amount: payload.paid_amount,
+      paid_at: payload.paid_at,
+      payment_channel: 'QR_PH',
+      payment_method: 'QR_PH',
+      payment_id: 'payment-provider-1',
+      ...overrides,
+    });
+  }
+
+  async function checkSetup(slug, reservationOverrides = {}) {
+    const court = await createCourt(slug);
+    const reservation = await createReservation(court, reservationOverrides);
+    const payload = paidPayload({
+      userId: court.xendit.subAccountId,
+      id: reservation.paymentLinkId,
+      externalId: reservation.paymentExternalId,
+    });
+    return { court, reservation, payload };
+  }
+
+  test('check-payment confirms a paid invoice the webhook missed', async () => {
+    const { court, reservation, payload } = await checkSetup('check-paid');
+    const fetchSpy = jest.spyOn(globalThis, 'fetch').mockResolvedValue(providerResponse(paidInvoice(payload)));
+
+    const response = await checkPayment(court, reservation);
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({ checked: true, status: 'confirmed', paymentStatus: 'paid' });
+    expect(fetchSpy.mock.calls[0][1].headers['for-user-id']).toBe(court.xendit.subAccountId);
+    expect(await Reservation.findById(reservation._id).lean()).toMatchObject({
+      status: 'confirmed', paymentStatus: 'paid', paidAmount: 255, adminNetAmount: 250,
+    });
+  });
+
+  test('check-payment leaves an unpaid invoice untouched', async () => {
+    const { court, reservation, payload } = await checkSetup('check-pending');
+    jest.spyOn(globalThis, 'fetch').mockResolvedValue(providerResponse(paidInvoice(payload, { status: 'PENDING' })));
+
+    const response = await checkPayment(court, reservation);
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({ checked: true, paymentStatus: 'awaiting_payment' });
+    expect((await Reservation.findById(reservation._id).lean()).paymentStatus).toBe('awaiting_payment');
+  });
+
+  test('check-payment rejects an amount mismatch', async () => {
+    const { court, reservation, payload } = await checkSetup('check-mismatch');
+    jest.spyOn(globalThis, 'fetch').mockResolvedValue(providerResponse(paidInvoice(payload, { amount: 254, paid_amount: 254 })));
+
+    const response = await checkPayment(court, reservation);
+
+    expect(response.status).toBe(409);
+    expect((await Reservation.findById(reservation._id).lean()).paymentStatus).toBe('awaiting_payment');
+  });
+
+  test('check-payment is rate limited per reservation', async () => {
+    const { court, reservation, payload } = await checkSetup('check-cooldown');
+    const fetchSpy = jest.spyOn(globalThis, 'fetch').mockResolvedValue(providerResponse(paidInvoice(payload, { status: 'PENDING' })));
+
+    const first = await checkPayment(court, reservation);
+    const second = await checkPayment(court, reservation);
+
+    expect(first.body.checked).toBe(true);
+    expect(second.body.checked).toBe(false);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  test('check-payment does not call the provider for an already paid reservation', async () => {
+    const { court, reservation, payload } = await checkSetup('check-already-paid', { status: 'confirmed', paymentStatus: 'paid' });
+    const fetchSpy = jest.spyOn(globalThis, 'fetch').mockResolvedValue(providerResponse(paidInvoice(payload)));
+
+    const response = await checkPayment(court, reservation);
+
+    expect(response.status).toBe(200);
+    expect(response.body.checked).toBe(false);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  test('check-payment flags a paid invoice on a locally cancelled reservation', async () => {
+    const { court, reservation, payload } = await checkSetup('check-late', { status: 'cancelled', paymentStatus: 'cancelled' });
+    jest.spyOn(globalThis, 'fetch').mockResolvedValue(providerResponse(paidInvoice(payload)));
+
+    const response = await checkPayment(court, reservation);
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({ status: 'payment_conflict', paymentStatus: 'paid' });
+  });
+
+  test('a webhook after a successful check is a no-op', async () => {
+    const { court, reservation, payload } = await checkSetup('check-then-webhook');
+    jest.spyOn(globalThis, 'fetch').mockResolvedValue(providerResponse(paidInvoice(payload)));
+    await checkPayment(court, reservation);
+    const before = (await Reservation.findById(reservation._id).lean()).paidAt;
+
+    const webhook = await postWebhook(payload, { webhookId: 'after-check' });
+
+    expect(webhook.status).toBe(200);
+    expect(await PaymentWebhookEvent.countDocuments()).toBe(1);
+    expect((await Reservation.findById(reservation._id).lean()).paidAt).toEqual(before);
   });
 });

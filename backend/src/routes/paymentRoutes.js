@@ -3,8 +3,8 @@ import mongoose from 'mongoose';
 import Court from '../models/Court.js';
 import Reservation from '../models/Reservation.js';
 import SubscriptionPayment from '../models/SubscriptionPayment.js';
-import PayoutTransfer from '../models/PayoutTransfer.js';
 import PaymentWebhookEvent from '../models/PaymentWebhookEvent.js';
+import { applyReservationPayment, validAmount, webhookError } from '../lib/reservationPayment.js';
 import {
   getXenditInvoice,
   isSubAccountWebhookAuthorized,
@@ -27,16 +27,6 @@ function emitReservationEvent(req, publicRef, payload = {}) {
   io.to(`reservation:${publicRef}`).emit('reservation:updated', payload);
 }
 
-function webhookError(status, message) {
-  const error = new Error(message);
-  error.status = status;
-  return error;
-}
-
-function validAmount(value, expected) {
-  const amount = Number(value);
-  return Number.isFinite(amount) && amount === Number(expected);
-}
 
 async function reconfirmInvoice(invoiceId, externalId, callbackStatus, expectedAmount, subAccountId) {
   let invoice;
@@ -168,64 +158,19 @@ router.post('/xendit/webhook', async (req, res) => {
           await court.save({ session });
         }
       } else {
-        const paidReservation = await Reservation.findOne({
-          paymentLinkId: id,
-          paymentExternalId: externalId,
-        }).session(session);
-        if (!paidReservation || String(paidReservation.courtId) !== String(accountCourt._id)) {
-          throw webhookError(409, 'Payment account does not match the reservation venue.');
-        }
-        if (paidReservation.paymentStatus !== 'paid') {
-          const paidAt = new Date(req.body.paid_at);
-          if (Number.isNaN(paidAt.getTime())) throw webhookError(400, 'Invalid provider payment timestamp.');
-          const onlinePaid = Number(paidAmount);
-          const isLate = ['cancelled', 'expired'].includes(paidReservation.status) ||
-            ['cancelled', 'expired'].includes(paidReservation.paymentStatus);
-          if (isLate) {
-            paidReservation.status = 'payment_conflict';
-            paidReservation.paymentStatus = 'paid';
-            paidReservation.paymentReceivedAfterCancellation = true;
-          } else if (
-            ['approved_waiting_payment', 'pending_admin'].includes(paidReservation.status) &&
-            ['awaiting_payment', 'none'].includes(paidReservation.paymentStatus)
-          ) {
-            transitionReservationPayment(paidReservation, 'confirmed', 'paid');
-          } else {
-            throw webhookError(409, 'Reservation is not in a payable state.');
-          }
-
-          paidReservation.amountPaidOnline = onlinePaid;
-          paidReservation.remainingBalanceAmount = Math.max(
-            0,
-            Number(paidReservation.reservationFeeAmount || 0) - onlinePaid,
-          );
-          paidReservation.adminNetAmount = Math.max(
-            0,
-            onlinePaid - Number(paidReservation.maintenanceFeeAmount || 0),
-          );
-          paidReservation.paidAt = paidAt;
-          paidReservation.providerPaidAt = paidAt;
-          paidReservation.paymentChannel = String(req.body.payment_channel || '');
-          paidReservation.paymentMethod = String(req.body.payment_method || '');
-          paidReservation.paidAmount = onlinePaid;
-          paidReservation.paymentId = String(req.body.payment_id || '');
-          await paidReservation.save({ session });
-
-          const court = await Court.findById(paidReservation.courtId).session(session).lean();
-          await PayoutTransfer.create([{
-            courtId: paidReservation.courtId,
-            reservationId: paidReservation._id,
-            recipientCode: court?.payout?.recipientCode || '',
-            amount: Number(paidReservation.adminNetAmount || 0),
-            status: 'queued',
-          }], { session });
-          reservationResult = {
-            _id: paidReservation._id,
-            courtId: paidReservation.courtId,
-            publicRef: paidReservation.publicRef,
-            paymentReceivedAfterCancellation: paidReservation.paymentReceivedAfterCancellation,
-          };
-        }
+          reservationResult = await applyReservationPayment({
+          session,
+          accountCourtId: accountCourt._id,
+          invoiceId: id,
+          externalId,
+          payment: {
+            amount: paidAmount,
+            paidAt: req.body.paid_at,
+            channel: req.body.payment_channel,
+            method: req.body.payment_method,
+            paymentId: req.body.payment_id,
+          },
+        });
       }
 
       await PaymentWebhookEvent.updateOne(

@@ -328,10 +328,12 @@ export default function BookingPage({ params }: { params: Promise<{ slug: string
       const data = await res.json();
       if (!res.ok) {
         const msg = data.error || 'Booking failed. Please try again.';
-        if (res.status === 409 || /already|taken|booked|unavailable/i.test(msg)) {
+        if (data.code === 'SLOT_TAKEN' || data.code === 'SLOT_HELD') {
           // The slot was taken while the form was open: back to the Time step with fresh availability
           setTimeSlot('');
-          setTakenMessage('Someone just booked that slot. Pick another time.');
+            setTakenMessage(data.code === 'SLOT_HELD'
+              ? 'That time is being held for another payment. Pick another time or try again shortly.'
+              : 'Someone just booked that slot. Pick another time.');
           setJoyNote({ state: 'taken', message: 'Someone just booked that slot.' });
           go(4);
           return;

@@ -109,9 +109,6 @@ export default function AdminDashboard() {
   const [analytics, setAnalytics] = useState<AnalyticsSummary | null>(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(true);
   const [analyticsError,   setAnalyticsError]   = useState('');
-  const [payoutTransfers, setPayoutTransfers] = useState<any[]>([]);
-  const [payoutUnavailable, setPayoutUnavailable] = useState(false);
-  const [payoutStatusFilter, setPayoutStatusFilter] = useState<'all' | 'queued' | 'succeeded' | 'failed'>('all');
   const [aiQuestion, setAiQuestion] = useState('');
   const [aiAnswer, setAiAnswer] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
@@ -161,35 +158,6 @@ export default function AdminDashboard() {
   }, [period]);
 
   useEffect(() => { loadAnalytics(); }, [loadAnalytics]);
-
-  const loadPayoutTransfers = useCallback(async () => {
-    if (!capabilities.modules.item_tabs) {
-      setPayoutTransfers([]);
-      setPayoutUnavailable(false);
-      return;
-    }
-    setPayoutUnavailable(false);
-    try {
-      const transfers = await proxyFetch<any[]>(
-        `/payout-transfers?limit=10&status=${payoutStatusFilter}`,
-        undefined,
-        { allowSnapshotFallback: false }
-      );
-      setPayoutTransfers(Array.isArray(transfers) ? transfers : []);
-    } catch (error) {
-      if (error instanceof OfflineUnavailableError) {
-        setPayoutTransfers([]);
-        setPayoutUnavailable(true);
-        return;
-      }
-      console.error('Could not load payout transfers.', error);
-      setPayoutTransfers([]);
-    }
-  }, [capabilities.modules.item_tabs, payoutStatusFilter]);
-
-  useEffect(() => {
-    loadPayoutTransfers();
-  }, [loadPayoutTransfers]);
 
   const onAskAnalytics = useCallback(async () => {
     if (offline) return;
@@ -561,60 +529,6 @@ export default function AdminDashboard() {
           ))}
         </div>
       </div>
-
-      {capabilities.modules.item_tabs && (
-      <div className="bg-white border border-gray-200 rounded-xl px-6 py-5 mb-6">
-        <div className="flex items-center justify-between mb-3">
-          <p className="text-sm font-semibold text-gray-900">Recent Payout Transfers</p>
-          <select
-            value={payoutStatusFilter}
-            onChange={e => setPayoutStatusFilter(e.target.value as any)}
-            className="text-xs border border-gray-200 rounded px-2 py-1"
-          >
-            <option value="all">All</option>
-            <option value="queued">Queued</option>
-            <option value="succeeded">Succeeded</option>
-            <option value="failed">Failed</option>
-          </select>
-        </div>
-        {payoutUnavailable ? (
-          <p className="text-xs text-gray-400">Not available offline</p>
-        ) : payoutTransfers.length === 0 ? (
-          <p className="text-xs text-gray-400">No payout transfers yet.</p>
-        ) : (
-          <div className="space-y-2">
-            {payoutTransfers.map((t: any) => (
-              <div key={t._id} className="flex justify-between items-center text-xs border-b border-gray-50 pb-2">
-                <span className="text-gray-500 font-mono">{new Date(t.createdAt).toLocaleString()}</span>
-                <span className="text-gray-700 font-mono">₱{Number(t.amount || 0).toFixed(2)}</span>
-                <div className="flex items-center gap-2">
-                  <span className={t.status === 'succeeded' ? 'text-green-600' : t.status === 'failed' ? 'text-red-600' : 'text-amber-600'}>
-                    {t.status}
-                  </span>
-                  {t.status === 'failed' && (
-                    <button
-                      onClick={async () => {
-                                    try {
-                                      await proxyFetch(`/payout-transfers/${t._id}/retry`, { method: 'POST' });
-                                    } catch (error) {
-                                      console.error('Could not retry payout transfer.', error);
-                                    }
-                                    loadPayoutTransfers();
-                      }}
-                      disabled={offline}
-                      title={offlineTitle}
-                      className="text-[10px] px-2 py-1 border border-blue-200 bg-blue-50 text-blue-700 rounded"
-                    >
-                      Retry
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-      )}
 
       {/* ── Sections nav (existing) ── */}
       <div className="bg-white border border-gray-200 rounded-xl px-6 py-5">
