@@ -332,10 +332,11 @@ router.get('/courts/:slug/reservations/:publicRef', async (req, res) => {
         { $set: { status: reservation.status, paymentStatus: reservation.paymentStatus } }
       );
     }
+    res.json(toPublicReservationView(reservation));
   } catch (err) {
+     console.error('[status] failed:', err);
     return res.status(500).json({ error: err.message });
   }
-  res.json(toPublicReservationView(reservation));
 });
 
 const CHECK_COOLDOWN_MS = 10_000;
