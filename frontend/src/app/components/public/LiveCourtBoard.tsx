@@ -1,20 +1,20 @@
 'use client';
 import { useEffect, useState } from 'react';
 
-type Player = { name: string; tier: string; games: number };
+type Player = { name: string;  games: number };
 
 const INITIAL_ON: Player[] = [
-  { name: 'Migs', tier: 'A', games: 12 },
-  { name: 'Jo', tier: 'B', games: 9 },
-  { name: 'Ana', tier: 'B', games: 10 },
-  { name: 'Lei', tier: 'C', games: 8 },
+  { name: 'Gab',  games: 12 },
+  { name: 'Khael',  games: 9 },
+  { name: 'Tine',  games: 10 },
+  { name: 'Jeuz',  games: 8 },
 ];
 
 const INITIAL_QUEUE: Player[] = [
-  { name: 'Paolo', tier: 'C', games: 7 },
-  { name: 'Rey', tier: 'D', games: 6 },
-  { name: 'Bea', tier: 'B', games: 8 },
-  { name: 'Nico', tier: 'C', games: 9 },
+  { name: 'Paolo',  games: 7 },
+  { name: 'Rey',  games: 6 },
+  { name: 'Cecile',  games: 8 },
+  { name: 'Nico',  games: 9 },
 ];
 
 export default function LiveCourtBoard() {
@@ -68,7 +68,6 @@ export default function LiveCourtBoard() {
               {p.name[0]}
             </span>
             {p.name}
-            <em className="not-italic text-[0.72rem] font-bold text-[var(--amber)]">{p.tier}</em>
           </div>
         ))}
       </div>
@@ -85,7 +84,7 @@ export default function LiveCourtBoard() {
               {i + 1}. {p.name}
             </span>
             <span className="text-[var(--line-dim)]">
-              Tier {p.tier}, {p.games} games today
+              {p.games} games today
             </span>
           </li>
         ))}

@@ -32,7 +32,7 @@ const COURTS: Block[][] = [
     { t: 'open', s: 18, e: 20, title: 'Open play', sub: '6 PM to 8 PM' },
   ],
   [
-    { t: 'pend', s: 14, e: 16, title: 'Bea', sub: 'Pending' },
+    { t: 'pend', s: 14, e: 16, title: 'Khael', sub: 'Pending' },
     { t: 'paid', s: 19, e: 20, title: 'Nico', sub: '7 PM' },
   ],
 ];
@@ -154,16 +154,16 @@ export function PlayerDirectoryPreview() {
   return (
     <Table pre={pre} cols="1.2fr 1.3fr .9fr 1fr" head={['Player', 'Tier', 'Games today', 'Status']} rows={[
       r('Migs', 'A · Advanced', '13', <Teal key="s">Playing</Teal>),
-      r('Jo', 'B · Intermediate', '10', <Dim key="s">In queue</Dim>),
+      r('Tine', 'B · Intermediate', '10', <Dim key="s">In queue</Dim>),
       r('Nico', 'C · Casual', '9', <Dim key="s">In queue</Dim>),
-      r('Bea', 'B · Intermediate', '8', <Dim key="s">In queue</Dim>),
+      r('Khael', 'B · Intermediate', '8', <Dim key="s">In queue</Dim>),
       r('Rey', 'D · Beginner', '6', <Teal key="s">Playing</Teal>),
     ]} />
   );
 }
 
 export function QueuePreview() {
-  const q = [['Bea', 'B', 8], ['Lei', 'C', 8], ['Nico', 'C', 9], ['Jo', 'B', 10], ['Migs', 'A', 13]] as const;
+  const q = [['Khael', 'B', 8], ['Lei', 'C', 8], ['Nico', 'C', 9], ['Jo', 'B', 10], ['Migs', 'A', 13]] as const;
   return (
     <div className="grid gap-4 md:grid-cols-2">
       <div className={`${CARD} p-6`}>
@@ -177,7 +177,7 @@ export function QueuePreview() {
       <div className={`${CARD} p-6`}>
         <p className="font-bold text-[1.1rem] mb-3.5">Next match · Court 2</p>
         <div className="grid grid-cols-[1fr_auto_1fr] gap-3 items-center mb-4">
-          <div className="bg-[var(--page-bg)] rounded-[14px] p-3.5 text-center"><b>Bea</b> + <b>Lei</b><div className="text-[0.75rem] text-[var(--line-dim)] mt-1">B + C</div></div>
+          <div className="bg-[var(--page-bg)] rounded-[14px] p-3.5 text-center"><b>Khael</b> + <b>Lei</b><div className="text-[0.75rem] text-[var(--line-dim)] mt-1">B + C</div></div>
           <span className="font-display text-[1.3rem] text-[var(--amber)]">vs</span>
           <div className="bg-[var(--page-bg)] rounded-[14px] p-3.5 text-center"><b>Nico</b> + <b>Jo</b><div className="text-[0.75rem] text-[var(--line-dim)] mt-1">C + B</div></div>
         </div>
@@ -235,7 +235,7 @@ export function BillingPreview() {
       r('Oct 17', 'Rey D.', 'Court 2', '₱170', <Teal key="s">Paid</Teal>),
       r('Oct 17', 'Ana R.', 'Court 1', '₱45', <Teal key="s">Paid</Teal>),
       r('Oct 16', 'Juan dela Cruz', 'Court 1', '₱420', <Teal key="s">Paid</Teal>),
-      r('Oct 16', 'Bea', 'Court 3', '₱55', <span key="s" className="text-[var(--amber)] font-bold">Saved offline · syncing</span>),
+      r('Oct 16', 'Khael', 'Court 3', '₱55', <span key="s" className="text-[var(--amber)] font-bold">Saved offline · syncing</span>),
     ]} />
   );
 }
