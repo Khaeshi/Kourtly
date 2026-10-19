@@ -73,7 +73,6 @@ export default function PublicFooter({ compact = false }: PublicFooterProps) {
               {l.label}
             </Link>
           ))}
-          <span className={compact ? 'text-[var(--line-faint)]' : undefined}>Philippines</span>
         </nav>
       </div>
     </footer>

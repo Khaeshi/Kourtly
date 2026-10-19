@@ -38,7 +38,7 @@ app.use(cors({
   origin: [
     'http://localhost:3000',
     'https://badminton-scbc.vercel.app',
-    'https://www.playkou.site',
+    'https://www.kourtly.site',
   ],
   credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],

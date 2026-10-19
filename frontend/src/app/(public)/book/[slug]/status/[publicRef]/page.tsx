@@ -152,13 +152,20 @@ useEffect(() => {
   else if (awaitingPayment) joy = { state: 'idle', message: 'Pay soon to keep your slot.' };
 
   const expires = awaitingPayment && data.paymentExpiresAt ? new Date(data.paymentExpiresAt) : null;
+  const serviceFee = Number(data.maintenanceFeeAmount || 0);
+  const paidOnline = Number(data.amountPaidOnline || 0);
+  const paidTowardBooking = Math.max(0, paidOnline - serviceFee);
   const rows: [string, string][] = [
     ['Status', human(STATUS_LABEL, data.status)],
     ['Payment', human(PAYMENT_LABEL, data.paymentStatus)],
     ['Reservation fee', peso2(data.reservationFeeAmount)],
-    ['Paid online', peso2(data.amountPaidOnline)],
-    ['Remaining balance', peso2(data.remainingBalanceAmount)],
   ];
+  if (paidOnline > 0) {
+    rows.push(['Paid toward reservation', peso2(paidTowardBooking)]);
+    if (serviceFee > 0) rows.push(['Service fee', peso2(serviceFee)]);
+    rows.push(['Total paid online', peso2(paidOnline)]);
+  }
+  rows.push(['Remaining balance', peso2(data.remainingBalanceAmount)]);
 
   const simulatePayment = async () => {
     setMockPaying(true);
@@ -182,7 +189,7 @@ useEffect(() => {
         <div className="mx-auto max-w-[900px] px-[clamp(1.25rem,5vw,3rem)] pb-16 pt-8" style={{ paddingBottom: 'max(4rem, env(safe-area-inset-bottom))' }}>
           <p className="t-eyebrow mb-2 text-[var(--success)]">Reservation ref · {data.publicRef}</p>
           <h1 className="font-display m-0 mb-2 text-[clamp(1.9rem,4vw,3rem)] text-[var(--line)]">
-            {paid ? 'Booking Received' : 'Reservation Status'}
+            {paid ? 'Booking Confirmed' : 'Reservation Status'}
           </h1>
           <p className="mb-8 mt-0 text-[0.95rem] text-[var(--line-dim)]">
             Court {data.court} · {fmtDate(data.date)} · {fmtRange(data.timeSlot)}

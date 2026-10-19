@@ -99,7 +99,7 @@ export function CapabilityGate({ children }: { children: React.ReactNode }) {
   if (status === 'unknown' || !capabilities) {
     return (
       <div className="max-w-[680px] py-12">
-        <p className="text-sm text-gray-500">Access status is unavailable. Reconnect to verify your current tier.</p>
+        <p className="text-sm text-gray-500">Access status is unavailable. Reconnect or sign in again to verify your current tier.</p>
       </div>
     );
   }
