@@ -5,6 +5,7 @@ import { sileo } from 'sileo';
 import { Upload, X } from 'lucide-react';
 import { useCapabilities } from '@/lib/entitlements';
 import { proxyFetch } from '@/lib/api';
+import { shrinkImage } from '@/lib/shrinkImage';
 
 const SPORTS    = ['badminton', 'pickleball', 'tennis'];
 const AMENITIES = ['parking', 'shower', 'locker', 'cafeteria', 'wifi', 'aircon'];
@@ -166,38 +167,20 @@ function OnlinePaymentsSection({ offline, adminEmail }: { offline: boolean; admi
   );
 }
 
-async function uploadImageToCloudinary(file: File): Promise<string> {
-  const serverFd = new FormData();
-  serverFd.append('file', file);
-  const apiRes = await fetch('/api/upload/cloudinary', { method: 'POST', body: serverFd });
-  if (apiRes.ok) {
-    const j = (await apiRes.json()) as { secure_url?: string; error?: string };
-    if (j.secure_url) return j.secure_url;
-  }
-
-  const cloud = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME?.trim();
-  const preset = process.env.NEXT_PUBLIC_CLOUDINARY_PRESET?.trim();
-  if (!cloud || !preset) {
-    let msg = 'Cloudinary is not configured.';
-    try {
-      const j = (await apiRes.json()) as { error?: string };
-      if (j.error) msg = j.error;
-    } catch { /* ignore */ }
-    throw new Error(msg);
-  }
-
+async function uploadCourtImage(file: File, kind: 'logo' | 'photo'): Promise<string> {
+  const small = await shrinkImage(file, kind === 'logo' ? 512 : 1600);
   const fd = new FormData();
-  fd.append('file', file);
-  fd.append('upload_preset', preset);
-  const res = await fetch(`https://api.cloudinary.com/v1_1/${cloud}/image/upload`, {
-    method: 'POST',
-    body: fd,
-  });
-  const data = (await res.json()) as { secure_url?: string; error?: { message?: string } };
-  if (!res.ok || !data.secure_url) {
-    throw new Error(data.error?.message || 'Upload failed');
+  fd.append('file', small);
+  fd.append('kind', kind);
+  const res = await fetch('/api/upload/image', { method: 'POST', body: fd });
+  let payload: { url?: string; error?: string } = {};
+  try {
+    payload = await res.json();
+  } catch {
+    /* ignore */
   }
-  return data.secure_url;
+  if (!res.ok || !payload.url) throw new Error(payload.error || 'Upload failed');
+  return payload.url;
 }
 
 export default function SettingsPage() {
@@ -340,7 +323,7 @@ export default function SettingsPage() {
     e.target.value = '';
     setUploading(true);
     try {
-      const url = await uploadImageToCloudinary(file);
+      const url = await uploadCourtImage(file, 'logo');
       await proxyFetch('/court/me/logo', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -363,7 +346,7 @@ export default function SettingsPage() {
     setUploading(true);
     try {
       for (const file of files) {
-        const url = await uploadImageToCloudinary(file);
+        const url = await uploadCourtImage(file, 'photo');
         await proxyFetch('/court/me/photos', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
@@ -380,18 +363,29 @@ export default function SettingsPage() {
     }
   };
 
-  const removePhoto = async (url: string) => {
-    try {
-      await proxyFetch('/court/me/photos', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'remove', url }),
-      }, { allowSnapshotFallback: false });
-      setCourt(c => c ? { ...c, photos: c.photos.filter(p => p !== url) } : c);
-    } catch (error) {
-      sileo.error({ title: 'Could not remove photo', description: error instanceof Error ? error.message : 'Please try again.' });
-    }
-  };
+
+/**
+ * @desc // Best-effort cleanup of the stored file. Old broken Cloudinary links are ignored by the route.
+ * @param url 
+ */
+const removePhoto = async (url: string) => {
+  try {
+    await proxyFetch('/court/me/photos', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'remove', url }),
+    }, { allowSnapshotFallback: false });
+    setCourt(c => c ? { ...c, photos: c.photos.filter(p => p !== url) } : c);
+
+    fetch('/api/upload/image', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+    }).catch(() => {});
+  } catch (error) {
+    sileo.error({ title: 'Could not remove photo', description: error instanceof Error ? error.message : 'Please try again.' });
+  }
+};
 
   if (loading) return <div className="py-16 text-center text-gray-400 text-sm">Loading...</div>;
 

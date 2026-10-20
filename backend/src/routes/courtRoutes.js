@@ -327,14 +327,30 @@ router.post('/', async (req, res) => {
   }
 });
 
+const MAX_PHOTOS = 8;
+
+// Only accept images stored under this court's own folder on our assets domain.
+function isOwnAssetUrl(url, courtId) {
+  const base = (process.env.R2_PUBLIC_BASE_URL || '').replace(/\/+$/, '');
+  return (
+    typeof url === 'string' &&
+    url.length <= 500 &&
+    !!base &&
+    url.startsWith(`${base}/courts/${courtId}/`)
+  );
+}
+
 /**
- * PATCH /api/court/me/logo
- * Update logo URL after Cloudinary upload
- */
+* PATCH /api/court/me/logo
+* Save the logo URL after an image upload
+*/
 router.patch('/me/logo', async (req, res) => {
   try {
     const { logoUrl } = req.body;
     if (!logoUrl) return res.status(400).json({ error: 'logoUrl is required.' });
+    if (!isOwnAssetUrl(logoUrl, req.courtId)) {
+      return res.status(400).json({ error: 'Invalid image URL.' });
+    }
 
     const court = await Court.findByIdAndUpdate(
       req.courtId,
@@ -349,21 +365,35 @@ router.patch('/me/logo', async (req, res) => {
 });
 
 /**
- * PATCH /api/court/me/photos
- * Add or remove a photo URL
- * Body: { action: 'add' | 'remove', url: string }
- */
+* PATCH /api/court/me/photos
+* Add or remove a photo URL
+* Body: { action: 'add' | 'remove', url: string }
+*/
 router.patch('/me/photos', async (req, res) => {
   try {
     const { action, url } = req.body;
     if (!action || !url) return res.status(400).json({ error: 'action and url are required.' });
     if (!['add', 'remove'].includes(action)) return res.status(400).json({ error: 'action must be add or remove.' });
 
-    const update = action === 'add'
-      ? { $push: { photos: url } }
-      : { $pull: { photos: url } };
+    if (action === 'add') {
+      if (!isOwnAssetUrl(url, req.courtId)) {
+        return res.status(400).json({ error: 'Invalid image URL.' });
+      }
+      const court = await Court.findOneAndUpdate(
+        { _id: req.courtId, $expr: { $lt: [{ $size: { $ifNull: ['$photos', []] } }, MAX_PHOTOS] } },
+        { $addToSet: { photos: url } },
+        { new: true }
+      );
+      if (!court) {
+        const exists = await Court.exists({ _id: req.courtId });
+        if (!exists) return res.status(404).json({ error: 'Court not found.' });
+        return res.status(400).json({ error: `You can have up to ${MAX_PHOTOS} photos.` });
+      }
+      return res.json(tenantCourtResponse(court));
+    }
 
-    const court = await Court.findByIdAndUpdate(req.courtId, update, { new: true });
+    // Remove stays unrestricted so tenants can clear the old broken Cloudinary photos.
+    const court = await Court.findByIdAndUpdate(req.courtId, { $pull: { photos: url } }, { new: true });
     if (!court) return res.status(404).json({ error: 'Court not found.' });
     res.json(tenantCourtResponse(court));
   } catch (err) {
