@@ -5,7 +5,7 @@
 export const BUSINESS_INFO = {
   registeredName: 'Khaesey Angel Tablante',
   tradeName: 'Kourtly',
-  registration: '[SEC / DTI registration no.]',
+  registration: '8579802',
   birTin: '[BIR TIN]',
   address: 'Philippines',
   phone: '+63 9452073501',
