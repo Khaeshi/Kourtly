@@ -7,14 +7,12 @@ import { Button } from '@/app/components/ui/Button';
 import { useSocketEvent } from '@/hooks/useSocketEvent';
 import { useConnectivity } from '@/lib/connectivity';
 
-const LEVEL_COLOR: Record<Level, string> = { A: '#e8c84a', B: '#8BC34A', C: '#4db8a0', D: '#7a9cbf' };
-const LEVEL_BG:    Record<Level, string> = { A: 'rgba(232,200,74,0.1)', B: 'rgba(139,195,74,0.1)', C: 'rgba(77,184,160,0.1)', D: 'rgba(122,156,191,0.1)' };
-
 interface PlayerForm { name: string; level: Level; gender: Gender; age: string; }
 const empty: PlayerForm = { name: '', level: 'B', gender: 'Male', age: '' };
 
-const inputCls = "w-full bg-white border border-gray-200 rounded-md px-3 py-2 text-gray-900 text-sm outline-none transition-colors duration-150 focus:border-green-400";
-const labelCls = "block text-[0.68rem] font-semibold tracking-widest uppercase text-gray-400 mb-1.5";
+const LEVELS: Level[] = ['A', 'B', 'C', 'D'];
+const COLS = '2fr 1fr 1fr 1fr 190px';
+const matchesLabel = (n: number) => `${n} match${n !== 1 ? 'es' : ''}`;
 
 export default function PlayersPage() {
   const [players,  setPlayers]  = useState<Player[]>([]);
@@ -31,6 +29,7 @@ export default function PlayersPage() {
   const [form,     setForm]     = useState<PlayerForm>(empty);
   const [editForm, setEditForm] = useState<PlayerForm>(empty);
   const [showAdd,  setShowAdd]  = useState(false);
+  const [touched,  setTouched]  = useState({ name: false, age: false });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -50,8 +49,15 @@ export default function PlayersPage() {
   useEffect(() => { load(); }, [load]);
   useSocketEvent('players:updated', useCallback(() => { load(); }, [load]));
 
+  // Inline validation (UI only): show the message after the field is left, clear it once fixed.
+  const nameError = touched.name && !form.name.trim() ? 'Enter the player’s name.' : '';
+  const ageError  = touched.age  && !form.age ? 'Enter the player’s age.' : '';
+
   const handleAdd = async () => {
-    if (!form.name.trim() || !form.age) return;
+    if (!form.name.trim() || !form.age) {
+      setTouched({ name: true, age: true });
+      return;
+    }
     setSaving(true);
     await sileo.promise(
       createPlayer({ name: form.name.trim(), level: form.level, gender: form.gender, age: Number(form.age) }),
@@ -61,7 +67,7 @@ export default function PlayersPage() {
         error:   { title: 'Failed to add player', description: 'Please try again.' },
       }
     );
-    setForm(empty); setShowAdd(false); await load(); setSaving(false);
+    setForm(empty); setTouched({ name: false, age: false }); setShowAdd(false); await load(); setSaving(false);
   };
 
   const handleSave = async (id: string) => {
@@ -78,129 +84,159 @@ export default function PlayersPage() {
     await load();
   };
 
+  const startEdit = (p: Player) => {
+    setEditId(p._id);
+    setEditForm({ name: p.name, level: p.level, gender: p.gender, age: String(p.age) });
+  };
+
   const filtered = players.filter(p =>
     p.name.toLowerCase().includes(search.toLowerCase()) &&
     (fLevel  === 'ALL' || p.level  === fLevel) &&
     (fGender === 'ALL' || p.gender === fGender)
   );
 
+  const EmptyState = () => (
+    <div className="py-14 text-center">
+      {players.length === 0 ? (
+        <>
+          <p className="font-bold text-[#0E2420]">No players yet.</p>
+          <p className="ad-muted text-sm mt-1 mb-4">Add your regulars so the queue can pair them.</p>
+          <Button v="primary" onClick={() => setShowAdd(true)}>Add player</Button>
+        </>
+      ) : (
+        <>
+          <p className="font-bold text-[#0E2420]">No players match these filters.</p>
+          <p className="ad-muted text-sm mt-1">Clear the search or pick All levels.</p>
+        </>
+      )}
+    </div>
+  );
+
   return (
-    <div className="w-full font-sans">
+    <div className="w-full">
 
       {/* Header */}
-      <div className="mb-6 pb-5 border-b border-gray-100 flex items-end justify-between gap-4 flex-wrap">
+      <div className="mb-6 flex items-end justify-between gap-4 flex-wrap">
         <div>
-          <p className="text-[0.72rem] font-medium tracking-wide uppercase text-gray-400 mb-1.5">Management</p>
-          <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">Players</h1>
+          <p className="ad-eyebrow">Management</p>
+          <h1 className="ad-h1">Players</h1>
         </div>
         <Button v="primary" onClick={() => setShowAdd(!showAdd)}>
-          {showAdd ? 'Cancel' : '+ Add Player'}
+          {showAdd ? 'Cancel' : 'Add player'}
         </Button>
       </div>
 
       {/* Add form */}
       {showAdd && (
-        <div className="bg-white border border-gray-200 rounded-lg p-4 sm:p-6 mb-6">
-          <p className="text-[0.72rem] font-semibold tracking-widest uppercase text-gray-400 mb-4">New Player</p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+        <div className="mb-6 border-t-2 border-[#0E2420] pt-5">
+          <p className="ad-eyebrow mb-4">New player</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
             <div>
-              <label className={labelCls}>Full Name</label>
-              <input className={inputCls} placeholder="Player name"
-                value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
+              <label htmlFor="pl-name" className="ad-label">Full name</label>
+              <input id="pl-name" className={`ad-input${nameError ? ' is-invalid' : ''}`} placeholder="Player name"
+                aria-invalid={!!nameError} aria-describedby={nameError ? 'pl-name-err' : undefined}
+                value={form.name} onChange={e => setForm({ ...form, name: e.target.value })}
+                onBlur={() => setTouched(t => ({ ...t, name: true }))} />
+              {nameError && <p id="pl-name-err" className="ad-error">{nameError}</p>}
             </div>
             <div>
-              <label className={labelCls}>Age</label>
-              <input className={inputCls} type="number" placeholder="Age"
-                value={form.age} onChange={e => setForm({ ...form, age: e.target.value })} />
+              <label htmlFor="pl-age" className="ad-label">Age</label>
+              <input id="pl-age" className={`ad-input${ageError ? ' is-invalid' : ''}`} type="number" inputMode="numeric" placeholder="Age"
+                aria-invalid={!!ageError} aria-describedby={ageError ? 'pl-age-err' : undefined}
+                value={form.age} onChange={e => setForm({ ...form, age: e.target.value })}
+                onBlur={() => setTouched(t => ({ ...t, age: true }))} />
+              {ageError && <p id="pl-age-err" className="ad-error">{ageError}</p>}
             </div>
             <div>
-              <label className={labelCls}>Level</label>
-              <select className={inputCls} value={form.level} onChange={e => setForm({ ...form, level: e.target.value as Level })}>
-                {(['A','B','C','D'] as Level[]).map(l => <option key={l} value={l}>Level {l}</option>)}
+              <label htmlFor="pl-level" className="ad-label">Level</label>
+              <select id="pl-level" className="ad-input" value={form.level} onChange={e => setForm({ ...form, level: e.target.value as Level })}>
+                {LEVELS.map(l => <option key={l} value={l}>Level {l}</option>)}
               </select>
             </div>
             <div>
-              <label className={labelCls}>Gender</label>
-              <select className={inputCls} value={form.gender} onChange={e => setForm({ ...form, gender: e.target.value as Gender })}>
+              <label htmlFor="pl-gender" className="ad-label">Gender</label>
+              <select id="pl-gender" className="ad-input" value={form.gender} onChange={e => setForm({ ...form, gender: e.target.value as Gender })}>
                 <option value="Male">Male</option>
                 <option value="Female">Female</option>
               </select>
             </div>
           </div>
-          <Button v="primary" onClick={handleAdd} loading={saving} disabled={offline} title={offlineTitle}>Add Player</Button>
+          <Button v="primary" onClick={handleAdd} loading={saving} disabled={offline} title={offlineTitle}>Add player</Button>
         </div>
       )}
 
       {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-2 mb-5 flex-wrap items-start sm:items-center">
-        <input className={`${inputCls} sm:w-48`} placeholder="Search players..."
-          value={search} onChange={e => setSearch(e.target.value)} />
-        <div className="flex gap-1 flex-wrap">
-          {(['ALL','A','B','C','D'] as const).map(l => (
-            <button key={l} className={`filter-btn${fLevel === l ? ' active' : ''}`} onClick={() => setFLevel(l)}>
-              {l === 'ALL' ? 'All Levels' : `Lvl ${l}`}
+      <div className="flex flex-col sm:flex-row gap-3 mb-5 flex-wrap items-start sm:items-end">
+        <div className="w-full sm:w-56">
+          <label htmlFor="pl-search" className="ad-label">Search players</label>
+          <input id="pl-search" className="ad-input" placeholder="Name"
+            value={search} onChange={e => setSearch(e.target.value)} />
+        </div>
+        <div className="flex gap-2 flex-wrap">
+          {(['ALL', ...LEVELS] as const).map(l => (
+            <button key={l} type="button" aria-pressed={fLevel === l}
+              className={`filter-btn${fLevel === l ? ' active' : ''}`} onClick={() => setFLevel(l)}>
+              {l === 'ALL' ? 'All levels' : `Lvl ${l}`}
             </button>
           ))}
         </div>
-        <div className="flex gap-1">
-          {(['ALL','Male','Female'] as const).map(g => (
-            <button key={g} className={`filter-btn${fGender === g ? ' active' : ''}`} onClick={() => setFGender(g)}>
+        <div className="flex gap-2 flex-wrap">
+          {(['ALL', 'Male', 'Female'] as const).map(g => (
+            <button key={g} type="button" aria-pressed={fGender === g}
+              className={`filter-btn${fGender === g ? ' active' : ''}`} onClick={() => setFGender(g)}>
               {g === 'ALL' ? 'All' : g}
             </button>
           ))}
         </div>
-        <span className="text-xs text-gray-400 sm:ml-auto font-mono">{loadError ? '— / —' : `${filtered.length} / ${players.length}`}</span>
+        <span className="ad-mono ad-muted text-xs sm:ml-auto">
+          {loadError ? '— of —' : `${filtered.length} of ${players.length} players`}
+        </span>
       </div>
 
       {/* Table — desktop */}
-      <div className="hidden sm:block bg-white border border-gray-200 rounded-lg overflow-hidden">
-        <div className="grid px-5 py-2.5 border-b border-gray-100 bg-white"
-          style={{ gridTemplateColumns: '2fr 60px 80px 70px 1fr' }}>
-          {['Name','Level','Gender','Age',''].map(h => (
-            <span key={h} className="text-[0.65rem] font-semibold tracking-widest uppercase text-gray-300">{h}</span>
+      <div className="hidden sm:block">
+        <div className="grid items-center border-b-2 border-[#0E2420] py-2" style={{ gridTemplateColumns: COLS }}>
+          {['Name', 'Level', 'Gender', 'Age', ''].map((h, i) => (
+            <span key={i} className="ad-eyebrow">{h}</span>
           ))}
         </div>
 
         {loading ? (
-          <div className="p-12 text-center text-gray-300 text-sm">Loading...</div>
+          <div className="py-14 text-center ad-muted text-sm">Loading...</div>
         ) : loadError ? (
-          <div className="p-12 text-center text-amber-800 text-sm">{loadError}</div>
+          <div className="py-14 text-center text-amber-900 text-sm">{loadError}</div>
         ) : filtered.length === 0 ? (
-          <div className="p-12 text-center text-gray-300 text-sm">
-            {players.length === 0 ? 'No players yet.' : 'No players match your filters.'}
-          </div>
-        ) : filtered.map((p, i) => (
-          <div key={p._id} style={{ borderBottom: i < filtered.length - 1 ? '1px solid #f3f4f6' : 'none' }}>
+          <EmptyState />
+        ) : filtered.map(p => (
+          <div key={p._id} className="border-b border-[#E1DBCB]">
             {editId === p._id ? (
-              <div className="px-5 py-3 grid gap-3 sm:grid-cols-5 items-center">
-                <input className={inputCls} value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} />
-                <input className={inputCls} type="number" value={editForm.age} onChange={e => setEditForm({ ...editForm, age: e.target.value })} />
-                <select className={inputCls} value={editForm.level} onChange={e => setEditForm({ ...editForm, level: e.target.value as Level })}>
-                  {(['A','B','C','D'] as Level[]).map(l => <option key={l} value={l}>Level {l}</option>)}
+              <div className="grid gap-3 py-3 items-center" style={{ gridTemplateColumns: COLS }}>
+                <input className="ad-input" aria-label="Full name" value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} />
+                <select className="ad-input" aria-label="Level" value={editForm.level} onChange={e => setEditForm({ ...editForm, level: e.target.value as Level })}>
+                  {LEVELS.map(l => <option key={l} value={l}>Level {l}</option>)}
                 </select>
-                <select className={inputCls} value={editForm.gender} onChange={e => setEditForm({ ...editForm, gender: e.target.value as Gender })}>
+                <select className="ad-input" aria-label="Gender" value={editForm.gender} onChange={e => setEditForm({ ...editForm, gender: e.target.value as Gender })}>
                   <option value="Male">Male</option>
                   <option value="Female">Female</option>
                 </select>
-                <div className="flex gap-1.5">
+                <input className="ad-input" aria-label="Age" type="number" inputMode="numeric" value={editForm.age} onChange={e => setEditForm({ ...editForm, age: e.target.value })} />
+                <div className="flex gap-2 justify-end">
                   <Button v="primary" size="sm" onClick={() => handleSave(p._id)} disabled={offline} title={offlineTitle}>Save</Button>
                   <Button v="ghost"   size="sm" onClick={() => setEditId(null)}>Cancel</Button>
                 </div>
               </div>
             ) : (
-              <div className="grid px-5 py-3.5 items-center hover:bg-gray-50/40 transition-colors"
-                style={{ gridTemplateColumns: '2fr 60px 80px 70px 1fr' }}>
+              <div className="grid items-center py-3.5 hover:bg-[#EDE8D8]/50 transition-colors" style={{ gridTemplateColumns: COLS }}>
                 <div>
-                  <div className="text-sm font-medium text-gray-700">{p.name}</div>
-                  <div className="text-[0.72rem] text-gray-400 mt-0.5 font-mono">{p.matchCount} match{p.matchCount !== 1 ? 'es' : ''}</div>
+                  <div className="text-[15px] font-bold text-[#0E2420]">{p.name}</div>
+                  <div className="ad-mono ad-muted text-xs mt-0.5">{matchesLabel(p.matchCount)}</div>
                 </div>
-                <span className="text-[0.72rem] font-semibold px-2 py-0.5 rounded font-mono tracking-wide w-fit"
-                  style={{ color: LEVEL_COLOR[p.level], background: LEVEL_BG[p.level] }}>{p.level}</span>
-                <span className="text-xs text-gray-500">{p.gender}</span>
-                <span className="text-xs text-gray-500 font-mono">{p.age}</span>
-                <div className="flex gap-1.5 justify-end">
-                  <Button v="ghost" size="sm" onClick={() => { setEditId(p._id); setEditForm({ name: p.name, level: p.level, gender: p.gender, age: String(p.age) }); }} disabled={offline} title={offlineTitle}>Edit</Button>
-                  <Button v="danger" size="sm" onClick={() => handleDelete(p._id)} disabled={offline} title={offlineTitle}>Remove</Button>
+                <span className="ad-mono text-sm font-bold">Lvl {p.level}</span>
+                <span className="text-sm">{p.gender}</span>
+                <span className="ad-mono text-sm">{p.age}</span>
+                <div className="flex gap-2 justify-end">
+                  <Button v="ghost" size="sm" onClick={() => startEdit(p)} disabled={offline} title={offlineTitle}>Edit</Button>
+                  <Button v="danger" size="sm" onClick={() => handleDelete(p._id)} disabled={offline} title={offlineTitle}>Remove…</Button>
                 </div>
               </div>
             )}
@@ -208,58 +244,47 @@ export default function PlayersPage() {
         ))}
       </div>
 
-      {/* Cards — mobile */}
-      <div className="sm:hidden flex flex-col gap-3">
+      {/* List — phone */}
+      <div className="sm:hidden">
         {loading ? (
-          <div className="p-12 text-center text-gray-300 text-sm">Loading...</div>
+          <div className="py-14 text-center ad-muted text-sm">Loading...</div>
         ) : loadError ? (
-          <div className="p-12 text-center text-amber-800 text-sm">{loadError}</div>
+          <div className="py-14 text-center text-amber-900 text-sm">{loadError}</div>
         ) : filtered.length === 0 ? (
-          <div className="p-12 text-center text-gray-300 text-sm">No players found.</div>
+          <EmptyState />
         ) : filtered.map(p => (
-          <div key={p._id} className="bg-white border border-gray-200 rounded-xl p-4">
+          <div key={p._id} className="border-b border-[#E1DBCB] py-4">
             {editId === p._id ? (
               <div className="space-y-3">
-                <input className={inputCls} value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} />
+                <input className="ad-input" aria-label="Full name" value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} />
                 <div className="grid grid-cols-2 gap-3">
-                  <input className={inputCls} type="number" placeholder="Age" value={editForm.age} onChange={e => setEditForm({ ...editForm, age: e.target.value })} />
-                  <select className={inputCls} value={editForm.level} onChange={e => setEditForm({ ...editForm, level: e.target.value as Level })}>
-                    {(['A','B','C','D'] as Level[]).map(l => <option key={l} value={l}>Level {l}</option>)}
+                  <input className="ad-input" aria-label="Age" type="number" inputMode="numeric" placeholder="Age" value={editForm.age} onChange={e => setEditForm({ ...editForm, age: e.target.value })} />
+                  <select className="ad-input" aria-label="Level" value={editForm.level} onChange={e => setEditForm({ ...editForm, level: e.target.value as Level })}>
+                    {LEVELS.map(l => <option key={l} value={l}>Level {l}</option>)}
                   </select>
                 </div>
-                <select className={inputCls} value={editForm.gender} onChange={e => setEditForm({ ...editForm, gender: e.target.value as Gender })}>
+                <select className="ad-input" aria-label="Gender" value={editForm.gender} onChange={e => setEditForm({ ...editForm, gender: e.target.value as Gender })}>
                   <option value="Male">Male</option>
                   <option value="Female">Female</option>
                 </select>
                 <div className="flex gap-2">
-                  <Button v="primary" size="sm" onClick={() => handleSave(p._id)} disabled={offline} title={offlineTitle} className="flex-1 justify-center">Save</Button>
-                  <Button v="ghost"   size="sm" onClick={() => setEditId(null)}   className="flex-1 justify-center">Cancel</Button>
+                  <Button v="primary" onClick={() => handleSave(p._id)} disabled={offline} title={offlineTitle} className="flex-1">Save</Button>
+                  <Button v="ghost"   onClick={() => setEditId(null)} className="flex-1">Cancel</Button>
                 </div>
               </div>
             ) : (
               <>
-                <div className="flex items-start justify-between gap-3 mb-3">
+                <div className="flex items-start justify-between gap-3 mb-2">
                   <div>
-                    <p className="text-sm font-semibold text-gray-800">{p.name}</p>
-                    <p className="text-xs text-gray-400 font-mono mt-0.5">{p.matchCount} match{p.matchCount !== 1 ? 'es' : ''}</p>
+                    <p className="text-[15px] font-bold text-[#0E2420]">{p.name}</p>
+                    <p className="ad-mono ad-muted text-xs mt-0.5">{matchesLabel(p.matchCount)}</p>
                   </div>
-                  <span className="text-[0.72rem] font-bold px-2 py-0.5 rounded font-mono shrink-0"
-                    style={{ color: LEVEL_COLOR[p.level], background: LEVEL_BG[p.level] }}>{p.level}</span>
+                  <span className="ad-mono text-sm font-bold shrink-0">Lvl {p.level}</span>
                 </div>
-                <div className="flex items-center gap-3 text-xs text-gray-500 mb-3">
-                  <span>{p.gender}</span>
-                  <span className="text-gray-300">·</span>
-                  <span>Age {p.age}</span>
-                </div>
+                <p className="ad-muted text-sm mb-3">{p.gender} · Age {p.age}</p>
                 <div className="flex gap-2">
-                  <Button v="ghost"  size="sm" className="flex-1 justify-center"
-                    onClick={() => { setEditId(p._id); setEditForm({ name: p.name, level: p.level, gender: p.gender, age: String(p.age) }); }}
-                    disabled={offline} title={offlineTitle}>
-                    Edit
-                  </Button>
-                  <Button v="danger" size="sm" className="flex-1 justify-center" onClick={() => handleDelete(p._id)} disabled={offline} title={offlineTitle}>
-                    Remove
-                  </Button>
+                  <Button v="ghost" className="flex-1" onClick={() => startEdit(p)} disabled={offline} title={offlineTitle}>Edit</Button>
+                  <Button v="danger" className="flex-1" onClick={() => handleDelete(p._id)} disabled={offline} title={offlineTitle}>Remove…</Button>
                 </div>
               </>
             )}

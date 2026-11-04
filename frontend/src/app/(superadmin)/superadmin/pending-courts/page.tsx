@@ -1,6 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { Button } from '@/app/components/ui/Button';
+import { AdminHeader } from '@/app/components/ui/AdminHeader';
 
 interface PendingCourt {
   _id: string;
@@ -63,106 +65,85 @@ export default function PendingCourtsPage() {
   };
 
   return (
-    <div className="max-w-[1100px] space-y-6 font-sans">
-      <div className="flex items-end justify-between gap-4 border-b border-gray-100 pb-5">
-        <div>
-          <p className="mb-1 text-[0.72rem] font-medium uppercase tracking-[0.05em] text-gray-400">Platform</p>
-          <h1 className="text-2xl font-bold tracking-tight text-gray-900">Pending Courts</h1>
-        </div>
+    <div className="max-w-[1100px]">
+      <AdminHeader eyebrow="Platform" title="Pending courts" right={
         <div className="flex items-center gap-3">
-          <span className="font-mono text-[0.72rem] text-gray-400">{courts.length} pending</span>
-          <button
-            type="button"
-            onClick={() => void load()}
-            disabled={loading}
-            className="cursor-pointer rounded-md border border-gray-200 bg-white px-3 py-1.5 text-[0.72rem] text-gray-500 transition-colors hover:border-gray-300 hover:text-gray-700 disabled:opacity-50"
-          >
-            ↻ Refresh
-          </button>
+          <span className="ad-mono ad-muted text-xs">{courts.length} pending</span>
+          <Button v="ghost" onClick={() => void load()} disabled={loading}>Refresh</Button>
         </div>
-      </div>
+      } />
 
       {error && (
-        <div className="flex justify-between rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+        <div role="alert" className="mb-4 flex items-center justify-between gap-3 border-l-4 border-[#C4401F] bg-[#F3E3DC] px-4 py-3 text-sm">
           <span>{error}</span>
-          <button type="button" onClick={() => void load()} className="cursor-pointer border-0 bg-transparent text-xs text-red-600 underline">
-            Retry
-          </button>
+          <Button v="ghost" size="sm" onClick={() => void load()}>Try again</Button>
         </div>
       )}
 
       {loading ? (
-        <p className="py-10 text-center text-sm text-gray-400">Loading pending registrations...</p>
+        <p className="py-10 text-center ad-muted text-sm">Loading pending registrations...</p>
       ) : courts.length === 0 ? (
-        <div className="rounded-lg border border-gray-200 bg-white py-10 text-center text-sm text-gray-400">
-          No pending registrations
+        <div className="py-14">
+          <p className="font-bold">No courts are waiting for approval.</p>
+          <p className="ad-muted text-sm mt-1">New registrations appear here.</p>
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className="border-t-2 border-[#0E2420]">
           {courts.map(court => (
-            <section key={court._id} className="rounded-lg border border-gray-200 bg-white p-5">
+            <section key={court._id} className="border-b border-[#E1DBCB] py-5">
               <div className="flex flex-wrap items-start justify-between gap-5">
                 <div className="grid min-w-0 flex-1 grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
                   <Info label="Court" value={court.name} />
-                  <Info label="Slug" value={court.slug} />
+                  <Info label="Slug" value={court.slug} mono />
                   <Info label="City" value={court.location?.city} />
                   <Info label="Contact person" value={court.contactPerson?.name} />
-                  <Info label="Contact phone" value={court.contactPerson?.phone} />
+                  <Info label="Contact phone" value={court.contactPerson?.phone} mono />
                   <Info label="Registered by" value={court.registeredBy?.email} />
                 </div>
-                <div className="flex shrink-0 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => void actOnCourt(court._id, 'approve')}
-                    disabled={acting !== null}
-                    className="cursor-pointer rounded-md border border-green-200 bg-green-50 px-3 py-1.5 text-[0.75rem] font-medium text-green-700 transition-colors hover:bg-green-100 disabled:opacity-50"
-                  >
+                <div className="flex shrink-0 gap-2 flex-wrap">
+                  <Button v="primary" onClick={() => void actOnCourt(court._id, 'approve')} disabled={acting !== null}
+                    loading={acting === court._id}>
                     {acting === court._id ? 'Working...' : 'Approve'}
-                  </button>
-                  <button
-                    type="button"
+                  </Button>
+                  <Button v="danger" disabled={acting !== null}
                     onClick={() => {
                       setRejecting(current => current === court._id ? null : court._id);
                       setReason('');
                       setError(null);
-                    }}
-                    disabled={acting !== null}
-                    className="cursor-pointer rounded-md border border-red-200 bg-red-50 px-3 py-1.5 text-[0.75rem] font-medium text-red-600 transition-colors hover:bg-red-100 disabled:opacity-50"
-                  >
-                    Reject
-                  </button>
+                    }}>
+                    Reject…
+                  </Button>
                 </div>
               </div>
               {rejecting === court._id && (
                 <form
-                  className="mt-4 flex flex-col gap-2 border-t border-gray-100 pt-4 sm:flex-row"
+                  className="mt-4 flex flex-col gap-3 border-t border-[#E1DBCB] pt-4 sm:flex-row sm:items-end"
                   onSubmit={event => {
                     event.preventDefault();
                     void actOnCourt(court._id, 'reject');
                   }}
                 >
-                  <input
-                    aria-label={`Rejection reason for ${court.name}`}
-                    value={reason}
-                    onChange={event => setReason(event.target.value)}
-                    placeholder="Reason for rejection"
-                    className="min-w-0 flex-1 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-red-300"
-                  />
-                  <button
-                    type="submit"
-                    disabled={acting !== null || !reason.trim()}
-                    className="cursor-pointer rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-50"
-                  >
-                    {acting === court._id ? 'Rejecting...' : 'Confirm reject'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setRejecting(null); setReason(''); }}
-                    disabled={acting !== null}
-                    className="cursor-pointer rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-600 transition-colors hover:bg-gray-50 disabled:opacity-50"
-                  >
-                    Cancel
-                  </button>
+                  <div className="min-w-0 flex-1">
+                    <label htmlFor={`rj-${court._id}`} className="ad-label">Reason for rejection (the owner will see this)</label>
+                    <input
+                      id={`rj-${court._id}`}
+                      autoFocus
+                      value={reason}
+                      onChange={event => setReason(event.target.value)}
+                      placeholder="The phone number could not be reached."
+                      className="ad-input"
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <Button v="dark" type="submit" className="!bg-[#B8431F] !border-[#B8431F]"
+                      disabled={acting !== null || !reason.trim()} loading={acting === court._id}>
+                      {acting === court._id ? 'Rejecting...' : 'Confirm reject'}
+                    </Button>
+                    <Button v="ghost" type="button" disabled={acting !== null}
+                      onClick={() => { setRejecting(null); setReason(''); }}>
+                      Cancel
+                    </Button>
+                  </div>
                 </form>
               )}
             </section>
@@ -173,11 +154,11 @@ export default function PendingCourtsPage() {
   );
 }
 
-function Info({ label, value }: { label: string; value?: string | null }) {
+function Info({ label, value, mono }: { label: string; value?: string | null; mono?: boolean }) {
   return (
     <div className="flex min-w-0 flex-col gap-0.5">
-      <span className="text-[0.62rem] font-semibold uppercase tracking-[0.08em] text-gray-400">{label}</span>
-      <span className="break-words text-[0.82rem] text-gray-700">{value || '—'}</span>
+      <span className="ad-eyebrow">{label}</span>
+      <span className={`break-words text-sm ${mono ? 'ad-mono' : ''}`}>{value || '—'}</span>
     </div>
   );
 }

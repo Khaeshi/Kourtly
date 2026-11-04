@@ -2,6 +2,8 @@
 import { useState, useEffect } from 'react';
 import { API_BASE } from '@/lib/config'
 import Image from 'next/image';
+import { Button } from '@/app/components/ui/Button';
+import { AdminHeader } from '@/app/components/ui/AdminHeader';
 
 
 interface AppUser {
@@ -14,6 +16,7 @@ export default function UsersPage() {
   const [users,    setUsers]    = useState<AppUser[]>([]);
   const [loading,  setLoading]  = useState(true);
   const [error,    setError]    = useState<string | null>(null);
+  const [notice,   setNotice]   = useState<string | null>(null);
   const [toggling, setToggling] = useState<string | null>(null);
   const [search,   setSearch]   = useState('');
 
@@ -56,7 +59,7 @@ export default function UsersPage() {
       await fetch(`${API_BASE}/users/${user._id}`, { method: 'DELETE' });
       await load();
     } catch {
-      alert('Failed to delete user');
+      setNotice('Failed to delete user');
     }
   };
 
@@ -70,65 +73,65 @@ export default function UsersPage() {
   const regular = filtered.filter(u => u.role === 'user');
 
   return (
-    <div className="max-w-[900px] font-sans">
+    <div className="max-w-[900px]">
 
-      {/* Header */}
-      <div className="flex items-end justify-between flex-wrap gap-4 mb-6 pb-5 border-b border-gray-100">
-        <div>
-          <p className="text-[0.72rem] font-medium tracking-[0.05em] uppercase text-gray-400 mb-1">Management</p>
-          <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Users</h1>
-        </div>
-        <div className="flex gap-6 items-center">
+      <AdminHeader eyebrow="Management" title="Users" right={
+        <div className="flex gap-6 items-center flex-wrap">
           <div className="text-right">
-            <div className="text-[0.65rem] font-semibold tracking-[0.1em] uppercase text-gray-400">Total</div>
-            <div className="font-mono text-xl text-gray-900 font-semibold">{users.length}</div>
+            <div className="ad-eyebrow">Total</div>
+            <div className="ad-mono text-2xl font-bold">{users.length}</div>
           </div>
           <div className="text-right">
-            <div className="text-[0.65rem] font-semibold tracking-[0.1em] uppercase text-gray-400">Admins</div>
-            <div className="font-mono text-xl text-green-700 font-semibold">{users.filter(u => u.role === 'admin').length}</div>
+            <div className="ad-eyebrow">Admins</div>
+            <div className="ad-mono text-2xl font-bold text-[#1F8A7A]">{users.filter(u => u.role === 'admin').length}</div>
           </div>
-          <button onClick={load} className="text-[0.72rem] text-gray-400 border border-gray-200 rounded-md px-3 py-1.5 hover:border-gray-300 hover:text-gray-600 transition-colors bg-white cursor-pointer">
-            ↻ Refresh
-          </button>
+          <Button v="ghost" onClick={load}>Refresh</Button>
         </div>
-      </div>
+      } />
 
       {/* Search */}
-      <input
-        className="w-full max-w-[280px] bg-white border border-gray-200 rounded-md px-3 py-2 text-[0.82rem] text-gray-900 outline-none focus:border-green-400 mb-5 transition-colors"
-        placeholder="Search by name or email..."
-        value={search}
-        onChange={e => setSearch(e.target.value)}
-      />
+      <div className="w-full max-w-xs mb-6">
+        <label htmlFor="su-search" className="ad-label">Search users</label>
+        <input id="su-search" className="ad-input" placeholder="Name or email"
+          value={search} onChange={e => setSearch(e.target.value)} />
+      </div>
+
+      {notice && (
+        <p role="alert" className="mb-4 flex items-center justify-between gap-3 border-l-4 border-[#C4401F] bg-[#F3E3DC] px-4 py-3 text-sm">
+          <span>{notice}</span>
+          <Button v="ghost" size="sm" onClick={() => setNotice(null)}>Dismiss</Button>
+        </p>
+      )}
 
       {/* Error state */}
       {error && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4 text-sm text-red-700 flex items-center justify-between">
-          <span>⚠ {error}</span>
-          <button onClick={load} className="text-red-600 underline text-xs cursor-pointer bg-transparent border-none">Retry</button>
+        <div role="alert" className="mb-4 flex items-center justify-between gap-3 border-l-4 border-[#C4401F] bg-[#F3E3DC] px-4 py-3 text-sm">
+          <span>{error}</span>
+          <Button v="ghost" size="sm" onClick={load}>Try again</Button>
         </div>
       )}
 
       {loading ? (
-        <div className="py-12 text-center text-gray-400 text-sm">Loading users...</div>
+        <div className="py-12 text-center ad-muted text-sm">Loading users...</div>
       ) : (
-        <div className="flex flex-col gap-5">
+        <div className="flex flex-col gap-10">
           {admins.length > 0 && (
             <UserGroup title="Admins" users={admins} toggling={toggling} onToggle={handleToggleRole} onDelete={handleDelete} />
           )}
           <UserGroup title="Users" users={regular} toggling={toggling} onToggle={handleToggleRole} onDelete={handleDelete} />
           {filtered.length === 0 && !error && (
-            <div className="py-12 text-center text-gray-400 text-sm bg-white border border-gray-200 rounded-lg">
-              No users found.
+            <div className="py-6">
+              <p className="font-bold">No users found.</p>
+              <p className="ad-muted text-sm mt-1">Clear the search to see everyone.</p>
             </div>
           )}
         </div>
       )}
 
       {/* First-time setup hint */}
-      <div className="mt-6 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-[0.78rem] text-amber-800 leading-relaxed">
-        <strong>First-time setup:</strong> Sign in with Google first, then find your email here and click <strong>Make Admin</strong>. You only need to do this once.
-      </div>
+      <p className="ad-muted text-sm mt-10 max-w-xl">
+        <b className="text-[#0E2420]">First-time setup.</b> Sign in with Google first, then find your email here and choose <b className="text-[#0E2420]">Make admin</b>. You only need to do this once.
+      </p>
     </div>
   );
 }
@@ -141,78 +144,48 @@ function UserGroup({ title, users, toggling, onToggle, onDelete }: {
   onToggle: (u: AppUser) => void;
   onDelete: (u: AppUser) => void;
 }) {
-  const isAdminGroup = title === 'Admins';
-
   return (
-    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-
-      {/* Group header */}
-      <div className="px-5 py-2.5 border-b border-gray-100 bg-gray-50 flex items-center gap-2">
-        <span className={`text-[0.65rem] font-bold tracking-[0.1em] uppercase px-2 py-0.5 rounded-[3px] border ${
-          isAdminGroup
-            ? 'text-green-700 bg-green-50 border-green-200'
-            : 'text-gray-500 bg-gray-100 border-gray-200'
-        }`}>
-          {title}
-        </span>
-        <span className="text-[0.65rem] text-gray-400 font-mono">{users.length}</span>
-      </div>
+    <section>
+      <h2 className="font-display text-[1.6rem] mb-3">
+        {title} <span className="ad-mono ad-muted text-sm normal-case">· {users.length}</span>
+      </h2>
 
       {users.length === 0 ? (
-        <p className="py-6 text-center text-gray-400 text-sm">None yet.</p>
+        <p className="py-4 ad-muted text-sm">None yet.</p>
       ) : (
-        users.map((user, i) => (
-          <div
-            key={user._id}
-            className="grid items-center gap-4 px-5 py-3 transition-colors hover:bg-gray-50"
-            style={{ gridTemplateColumns: '1fr auto', borderBottom: i < users.length - 1 ? '1px solid #f9fafb' : 'none' }}
-          >
-            {/* User info */}
-            <div className="flex items-center gap-3 min-w-0">
-              {user.image ? (
-                <Image src={user.image} alt={user.name ?? ''} width={32} height={32} className="rounded-full shrink-0" />
-              ) : (
-                <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center shrink-0">
-                  <span className="text-[0.78rem] font-semibold text-gray-500">
-                    {(user.name || user.email)?.[0]?.toUpperCase()}
-                  </span>
+        <div className="border-t-2 border-[#0E2420]">
+          {users.map(user => (
+            <div key={user._id} className="flex items-center justify-between gap-x-4 gap-y-3 flex-wrap py-3 border-b border-[#E1DBCB]">
+              {/* User info */}
+              <div className="flex items-center gap-3 min-w-0 flex-1 basis-[260px]">
+                {user.image ? (
+                  <Image src={user.image} alt="" width={36} height={36} className="rounded-full shrink-0" />
+                ) : (
+                  <div className="w-9 h-9 rounded-full bg-[#E1DBCB] flex items-center justify-center shrink-0">
+                    <span className="text-sm font-bold text-[#5B6B66]">
+                      {(user.name || user.email)?.[0]?.toUpperCase()}
+                    </span>
+                  </div>
+                )}
+                <div className="min-w-0">
+                  <p className="text-[15px] font-bold truncate">{user.name || '—'}</p>
+                  <p className="ad-muted text-sm truncate">{user.email}</p>
+                  <p className="ad-mono ad-muted text-xs">{user.provider} · {new Date(user.createdAt).toLocaleDateString()}</p>
                 </div>
-              )}
-              <div className="min-w-0">
-                <div className="text-[0.85rem] font-medium text-gray-900 truncate">{user.name || '—'}</div>
-                <div className="text-[0.72rem] text-gray-400 truncate">{user.email}</div>
               </div>
-              <span className="text-[0.62rem] bg-gray-100 text-gray-400 px-1.5 py-0.5 rounded font-mono shrink-0 hidden sm:inline">
-                {user.provider}
-              </span>
-              <span className="text-[0.62rem] text-gray-300 shrink-0 hidden md:inline">
-                {new Date(user.createdAt).toLocaleDateString()}
-              </span>
-            </div>
 
-            {/* Actions */}
-            <div className="flex gap-1.5 shrink-0">
-              <button
-                onClick={() => onToggle(user)}
-                disabled={toggling === user._id}
-                className={`px-2.5 py-1 rounded-md text-[0.72rem] font-medium cursor-pointer transition-all border ${
-                  user.role === 'admin'
-                    ? 'border-red-200 bg-red-50 text-red-600 hover:bg-red-100'
-                    : 'border-green-200 bg-green-50 text-green-700 hover:bg-green-100'
-                } disabled:opacity-50`}
-              >
-                {toggling === user._id ? '...' : user.role === 'admin' ? 'Revoke Admin' : 'Make Admin'}
-              </button>
-              <button
-                onClick={() => onDelete(user)}
-                className="px-2 py-1 rounded-md text-[0.72rem] border border-gray-200 bg-white text-gray-400 cursor-pointer transition-all hover:border-red-200 hover:text-red-500"
-              >
-                ✕
-              </button>
+              {/* Actions */}
+              <div className="flex gap-2 shrink-0 flex-wrap">
+                <Button v={user.role === 'admin' ? 'danger' : 'ghost'} size="sm"
+                  loading={toggling === user._id} onClick={() => onToggle(user)}>
+                  {user.role === 'admin' ? 'Revoke admin…' : 'Make admin…'}
+                </Button>
+                <Button v="danger" size="sm" onClick={() => onDelete(user)}>Remove user…</Button>
+              </div>
             </div>
-          </div>
-        ))
+          ))}
+        </div>
       )}
-    </div>
+    </section>
   );
 }

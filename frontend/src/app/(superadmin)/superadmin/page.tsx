@@ -1,5 +1,9 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
+import { Button } from '@/app/components/ui/Button';
+import { Modal } from '@/app/components/ui/Modal';
+import { StatusDot, type StatusTone } from '@/app/components/ui/StatusDot';
+import { AdminHeader } from '@/app/components/ui/AdminHeader';
 
 interface Stats {
   total: number; active: number; trials: number;
@@ -13,18 +17,18 @@ interface Court {
   subscription: { status: string; plan: string; amount: number; trialEnds: string; };
 }
 
-const STATUS_STYLES: Record<string, string> = {
-  active:    'text-green-700 bg-green-50 border-green-200',
-  trial:     'text-amber-700 bg-amber-50 border-amber-200',
-  expired:   'text-red-600 bg-red-50 border-red-200',
-  suspended: 'text-gray-500 bg-gray-100 border-gray-200',
+const TONE: Record<string, StatusTone> = {
+  active: 'ok', trial: 'wait', expired: 'bad', suspended: 'off',
 };
+
+const COLS = '1.4fr 1.2fr 150px 70px 280px';
 
 export default function SuperAdminDashboard() {
   const [stats,   setStats]   = useState<Stats | null>(null);
   const [courts,  setCourts]  = useState<Court[]>([]);
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState<string | null>(null);
+  const [notice,  setNotice]  = useState<string | null>(null);
   const [acting,  setActing]  = useState<string | null>(null);
   const [search,  setSearch]  = useState('');
   const [filter,  setFilter]  = useState('all');
@@ -71,7 +75,7 @@ export default function SuperAdminDashboard() {
       });
       if (!res.ok) throw new Error('Failed');
       await load();
-    } catch { alert('Action failed'); }
+    } catch { setNotice('Action failed'); }
     finally { setActing(null); }
   };
 
@@ -98,250 +102,217 @@ export default function SuperAdminDashboard() {
     return matchSearch && matchFilter;
   });
 
+  const rowActions = (court: Court) => (
+    <>
+      {court.subscription.status === 'trial' && (
+        <>
+          <Button v="primary" size="sm" loading={acting === court._id}
+            onClick={() => { if(confirm(`Activate ${court.name}?`)) updateSubscription(court._id, { status: 'active', plan: court.subscription.plan }); }}>Activate…</Button>
+          <Button v="ghost" size="sm" loading={acting === court._id}
+            onClick={() => updateSubscription(court._id, { extendTrialDays: 7 })}>Extend 7 days</Button>
+        </>
+      )}
+      {court.subscription.status === 'active' && (
+        <Button v="danger" size="sm" loading={acting === court._id}
+          onClick={() => { if(confirm(`Suspend ${court.name}?`)) updateSubscription(court._id, { status: 'suspended' }); }}>Suspend…</Button>
+      )}
+      {(court.subscription.status === 'suspended' || court.subscription.status === 'expired') && (
+        <Button v="primary" size="sm" loading={acting === court._id}
+          onClick={() => { if(confirm(`Reactivate ${court.name}?`)) updateSubscription(court._id, { status: 'active', plan: court.subscription.plan }); }}>Reactivate…</Button>
+      )}
+    </>
+  );
+
   return (
-    <div className="max-w-[1100px] font-sans space-y-8">
+    <div className="max-w-[1100px]">
 
-      {/* Header */}
-      <div className="flex items-end justify-between flex-wrap gap-4 pb-5 border-b border-gray-100">
-        <div>
-          <p className="text-[0.72rem] font-medium tracking-[0.05em] uppercase text-gray-400 mb-1">Platform</p>
-          <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Dashboard</h1>
+      <AdminHeader eyebrow="Platform" title="Dashboard" right={
+        <div className="flex gap-2 flex-wrap">
+          <Button v="primary" onClick={() => setShowForm(true)}>Onboard a court</Button>
+          <Button v="ghost" onClick={load}>Refresh</Button>
         </div>
-        <div className="flex gap-3">
-          <button onClick={() => setShowForm(true)}
-            className="text-[0.78rem] font-medium bg-gray-900 text-white px-3.5 py-1.5 rounded-md hover:bg-gray-700 transition-colors cursor-pointer">
-            + Onboard Court
-          </button>
-          <button onClick={load}
-            className="text-[0.72rem] text-gray-400 border border-gray-200 rounded-md px-3 py-1.5 hover:border-gray-300 hover:text-gray-600 transition-colors bg-white cursor-pointer">
-            ↻ Refresh
-          </button>
-        </div>
-      </div>
+      } />
 
-      {/* Stats strip */}
+      {/* Key figures */}
       {stats && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-px bg-[#C9C3B3] border-y border-[#C9C3B3]">
           {[
-            { label: 'Total',     value: stats.total,                       color: ''      },
-            { label: 'Active',    value: stats.active,                      color: 'green' },
-            { label: 'Trials',    value: stats.trials,                      color: 'amber' },
-            { label: 'Expired',   value: stats.expired,                     color: 'red'   },
-            { label: 'Suspended', value: stats.suspended,                   color: ''      },
-            { label: 'MRR',       value: `₱${stats.mrr.toLocaleString()}`,  color: 'green' },
-            { label: 'ARR',       value: `₱${stats.arr.toLocaleString()}`,  color: 'green' },
+            { label: 'Courts',    value: String(stats.total),                tone: '' },
+            { label: 'Active',    value: String(stats.active),               tone: 'text-[#1F8A7A]' },
+            { label: 'Trials',    value: String(stats.trials),               tone: '' },
+            { label: 'Expired',   value: String(stats.expired),              tone: '' },
+            { label: 'Suspended', value: String(stats.suspended),            tone: '' },
+            { label: 'MRR',       value: `₱${stats.mrr.toLocaleString()}`,   tone: '' },
+            { label: 'ARR',       value: `₱${stats.arr.toLocaleString()}`,   tone: '' },
           ].map(s => (
-            <div key={s.label} className="bg-white border border-gray-200 rounded-lg px-3 py-2.5 text-center">
-              <div className="text-[0.62rem] font-semibold tracking-[0.1em] uppercase text-gray-400">{s.label}</div>
-              <div className={`font-mono text-lg font-semibold mt-0.5 ${
-                s.color === 'green' ? 'text-green-700' :
-                s.color === 'amber' ? 'text-amber-600' :
-                s.color === 'red'   ? 'text-red-600'   : 'text-gray-900'
-              }`}>{s.value}</div>
+            <div key={s.label} className="bg-[#F4F0E6] px-4 py-3 min-w-0">
+              <p className="ad-eyebrow mb-1">{s.label}</p>
+              <p className={`ad-mono text-[clamp(1.2rem,2.4vw,1.75rem)] font-bold leading-none break-words ${s.tone}`}>{s.value}</p>
             </div>
           ))}
         </div>
       )}
 
-      {/* Two-col: Expiring trials + Recent signups */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      {notice && (
+        <p role="alert" className="mt-4 flex items-center justify-between gap-3 border-l-4 border-[#C4401F] bg-[#F3E3DC] px-4 py-3 text-sm">
+          <span>{notice}</span>
+          <Button v="ghost" size="sm" onClick={() => setNotice(null)}>Dismiss</Button>
+        </p>
+      )}
 
-        {/* Expiring trials */}
-        <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-          <div className="px-5 py-3 border-b border-gray-100 bg-amber-50 flex items-center gap-2">
-            <span className="text-[0.65rem] font-bold tracking-[0.1em] uppercase text-amber-700 bg-amber-100 border border-amber-200 px-2 py-0.5 rounded-[3px]">
-              Expiring Soon
-            </span>
-            <span className="text-[0.65rem] text-gray-400 font-mono">{expiringTrials.length} within 7 days</span>
-          </div>
+      {/* Needs attention + recent signups */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 mt-10">
+        <section>
+          <p className="ad-eyebrow">Right now</p>
+          <h2 className="font-display text-[1.6rem] mt-1 mb-3">Trials ending soon</h2>
           {expiringTrials.length === 0 ? (
-            <p className="py-6 text-center text-gray-400 text-sm">No trials expiring soon.</p>
-          ) : expiringTrials.map((court, i) => {
+            <p><StatusDot tone="ok">No trials end in the next 7 days.</StatusDot></p>
+          ) : expiringTrials.map(court => {
             const daysLeft = Math.ceil((new Date(court.subscription.trialEnds).getTime() - Date.now()) / 86400000);
             return (
-              <div key={court._id} className="flex items-center justify-between px-5 py-3 hover:bg-gray-50 transition-colors"
-                style={{ borderBottom: i < expiringTrials.length - 1 ? '1px solid #f9fafb' : 'none' }}>
-                <div>
-                  <div className="text-[0.82rem] font-medium text-gray-900">{court.name}</div>
-                  <div className="text-[0.68rem] text-gray-400">{court.adminEmail}</div>
+              <div key={court._id} className="flex items-center justify-between gap-3 flex-wrap py-3 border-b border-[#E1DBCB]">
+                <div className="min-w-0">
+                  <p className="font-bold text-[15px]">{court.name}</p>
+                  <p className="ad-muted text-sm break-all">{court.adminEmail}</p>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className={`text-[0.68rem] font-mono font-semibold ${daysLeft <= 2 ? 'text-red-600' : 'text-amber-600'}`}>
-                    {daysLeft}d left
-                  </span>
-                  <button onClick={() => updateSubscription(court._id, { extendTrialDays: 7 })}
-                    disabled={acting === court._id}
-                    className="text-[0.65rem] px-2 py-0.5 rounded border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 cursor-pointer disabled:opacity-50 transition-colors">
-                    {acting === court._id ? '...' : '+7d'}
-                  </button>
+                <div className="flex items-center gap-3">
+                  <span className={`ad-mono text-sm font-bold ${daysLeft <= 2 ? 'text-[#B8431F]' : 'text-[#B8821A]'}`}>{daysLeft}d left</span>
+                  <Button v="ghost" size="sm" loading={acting === court._id}
+                    onClick={() => updateSubscription(court._id, { extendTrialDays: 7 })}>Extend 7 days</Button>
                 </div>
               </div>
             );
           })}
-        </div>
+        </section>
 
-        {/* Recent signups */}
-        <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-          <div className="px-5 py-3 border-b border-gray-100 bg-gray-50 flex items-center gap-2">
-            <span className="text-[0.65rem] font-bold tracking-[0.1em] uppercase text-gray-500 bg-gray-100 border border-gray-200 px-2 py-0.5 rounded-[3px]">
-              Recent Signups
-            </span>
-            <span className="text-[0.65rem] text-gray-400 font-mono">last 5</span>
-          </div>
-          {recentSignups.map((court, i) => (
-            <div key={court._id} className="flex items-center justify-between px-5 py-3 hover:bg-gray-50 transition-colors"
-              style={{ borderBottom: i < recentSignups.length - 1 ? '1px solid #f9fafb' : 'none' }}>
-              <div>
-                <div className="text-[0.82rem] font-medium text-gray-900">{court.name}</div>
-                <div className="text-[0.68rem] text-gray-400">{new Date(court.createdAt).toLocaleDateString()}</div>
+        <section>
+          <p className="ad-eyebrow">Latest</p>
+          <h2 className="font-display text-[1.6rem] mt-1 mb-3">Recent signups</h2>
+          {recentSignups.length === 0 && !loading && <p className="ad-muted text-sm">No courts yet.</p>}
+          {recentSignups.map(court => (
+            <div key={court._id} className="flex items-center justify-between gap-3 py-3 border-b border-[#E1DBCB]">
+              <div className="min-w-0">
+                <p className="font-bold text-[15px] truncate">{court.name}</p>
+                <p className="ad-mono ad-muted text-xs">{new Date(court.createdAt).toLocaleDateString()}</p>
               </div>
-              <span className={`text-[0.62rem] font-semibold tracking-[0.06em] uppercase px-2 py-0.5 rounded-[3px] border ${STATUS_STYLES[court.subscription.status]}`}>
-                {court.subscription.status}
-              </span>
+              <StatusDot tone={TONE[court.subscription.status] ?? 'off'}><span className="capitalize">{court.subscription.status}</span></StatusDot>
             </div>
           ))}
-        </div>
+        </section>
       </div>
 
-      {/* Courts table */}
-      <div>
-        <div className="flex gap-3 flex-wrap mb-4">
-          <input className="bg-white border border-gray-200 rounded-md px-3 py-2 text-[0.82rem] text-gray-900 outline-none focus:border-green-400 transition-colors w-[220px]"
-            placeholder="Search courts..." value={search} onChange={e => setSearch(e.target.value)} />
-          <div className="flex gap-1.5">
+      {/* All courts */}
+      <section className="mt-12 border-t border-[#C9C3B3] pt-6">
+        <h2 className="font-display text-[1.6rem] mb-4">All courts</h2>
+        <div className="flex gap-3 flex-wrap items-end mb-4">
+          <div className="w-full sm:w-64">
+            <label htmlFor="sd-search" className="ad-label">Search courts</label>
+            <input id="sd-search" className="ad-input" placeholder="Name, email, slug"
+              value={search} onChange={e => setSearch(e.target.value)} />
+          </div>
+          <div className="flex gap-2 flex-wrap">
             {['all','active','trial','expired','suspended'].map(f => (
-              <button key={f} onClick={() => setFilter(f)}
-                className={`px-3 py-1.5 rounded-md text-[0.72rem] font-medium border transition-colors cursor-pointer capitalize ${
-                  filter === f ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'
-                }`}>{f}</button>
+              <button key={f} type="button" aria-pressed={filter === f} onClick={() => setFilter(f)}
+                className={`filter-btn capitalize${filter === f ? ' active' : ''}`}>{f}</button>
             ))}
           </div>
         </div>
 
         {error && (
-          <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4 text-sm text-red-700 flex justify-between">
-            <span>⚠ {error}</span>
-            <button onClick={load} className="text-red-600 underline text-xs cursor-pointer bg-transparent border-none">Retry</button>
+          <div role="alert" className="mb-4 flex items-center justify-between gap-3 border-l-4 border-[#C4401F] bg-[#F3E3DC] px-4 py-3 text-sm">
+            <span>{error}</span>
+            <Button v="ghost" size="sm" onClick={load}>Try again</Button>
           </div>
         )}
 
         {loading ? (
-          <div className="py-12 text-center text-gray-400 text-sm">Loading courts...</div>
-        ) : (
-          <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-            <div className="overflow-x-auto">
-              <div className="min-w-[760px]">
-                <div
-                  className="grid px-5 py-2.5 border-b border-gray-100 bg-gray-50 text-[0.65rem] font-semibold tracking-[0.08em] uppercase text-gray-400"
-                  style={{ gridTemplateColumns: '1fr 140px 110px 70px 180px' }}
-                >
-                  <span>Court</span><span>Admin</span><span>Plan</span><span>Courts</span><span>Actions</span>
-                </div>
-                {filtered.length === 0 ? (
-                  <div className="py-12 text-center text-gray-400 text-sm">No courts found.</div>
-                ) : filtered.map((court, i) => (
-                  <div
-                    key={court._id}
-                    className="grid items-center gap-4 px-5 py-3.5 hover:bg-gray-50 transition-colors"
-                    style={{
-                      gridTemplateColumns: '1fr 140px 110px 70px 180px',
-                      borderBottom: i < filtered.length - 1 ? '1px solid #f9fafb' : 'none',
-                    }}
-                  >
-                    <div className="min-w-0">
-                      <div className="text-[0.85rem] font-medium text-gray-900 truncate">{court.name}</div>
-                      <div className="text-[0.68rem] text-gray-400 font-mono">/{court.slug}</div>
-                    </div>
-                    <div className="text-[0.72rem] text-gray-500 truncate">{court.adminEmail}</div>
-                    <div className="flex flex-col gap-1">
-                      <span className={`text-[0.62rem] font-semibold uppercase px-2 py-0.5 rounded-[3px] border w-fit ${STATUS_STYLES[court.subscription.status]}`}>
-                        {court.subscription.status}
-                      </span>
-                      <span className="text-[0.65rem] text-gray-400 font-mono">₱{court.subscription.amount.toLocaleString()}/{court.subscription.plan === 'annual' ? 'yr' : 'mo'}</span>
-                    </div>
-                    <div className="text-[0.82rem] font-mono text-gray-700">{court.courtCount}</div>
-                    <div className="flex gap-1.5 flex-wrap">
-                      {court.subscription.status === 'trial' && (
-                        <button onClick={() => { if(confirm(`Activate ${court.name}?`)) updateSubscription(court._id, { status: 'active', plan: court.subscription.plan }); }}
-                          disabled={acting === court._id}
-                          className="px-2.5 py-1 rounded-md text-[0.68rem] font-medium border cursor-pointer transition-all border-green-200 bg-green-50 text-green-700 hover:bg-green-100 disabled:opacity-50">
-                          {acting === court._id ? '...' : 'Activate'}
-                        </button>
-                      )}
-                      {court.subscription.status === 'trial' && (
-                        <button onClick={() => updateSubscription(court._id, { extendTrialDays: 7 })}
-                          disabled={acting === court._id}
-                          className="px-2.5 py-1 rounded-md text-[0.68rem] font-medium border cursor-pointer transition-all border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 disabled:opacity-50">
-                          {acting === court._id ? '...' : '+7 days'}
-                        </button>
-                      )}
-                      {court.subscription.status === 'active' && (
-                        <button onClick={() => { if(confirm(`Suspend ${court.name}?`)) updateSubscription(court._id, { status: 'suspended' }); }}
-                          disabled={acting === court._id}
-                          className="px-2.5 py-1 rounded-md text-[0.68rem] font-medium border cursor-pointer transition-all border-red-200 bg-red-50 text-red-600 hover:bg-red-100 disabled:opacity-50">
-                          {acting === court._id ? '...' : 'Suspend'}
-                        </button>
-                      )}
-                      {(court.subscription.status === 'suspended' || court.subscription.status === 'expired') && (
-                        <button onClick={() => { if(confirm(`Reactivate ${court.name}?`)) updateSubscription(court._id, { status: 'active', plan: court.subscription.plan }); }}
-                          disabled={acting === court._id}
-                          className="px-2.5 py-1 rounded-md text-[0.68rem] font-medium border cursor-pointer transition-all border-green-200 bg-green-50 text-green-700 hover:bg-green-100 disabled:opacity-50">
-                          {acting === court._id ? '...' : 'Reactivate'}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
+          <div className="py-12 text-center ad-muted text-sm">Loading courts...</div>
+        ) : filtered.length === 0 ? (
+          <div className="py-12 text-center">
+            <p className="font-bold">No courts found.</p>
+            <p className="ad-muted text-sm mt-1">Clear the search or pick All.</p>
           </div>
+        ) : (
+          <>
+            {/* Desktop table */}
+            <div className="hidden lg:block">
+              <div className="grid gap-4 border-b-2 border-[#0E2420] py-2" style={{ gridTemplateColumns: COLS }}>
+                {['Court', 'Admin', 'Plan', 'Courts', ''].map((h, i) => <span key={i} className="ad-eyebrow">{h}</span>)}
+              </div>
+              {filtered.map(court => (
+                <div key={court._id} className="grid items-center gap-4 py-3.5 border-b border-[#E1DBCB] hover:bg-[#EDE8D8]/50 transition-colors" style={{ gridTemplateColumns: COLS }}>
+                  <div className="min-w-0">
+                    <p className="font-bold text-[15px] truncate">{court.name}</p>
+                    <p className="ad-mono ad-muted text-xs">/{court.slug}</p>
+                  </div>
+                  <p className="ad-muted text-sm truncate" title={court.adminEmail}>{court.adminEmail}</p>
+                  <div>
+                    <StatusDot tone={TONE[court.subscription.status] ?? 'off'}><span className="capitalize">{court.subscription.status}</span></StatusDot>
+                    <p className="ad-mono ad-muted text-xs">₱{court.subscription.amount.toLocaleString()}/{court.subscription.plan === 'annual' ? 'yr' : 'mo'}</p>
+                  </div>
+                  <p className="ad-mono text-sm">{court.courtCount}</p>
+                  <div className="flex gap-2 flex-wrap justify-end">{rowActions(court)}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Phone and tablet list */}
+            <div className="lg:hidden">
+              {filtered.map(court => (
+                <div key={court._id} className="py-4 border-b border-[#E1DBCB]">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-bold text-[15px]">{court.name}</p>
+                      <p className="ad-mono ad-muted text-xs">/{court.slug} · {court.courtCount} court{court.courtCount !== 1 ? 's' : ''}</p>
+                    </div>
+                    <StatusDot tone={TONE[court.subscription.status] ?? 'off'}><span className="capitalize">{court.subscription.status}</span></StatusDot>
+                  </div>
+                  <p className="ad-muted text-sm break-all mt-1">{court.adminEmail}</p>
+                  <p className="ad-mono ad-muted text-xs mt-0.5">₱{court.subscription.amount.toLocaleString()}/{court.subscription.plan === 'annual' ? 'yr' : 'mo'}</p>
+                  <div className="flex gap-2 flex-wrap mt-3">{rowActions(court)}</div>
+                </div>
+              ))}
+            </div>
+          </>
         )}
-      </div>
+      </section>
 
       {/* Onboard modal */}
       {showForm && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl border border-gray-200 w-full max-w-[460px] shadow-xl">
-            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-              <h2 className="text-[0.95rem] font-semibold text-gray-900">Onboard New Court</h2>
-              <button onClick={() => setShowForm(false)} className="text-gray-400 hover:text-gray-600 cursor-pointer text-lg leading-none bg-transparent border-none">✕</button>
-            </div>
-            <form onSubmit={handleCreateCourt} className="px-6 py-5 flex flex-col gap-4">
-              {formError && <div className="text-[0.78rem] text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">{formError}</div>}
-              {[
-                { label: 'Court Name',  key: 'name',       placeholder: 'South City Badminton' },
-                { label: 'Slug',        key: 'slug',       placeholder: 'south-city-bc' },
-                { label: 'Admin Email', key: 'adminEmail', placeholder: 'admin@court.com' },
-                { label: 'Court Count', key: 'courtCount', placeholder: '4' },
-              ].map(f => (
-                <div key={f.key} className="flex flex-col gap-1.5">
-                  <label className="text-[0.72rem] font-medium text-gray-600 uppercase tracking-[0.06em]">{f.label}</label>
-                  <input required value={formData[f.key as keyof typeof formData]}
-                    onChange={e => setFormData(p => ({ ...p, [f.key]: e.target.value }))}
-                    placeholder={f.placeholder}
-                    className="bg-white border border-gray-200 rounded-md px-3 py-2 text-[0.85rem] text-gray-900 outline-none focus:border-green-400 transition-colors" />
-                </div>
-              ))}
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[0.72rem] font-medium text-gray-600 uppercase tracking-[0.06em]">Sport</label>
-                <select value={formData.sports} onChange={e => setFormData(p => ({ ...p, sports: e.target.value }))}
-                  className="bg-white border border-gray-200 rounded-md px-3 py-2 text-[0.85rem] text-gray-900 outline-none focus:border-green-400 transition-colors">
-                  <option value="badminton">Badminton</option>
-                  <option value="pickleball">Pickleball</option>
-                  <option value="tennis">Tennis</option>
-                </select>
-              </div>
-              <div className="flex gap-3 pt-1">
-                <button type="button" onClick={() => setShowForm(false)}
-                  className="flex-1 px-4 py-2 rounded-md text-[0.82rem] border border-gray-200 text-gray-600 hover:bg-gray-50 cursor-pointer transition-colors">Cancel</button>
-                <button type="submit" disabled={formLoading}
-                  className="flex-1 px-4 py-2 rounded-md text-[0.82rem] bg-gray-900 text-white hover:bg-gray-700 cursor-pointer transition-colors disabled:opacity-50">
-                  {formLoading ? 'Creating...' : 'Create Court'}
-                </button>
-              </div>
-            </form>
+        <Modal onClose={() => setShowForm(false)} width="max-w-[460px]" label="Onboard a new court" dismissOnBackdrop={false}>
+          <div className="px-6 py-4 border-b border-[#E1DBCB] flex items-center justify-between gap-3">
+            <h2 className="text-lg font-bold">Onboard a new court</h2>
+            <Button v="ghost" size="sm" onClick={() => setShowForm(false)}>Close</Button>
           </div>
-        </div>
+          <form onSubmit={handleCreateCourt} className="px-6 py-5 flex flex-col gap-4">
+            {formError && <p role="alert" className="border-l-4 border-[#C4401F] bg-[#F3E3DC] px-3 py-2 text-sm">{formError}</p>}
+            {[
+              { label: 'Court name',  key: 'name',       placeholder: 'South City Badminton' },
+              { label: 'Slug',        key: 'slug',       placeholder: 'south-city-bc' },
+              { label: 'Admin email', key: 'adminEmail', placeholder: 'admin@court.com' },
+              { label: 'Court count', key: 'courtCount', placeholder: '4' },
+            ].map(f => (
+              <div key={f.key}>
+                <label htmlFor={`oc-${f.key}`} className="ad-label">{f.label}</label>
+                <input id={`oc-${f.key}`} required value={formData[f.key as keyof typeof formData]}
+                  onChange={e => setFormData(p => ({ ...p, [f.key]: e.target.value }))}
+                  placeholder={f.placeholder} className="ad-input" />
+              </div>
+            ))}
+            <div>
+              <label htmlFor="oc-sport" className="ad-label">Sport</label>
+              <select id="oc-sport" value={formData.sports} onChange={e => setFormData(p => ({ ...p, sports: e.target.value }))} className="ad-input">
+                <option value="badminton">Badminton</option>
+                <option value="pickleball">Pickleball</option>
+                <option value="tennis">Tennis</option>
+              </select>
+            </div>
+            <div className="flex gap-3 pt-1">
+              <Button v="ghost" type="button" className="flex-1" onClick={() => setShowForm(false)}>Cancel</Button>
+              <Button v="primary" type="submit" className="flex-1" loading={formLoading}>{formLoading ? 'Creating...' : 'Create court'}</Button>
+            </div>
+          </form>
+        </Modal>
       )}
     </div>
   );

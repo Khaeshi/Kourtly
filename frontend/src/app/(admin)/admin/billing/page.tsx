@@ -13,23 +13,17 @@ import {
 import type { Player, CatalogItem, Tab, ReservationTab, PaginatedTabs, PaginatedResTabs } from '@/lib/api';
 import { useSocketEvent } from '@/hooks/useSocketEvent';
 import { useConnectivity } from '@/lib/connectivity';
+import { Button } from '@/app/components/ui/Button';
+import { Modal } from '@/app/components/ui/Modal';
+import { LevelMark } from '@/app/components/ui/LevelMark';
+import { StatusDot } from '@/app/components/ui/StatusDot';
+import { AdminHeader } from '@/app/components/ui/AdminHeader';
+import ProductPanel from '@/app/components/admin/ProductPanel';
 
-// ── Constants (unchanged) ─────────────────────────────────────────────────────
-const LEVEL_COLOR: Record<string, string> = {
-  A: '#d97706', B: '#16a34a', C: '#0891b2', D: '#7c3aed',
-};
 const fmt = (n: number) => `₱${n.toFixed(2)}`;
-
-// ── LevelBadge ────────────────────────────────────────────────────────────────
-function LevelBadge({ level }: { level: string }) {
-  const color = LEVEL_COLOR[level] ?? '#6b7280';
-  return (
-    <span className="font-mono text-[0.65rem] font-bold px-1.5 py-0.5 rounded shrink-0"
-      style={{ background: `${color}18`, color }}>
-      {level}
-    </span>
-  );
-}
+const CARD = 'rounded-xl bg-[#FBF9F3] border border-[#C9C3B3] shadow-[0_1px_0_rgba(14,36,32,.1),0_2px_6px_rgba(14,36,32,.06)]';
+const SELECTED = 'border-[#0E2420] shadow-[inset_3px_0_0_#E3A92B,0_2px_6px_rgba(14,36,32,.12)]';
+const NOTICE = 'mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900';
 
 // ── SplitModal ───────────────────────────────────────────────────────────────
 // primaryTab  = the currently active tab (always charged, shown pinned at top)
@@ -81,110 +75,71 @@ function SplitModal({ item, openTabs, primaryTab, onClose, onDone }: {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="absolute inset-0 bg-black/15 backdrop-blur-sm" />
-      <div className="relative bg-white rounded-xl border border-gray-200 shadow-xl w-full max-w-sm" onClick={e => e.stopPropagation()}>
+    <Modal onClose={onClose} width="max-w-sm" label="Charge item">
+      <div className="px-5 py-4 border-b border-[#E1DBCB]">
+        <p className="ad-eyebrow mb-1">Charge item</p>
+        <p className="text-base font-bold">{item.name}</p>
+        <p className="ad-mono ad-muted text-xs mt-0.5">
+          {fmt(item.price)} total
+          {isSinglePlayer && ' → full charge'}
+          {!isSinglePlayer && totalPlayers > 1 && ` → ${fmt(perPlayer)} × ${totalPlayers} players`}
+        </p>
+      </div>
 
-        {/* Header */}
-        <div className="px-5 py-4 border-b border-gray-100">
-          <p className="text-[0.65rem] font-bold tracking-widest uppercase text-gray-400 mb-1">Charge Item</p>
-          <p className="text-base font-semibold text-gray-900">{item.name}</p>
-          <p className="text-xs text-gray-500 mt-0.5">
-            {fmt(item.price)} total
-            {isSinglePlayer && <span className="text-yellow-600 ml-2">→ full charge</span>}
-            {!isSinglePlayer && totalPlayers > 1 && <span className="text-green-600 ml-2">→ {fmt(perPlayer)} × {totalPlayers} players</span>}
-          </p>
+      <div className="px-5 py-4 space-y-3">
+        {/* PRIMARY PLAYER (pinned, always charged) */}
+        <div>
+          <p className="ad-label">Charged to</p>
+          {primaryTab ? (
+            <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg border-2 border-[#0E2420] bg-[#FBF9F3]">
+              <LevelMark level={primaryTab.player.level} />
+              <span className="flex-1 text-sm font-bold">{primaryTab.player.name}</span>
+              <span className="ad-mono text-xs">{isSinglePlayer ? fmt(item.price) : fmt(perPlayer)}</span>
+            </div>
+          ) : (
+            <p className="ad-error">No active tab selected. Select a player tab first.</p>
+          )}
         </div>
 
-        <div className="px-5 py-4 space-y-3">
-
-          {/* ── PRIMARY PLAYER (pinned, always charged) ── */}
-          <div>
-            <p className="text-[0.65rem] font-semibold tracking-widest uppercase text-gray-400 mb-2">
-              Charged to
-            </p>
-            {primaryTab ? (
-              <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg border-2 border-green-300 bg-green-50">
-                {/* Lock icon to show this is fixed */}
-                <span className="text-green-500 text-xs shrink-0">🔒</span>
-                <LevelBadge level={primaryTab.player.level} />
-                <span className="flex-1 text-sm font-semibold text-gray-800">{primaryTab.player.name}</span>
-                <span className="text-xs text-gray-500 font-mono">
-                  {isSinglePlayer ? fmt(item.price) : fmt(perPlayer)}
-                </span>
-              </div>
-            ) : (
-              <p className="text-xs text-red-400 px-1">No active tab selected. Select a player tab first.</p>
-            )}
-          </div>
-
-          {/* ── DIVIDER ── */}
-          {otherTabs.length > 0 && (
-            <div className="relative flex items-center gap-3">
-              <div className="flex-1 h-px bg-gray-200" />
-              <span className="text-[0.65rem] font-semibold tracking-widest uppercase text-gray-400 shrink-0">
-                Also split with
-              </span>
-              <div className="flex-1 h-px bg-gray-200" />
-            </div>
-          )}
-
-          {/* ── ADDITIONAL PLAYERS (optional) ── */}
-          {otherTabs.length > 0 && (
+        {/* ADDITIONAL PLAYERS (optional) */}
+        {otherTabs.length > 0 && (
+          <>
+            <p className="ad-label !mb-0 pt-1">Also split with</p>
             <div className="flex flex-col gap-1.5 max-h-44 overflow-y-auto">
               {otherTabs.map(tab => {
                 const checked = additionalIds.includes(tab.player._id);
                 return (
-                  <button key={tab._id} onClick={() => toggleAdditional(tab.player._id)}
-                    className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border cursor-pointer text-left transition-all ${
-                      checked ? 'bg-green-50 border-green-200' : 'bg-white border-gray-200 hover:border-gray-300'
+                  <button key={tab._id} type="button" aria-pressed={checked} onClick={() => toggleAdditional(tab.player._id)}
+                    className={`flex items-center gap-3 px-3 min-h-[44px] rounded-lg border cursor-pointer text-left transition-colors ${
+                      checked ? 'bg-[#0E2420] border-[#0E2420] text-[#F5F1E8]' : 'bg-[#FBF9F3] border-[#C9C3B3] hover:border-[#0E2420]'
                     }`}>
-                    <div className={`w-4 h-4 rounded flex items-center justify-center shrink-0 border-2 transition-all ${
-                      checked ? 'bg-green-600 border-green-600' : 'bg-white border-gray-300'
-                    }`}>
-                      {checked && <span className="text-white text-[10px] leading-none">✓</span>}
-                    </div>
-                    <LevelBadge level={tab.player.level} />
-                    <span className="flex-1 text-sm font-medium text-gray-700">{tab.player.name}</span>
-                    <span className="text-xs text-gray-400 font-mono">
-                      {checked ? fmt(perPlayer) : fmt(tab.total)}
-                    </span>
+                    <span className={`w-4 h-4 rounded flex items-center justify-center shrink-0 border-2 text-[10px] leading-none ${
+                      checked ? 'bg-[#E3A92B] border-[#E3A92B] text-[#0E2420]' : 'border-[#8A9A94]'
+                    }`}>{checked ? '✓' : ''}</span>
+                    <span className={`ad-mono text-xs font-bold ${checked ? 'text-[#E3A92B]' : ''}`}>{tab.player.level}</span>
+                    <span className="flex-1 text-sm font-medium">{tab.player.name}</span>
+                    <span className="ad-mono text-xs opacity-80">{checked ? fmt(perPlayer) : fmt(tab.total)}</span>
                   </button>
                 );
               })}
             </div>
-          )}
+          </>
+        )}
 
-          {/* hint */}
-          <p className="text-[0.65rem] text-gray-400">
-            {isSinglePlayer
-              ? `Full ${fmt(item.price)} charged to ${primaryTab?.player.name ?? '—'}.`
-              : `${fmt(item.price)} ÷ ${totalPlayers} = ${fmt(perPlayer)} each.`}
-          </p>
-        </div>
-
-        {/* Footer */}
-        <div className="px-5 py-4 border-t border-gray-100 flex gap-2 justify-end">
-          <button onClick={onClose}
-            className="px-4 py-1.5 rounded-md border border-gray-200 bg-white text-gray-500 text-xs cursor-pointer hover:bg-gray-50 transition-all">
-            Cancel
-          </button>
-          <button onClick={handle} disabled={!canCharge || loading || offline} title={offlineTitle}
-            className={`px-4 py-1.5 rounded-md border text-xs font-semibold transition-all ${
-              !canCharge
-                ? 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed'
-                : isSinglePlayer
-                  ? 'bg-yellow-50 border-yellow-200 text-yellow-800 hover:bg-yellow-100 cursor-pointer'
-                  : 'bg-green-50 border-green-200 text-green-700 hover:bg-green-100 cursor-pointer'
-            }`}>
-            {loading ? '...'
-              : !canCharge ? 'No player selected'
-              : isSinglePlayer ? `Charge ${fmt(item.price)}`
-              : `Split ${fmt(item.price)}`}
-          </button>
-        </div>
+        <p className="ad-muted text-xs">
+          {isSinglePlayer
+            ? `Full ${fmt(item.price)} charged to ${primaryTab?.player.name ?? '—'}.`
+            : `${fmt(item.price)} ÷ ${totalPlayers} = ${fmt(perPlayer)} each.`}
+        </p>
       </div>
-    </div>
+
+      <div className="px-5 py-4 border-t border-[#E1DBCB] flex gap-2 justify-end">
+        <Button v="ghost" onClick={onClose}>Cancel</Button>
+        <Button v="primary" onClick={handle} loading={loading} disabled={!canCharge || offline} title={offlineTitle}>
+          {!canCharge ? 'No player selected' : isSinglePlayer ? `Charge ${fmt(item.price)}` : `Split ${fmt(item.price)}`}
+        </Button>
+      </div>
+    </Modal>
   );
 }
 
@@ -223,56 +178,48 @@ function TabCard({ tab, isActive, onClick, onUpdate }: {
   };
 
   return (
-    <div onClick={onClick}
-      className={`bg-white rounded-xl overflow-hidden cursor-pointer transition-all ${
-        isActive ? 'ring-2 ring-green-500 ring-offset-1' : 'border border-gray-200'
-      }`}>
-      <div className={`px-4 py-3 flex items-center gap-2 ${tab.items.length > 0 ? 'border-b border-gray-100' : ''}`}>
-        <LevelBadge level={tab.player.level} />
-        <span className="flex-1 text-sm font-semibold text-gray-900 truncate">{tab.player.name}</span>
-        <span className={`font-mono text-sm font-semibold shrink-0 ${tab.total > 0 ? 'text-yellow-900' : 'text-gray-300'}`}>
-          {fmt(tab.total)}
-        </span>
+    <div role="button" tabIndex={0} aria-pressed={isActive} onClick={onClick}
+      onKeyDown={e => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onClick(); } }}
+      className={`${CARD} overflow-hidden cursor-pointer transition-colors ${isActive ? SELECTED : ''}`}>
+      <div className={`px-4 py-3 flex items-center gap-2 ${tab.items.length > 0 ? 'border-b border-[#E1DBCB]' : ''}`}>
+        <LevelMark level={tab.player.level} />
+        <span className="flex-1 text-[15px] font-bold truncate">{tab.player.name}</span>
+        <span className={`ad-mono text-sm font-bold shrink-0 ${tab.total > 0 ? '' : 'ad-muted'}`}>{fmt(tab.total)}</span>
       </div>
 
       {tab.items.length > 0 && (
-        <div className="px-4 py-1.5">
+        <div className="px-4 py-1">
           {tab.items.map((item, i) => (
-            <div key={i} className={`flex items-center gap-2 py-1.5 ${i < tab.items.length - 1 ? 'border-b border-gray-50' : ''}`}>
-              <span className="flex-1 text-xs text-gray-600 truncate">{item.name}</span>
-              <span className="text-[0.7rem] text-gray-400 font-mono">×{item.quantity}</span>
-              <span className="text-xs text-gray-600 font-mono min-w-[44px] text-right">{fmt(item.price * item.quantity)}</span>
-              <button onClick={e => handleRemove(e, i)} disabled={offline} title={offlineTitle} className="text-gray-300 hover:text-red-400 transition-colors text-xs px-0.5 leading-none">✕</button>
+            <div key={i} className={`flex items-center gap-2 py-1 ${i < tab.items.length - 1 ? 'border-b border-[#E1DBCB]' : ''}`}>
+              <span className="flex-1 text-sm truncate">{item.name}</span>
+              <span className="ad-mono ad-muted text-xs">×{item.quantity}</span>
+              <span className="ad-mono text-xs min-w-[56px] text-right">{fmt(item.price * item.quantity)}</span>
+              <button type="button" aria-label={`Remove ${item.name}`} onClick={e => handleRemove(e, i)} disabled={offline} title={offlineTitle}
+                className="w-9 h-9 text-[#8A9A94] hover:text-[#B8431F] transition-colors disabled:opacity-40">✕</button>
             </div>
           ))}
         </div>
       )}
 
-      <div className="px-4 py-2 border-t border-gray-100 bg-gray-50/60 flex gap-1.5">
+      <div className="px-4 py-2 border-t border-[#E1DBCB] flex gap-2 flex-wrap items-center">
         {tab.items.length > 0 && (
           <>
-            <button onClick={handlePay} disabled={paying || offline} title={offlineTitle}
-              className="flex-1 py-1.5 rounded-md border border-yellow-200 bg-yellow-50 text-yellow-900 text-xs font-semibold cursor-pointer hover:bg-yellow-100 transition-all disabled:opacity-40">
-              {paying ? '...' : `Pay ${fmt(tab.total)}`}
-            </button>
-            <button onClick={async e => {
+            <Button v="primary" size="sm" className="flex-1" onClick={handlePay} loading={paying} disabled={offline} title={offlineTitle}>
+              {`Pay ${fmt(tab.total)}`}
+            </Button>
+            <Button v="warning" size="sm" disabled={offline} title={offlineTitle}
+              onClick={async e => {
                 e.stopPropagation();
                 if (!confirm(`Mark ${tab.player.name}'s tab as unpaid?`)) return;
                 await markUnpaid(tab._id);
                 sileo.error({ title: 'Marked unpaid', description: `${tab.player.name} — ${fmt(tab.total)}` });
                 onUpdate();
-              }}
-              disabled={offline}
-              title={offlineTitle}
-              className="px-2.5 py-1.5 rounded-md border border-orange-200 bg-orange-50 text-orange-600 text-xs font-semibold cursor-pointer hover:bg-orange-100 transition-all">
-              Not Paid
-            </button>
+              }}>
+              Not paid…
+            </Button>
           </>
         )}
-        <button onClick={handleClose} disabled={offline} title={offlineTitle}
-          className="px-2.5 py-1.5 rounded-md border border-red-100 bg-red-50/60 text-red-400 text-xs cursor-pointer hover:bg-red-100 transition-all">
-          ✕
-        </button>
+        <Button v="danger" size="sm" onClick={handleClose} disabled={offline} title={offlineTitle}>Close tab…</Button>
       </div>
     </div>
   );
@@ -294,7 +241,6 @@ export default function BillingPage() {
   const [activeTab,  setActiveTab]  = useState<string | null>(null);
   const [view,          setView]          = useState<'active' | 'reservations' | 'history'>('active');
   const [openingFor,    setOpeningFor]    = useState('');
-  const [search,        setSearch]        = useState('');
   const [splitItem_,    setSplitItem]     = useState<CatalogItem | null>(null);
   const [addingItem,    setAddingItem]    = useState<string | null>(null);
   const [qty,           setQty]           = useState<Record<string, number>>({});
@@ -368,6 +314,7 @@ export default function BillingPage() {
   const grandTotal       = openTabs.reduce((s, t) => s + t.total, 0);
   const queueHistory     = historyPaged?.tabs ?? [];
   const activeTabObj     = openTabs.find(t => t._id === activeTab) ?? null;
+  const activeResObj     = resTabs.find(t => t._id === activeResTab) ?? null;
 
   const getQty     = (id: string) => qty[id] ?? 1;
   const setItemQty = (id: string, val: number) => setQty(q => ({ ...q, [id]: Math.max(1, val) }));
@@ -394,114 +341,95 @@ export default function BillingPage() {
     setItemQty(item._id, 1); await loadAll(); setAddingItem(null);
   };
 
-  const CATEGORY_ORDER = ['court fee', 'equipment', 'drinks', 'food', 'general'];
-  const grouped = CATEGORY_ORDER.reduce((acc, cat) => {
-    const catItems = items.filter(i => i.category === cat);
-    if (catItems.length > 0) acc[cat] = catItems;
-    return acc;
-  }, {} as Record<string, CatalogItem[]>);
+  const handleResAdd = async (item: CatalogItem) => {
+    if (!activeResTab) return;
+    const q = resQty[item._id] ?? 1;
+    setAddingResItem(item._id);
+    const resTab = resTabs.find(t => t._id === activeResTab);
+    await addItemToReservationTab(activeResTab, {
+      itemId: item._id, name: item.name, price: item.price, quantity: q,
+    });
+    sileo.success({ title: 'Added', description: `${item.name} ×${q} → ${resTab?.guestName}` });
+    setResQty(q2 => ({ ...q2, [item._id]: 1 }));
+    await loadAll();
+    setAddingResItem(null);
+  };
 
-
+  const viewBtn = (v: typeof view, label: string) => (
+    <button type="button" aria-pressed={view === v} className={`filter-btn${view === v ? ' active' : ''}`} onClick={() => setView(v)}>{label}</button>
+  );
+  const subBtn = (on: boolean, label: string, click: () => void) => (
+    <button type="button" aria-pressed={on} className={`filter-btn${on ? ' active' : ''}`} onClick={click}>{label}</button>
+  );
+  const pager = (p: { page: number; totalPages: number; total: number; hasPrev: boolean; hasNext: boolean }, set: (fn: (n: number) => number) => void) => (
+    p.totalPages > 1 && (
+      <div className="flex items-center justify-between mt-4 gap-3 flex-wrap">
+        <span className="ad-mono ad-muted text-xs">Page {p.page} of {p.totalPages} · {p.total} records</span>
+        <div className="flex gap-2">
+          <Button v="ghost" size="sm" disabled={!p.hasPrev} onClick={() => set(n => n - 1)}>← Prev</Button>
+          <Button v="ghost" size="sm" disabled={!p.hasNext} onClick={() => set(n => n + 1)}>Next →</Button>
+        </div>
+      </div>
+    )
+  );
+  const chips = (list: { name: string; quantity: number }[]) => (
+    <div className="flex flex-wrap gap-x-3 gap-y-1">
+      {list.map((item, j) => <span key={j} className="ad-mono text-xs">{item.name} ×{item.quantity}</span>)}
+    </div>
+  );
 
   return (
-    <div className="w-full font-sans">
-      {loadError && (
-        <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          {loadError}
-        </p>
-      )}
-      {view === 'history' && historyError && (
-        <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          {historyError}
-        </p>
-      )}
+    <div className="w-full">
+      {loadError && <p className={NOTICE}>{loadError}</p>}
+      {view === 'history' && historyError && <p className={NOTICE}>{historyError}</p>}
       {splitItem_ && (
         <SplitModal item={splitItem_} openTabs={openTabs} primaryTab={activeTabObj}
           onClose={() => setSplitItem(null)} onDone={loadAll} />
       )}
 
-      {/* Header */}
-      <div className="mb-6 pb-5 border-b border-gray-100 flex items-end justify-between flex-wrap gap-4">
-        <div>
-          <p className="text-[0.72rem] font-medium tracking-wide uppercase text-gray-400 mb-1.5">Management</p>
-          <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Billing</h1>
-        </div>
+      <AdminHeader title="Billing" right={
         <div className="text-right">
-          <div className="text-[0.65rem] font-semibold tracking-widest uppercase text-gray-400 mb-0.5">Open Tabs Total</div>
-          <div className="font-mono text-2xl font-semibold text-yellow-900">{loadError ? '—' : fmt(grandTotal)}</div>
+          <div className="ad-eyebrow">Open tabs total</div>
+          <div className="ad-mono text-3xl font-bold">{loadError ? '—' : fmt(grandTotal)}</div>
         </div>
-      </div>
+      } />
 
       {/* View toggle */}
-      <div className="flex gap-1.5 mb-5 flex-wrap">
-        <button onClick={() => setView('active')}
-          className={`px-4 py-1.5 rounded-md text-xs font-medium border cursor-pointer transition-all ${
-            view === 'active' ? 'bg-gray-900 border-gray-900 text-white' : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'
-          }`}>
-          Queue Tabs ({loadError ? '—' : openTabs.length})
-        </button>
-        <button onClick={() => setView('reservations')}
-          className={`px-4 py-1.5 rounded-md text-xs font-medium border cursor-pointer transition-all ${
-            view === 'reservations'
-              ? 'bg-blue-600 border-blue-600 text-white'
-              : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'
-          }`}>
-          Reservations Today ({loadError ? '—' : resTabs.length})
-          {resTabs.length > 0 && view !== 'reservations' && (
-            <span className="ml-1.5 inline-flex items-center justify-center w-4 h-4 rounded-full bg-blue-500 text-white text-[0.6rem] font-bold">
-              {resTabs.length}
-            </span>
-          )}
-        </button>
-        <button onClick={() => setView('history')}
-          className={`px-4 py-1.5 rounded-md text-xs font-medium border cursor-pointer transition-all ${
-            view === 'history' ? 'bg-gray-900 border-gray-900 text-white' : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'
-          }`}>
-          History ({queueHistory.length})
-        </button>
+      <div className="flex gap-2 mb-6 flex-wrap">
+        {viewBtn('active', `Queue tabs (${loadError ? '—' : openTabs.length})`)}
+        {viewBtn('reservations', `Reservations today (${loadError ? '—' : resTabs.length})`)}
+        {viewBtn('history', `History (${queueHistory.length})`)}
       </div>
 
       {/* ── ACTIVE VIEW ── */}
       {view === 'active' && (
-        <div className="flex flex-col lg:grid lg:grid-cols-[1fr_280px] gap-6 items-start">
-
-          {/* LEFT: Tabs */}
+        <div className="flex flex-col lg:grid lg:grid-cols-[1fr_320px] gap-8 items-start">
           <div className="w-full min-w-0">
-            {/* Open tab bar */}
-            <div className="bg-white border border-gray-200 rounded-lg px-4 py-3 mb-4 flex flex-wrap gap-2 items-center">
-              <select value={openingFor} onChange={e => setOpeningFor(e.target.value)}
-                className={`flex-1 min-w-[160px] bg-white border border-gray-200 rounded-md px-3 py-2 text-sm outline-none focus:border-green-400 ${openingFor ? 'text-gray-900' : 'text-gray-400'}`}>
-                <option value="">Open tab for player...</option>
-                {availablePlayers.map(p => <option key={p._id} value={p._id}>{p.name} — {p.level}</option>)}
-              </select>
-              <button onClick={handleOpenTab} disabled={!openingFor || offline} title={offlineTitle}
-                className={`px-4 py-2 rounded-md text-xs font-semibold border transition-all ${
-                  openingFor ? 'bg-green-50 border-green-200 text-green-700 cursor-pointer hover:bg-green-100' : 'bg-gray-50 border-gray-200 text-gray-400 cursor-not-allowed'
-                }`}>
-                Open Tab
-              </button>
-              {activeTab && (
-                <span className="text-xs text-gray-400 w-full sm:w-auto">
-                  Selected: <strong className="text-gray-600">{activeTabObj?.player.name}</strong>
-                </span>
-              )}
+            <div className="mb-4 flex flex-wrap gap-2 items-end">
+              <div className="flex-1 min-w-[180px]">
+                <label htmlFor="bl-open" className="ad-label">Open a tab for</label>
+                <select id="bl-open" value={openingFor} onChange={e => setOpeningFor(e.target.value)} className="ad-input">
+                  <option value="">Choose a player</option>
+                  {availablePlayers.map(p => <option key={p._id} value={p._id}>{p.name} — {p.level}</option>)}
+                </select>
+              </div>
+              <Button v="primary" onClick={handleOpenTab} disabled={!openingFor || offline} title={offlineTitle}>Open tab</Button>
             </div>
 
             {!activeTab && openTabs.length > 0 && (
-              <div className="bg-yellow-50 border border-yellow-200 rounded-md px-4 py-2.5 mb-3.5 text-xs text-yellow-800">
-                Click a player card to select it, then use the item panel to add charges.
-              </div>
+              <p className="ad-muted text-sm mb-3">Select a player’s tab, then add charges from the panel.</p>
             )}
 
             {historyLoading ? (
-              <div className="p-12 text-center text-gray-400 text-sm">Loading...</div>
+              <div className="p-12 text-center ad-muted text-sm">Loading...</div>
             ) : historyError ? (
-              <div className="p-12 text-center text-amber-700 text-sm">{historyError}</div>
+              <div className="p-12 text-center text-amber-800 text-sm">{historyError}</div>
             ) : loading ? (
-              <div className="p-12 text-center text-gray-400 text-sm">Loading...</div>
+              <div className="p-12 text-center ad-muted text-sm">Loading...</div>
             ) : openTabs.length === 0 ? (
-              <div className="p-12 text-center bg-white border border-dashed border-gray-200 rounded-xl">
-                <p className="text-sm text-gray-400">No open tabs. Select a player above to open one.</p>
+              <div className="py-12 text-center">
+                <p className="font-bold">No open tabs.</p>
+                <p className="ad-muted text-sm mt-1">Choose a player above to open one.</p>
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
@@ -515,145 +443,73 @@ export default function BillingPage() {
             )}
           </div>
 
-          {/* RIGHT: Item sidebar */}
-          <div className="w-full lg:w-auto bg-white border border-gray-200 rounded-xl overflow-hidden lg:sticky lg:top-4">
-            <div className="px-4 py-3 border-b border-gray-100 bg-gray-50/60">
-              <p className="text-[0.65rem] font-bold tracking-widest uppercase text-gray-400">
-                {activeTab ? `Add to ${activeTabObj?.player.name}` : 'Select a player first'}
-              </p>
-            </div>
-
-            <div className="max-h-[60vh] lg:max-h-[calc(100vh-280px)] overflow-y-auto">
-              {Object.entries(grouped).map(([cat, catItems]) => (
-                <div key={cat}>
-                  <div className="px-4 py-1.5 bg-gray-50/60 border-b border-gray-100">
-                    <span className="text-[0.62rem] font-bold tracking-widest uppercase text-gray-300">{cat}</span>
-                  </div>
-                  {catItems.map(item => (
-                    <div key={item._id}
-                      className={`flex items-center px-3 py-2 gap-1.5 border-b border-gray-50 transition-colors ${activeTab ? 'hover:bg-gray-50' : 'opacity-45'}`}>
-                      {item.isSplittable && (
-                        <span className="text-[0.6rem] font-bold px-1 py-0.5 rounded shrink-0 bg-blue-50 border border-blue-200 text-blue-500">÷</span>
-                      )}
-                      <span className="flex-1 text-xs text-gray-600 truncate min-w-0">{item.name}</span>
-                      <span className="text-[0.7rem] font-mono text-gray-400 shrink-0 min-w-[46px] text-right">
-                        {fmt(item.price * getQty(item._id))}
-                      </span>
-                      {!item.isSplittable && (
-                        <div className="flex items-center gap-0.5 shrink-0">
-                          <button disabled={!activeTab} onClick={e => { e.stopPropagation(); setItemQty(item._id, getQty(item._id) - 1); }}
-                            className="w-5 h-5 rounded border border-gray-200 bg-white text-gray-500 text-sm flex items-center justify-center disabled:cursor-not-allowed hover:border-gray-300 transition-colors">−</button>
-                          <span className="font-mono text-xs min-w-[18px] text-center text-gray-800 font-semibold">{getQty(item._id)}</span>
-                          <button disabled={!activeTab} onClick={e => { e.stopPropagation(); setItemQty(item._id, getQty(item._id) + 1); }}
-                            className="w-5 h-5 rounded border border-gray-200 bg-white text-gray-500 text-sm flex items-center justify-center disabled:cursor-not-allowed hover:border-gray-300 transition-colors">+</button>
-                        </div>
-                      )}
-                      <button disabled={!activeTab || offline} title={offlineTitle} onClick={() => handleQuickAdd(item)}
-                        className={`px-2 py-1 rounded text-[0.7rem] font-semibold shrink-0 border transition-all ${
-                          !activeTab ? 'bg-gray-50 border-gray-200 text-gray-300 cursor-not-allowed'
-                            : item.isSplittable ? 'bg-blue-50 border-blue-200 text-blue-600 cursor-pointer hover:bg-blue-100'
-                            : 'bg-green-50 border-green-200 text-green-700 cursor-pointer hover:bg-green-100'
-                        }`}>
-                        {addingItem === item._id ? '...' : item.isSplittable ? 'Charge' : 'Add'}
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              ))}
-              {items.length === 0 && (
-                <p className="p-8 text-center text-gray-400 text-xs">No items in catalog.</p>
-              )}
-            </div>
-
-            <div className="px-4 py-2.5 border-t border-gray-100 bg-gray-50/60">
-              <p className="text-[0.65rem] text-gray-300">
-                <span className="text-blue-400 font-semibold">÷</span> items split across multiple players
-              </p>
-            </div>
-          </div>
+          <ProductPanel items={items} targetName={activeTabObj?.player.name ?? null}
+            qty={qty} onQty={setItemQty} onAdd={handleQuickAdd} addingId={addingItem}
+            offline={offline} offlineTitle={offlineTitle} allowSplit total={activeTabObj?.total ?? null}
+            footnote="Items marked split are shared across several players." />
         </div>
       )}
 
       {/* ── RESERVATIONS VIEW ── */}
       {view === 'reservations' && (
-        <div className="flex flex-col lg:grid lg:grid-cols-[1fr_280px] gap-6 items-start">
-
-          {/* LEFT: Reservation tabs */}
+        <div className="flex flex-col lg:grid lg:grid-cols-[1fr_320px] gap-8 items-start">
           <div className="w-full min-w-0">
             {loading ? (
-              <div className="p-12 text-center text-gray-400 text-sm">Loading...</div>
+              <div className="p-12 text-center ad-muted text-sm">Loading...</div>
             ) : resTabs.length === 0 ? (
-              <div className="p-12 text-center bg-white border border-dashed border-blue-100 rounded-xl">
-                <p className="text-sm text-blue-300 font-medium mb-1">No reservations today</p>
-                <p className="text-xs text-gray-400">Confirmed reservations for today will appear here automatically.</p>
+              <div className="py-12 text-center">
+                <p className="font-bold">No reservations today.</p>
+                <p className="ad-muted text-sm mt-1">Confirmed reservations for today appear here automatically.</p>
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
                 {resTabs.map(tab => {
                   const isActive = activeResTab === tab._id;
                   return (
-                    <div key={tab._id}
+                    <div key={tab._id} role="button" tabIndex={0} aria-pressed={isActive}
                       onClick={() => setActiveResTab(t => t === tab._id ? null : tab._id)}
-                      className={`bg-white rounded-xl overflow-hidden cursor-pointer transition-all ${
-                        isActive ? 'ring-2 ring-blue-500 ring-offset-1' : 'border border-gray-200'
-                      }`}>
+                      onKeyDown={e => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); setActiveResTab(t => t === tab._id ? null : tab._id); } }}
+                      className={`${CARD} overflow-hidden cursor-pointer transition-colors ${isActive ? SELECTED : ''}`}>
 
-                      {/* Header — blue tinted to distinguish from queue tabs */}
-                      <div className={`px-4 py-3 flex items-center gap-2 ${tab.items.length > 0 ? 'border-b border-gray-100' : ''}`}
-                        style={{ background: isActive ? '#eff6ff' : '#f8faff' }}>
-                        {/* Court badge */}
-                        <span className="text-[0.65rem] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 shrink-0">
-                          C{tab.court}
-                        </span>
+                      <div className={`px-4 py-3 flex items-center gap-2 ${tab.items.length > 0 ? 'border-b border-[#E1DBCB]' : ''}`}>
+                        <span className="ad-mono text-xs font-bold shrink-0">C{tab.court}</span>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-gray-900 truncate">{tab.guestName}</p>
-                          <p className="text-[0.65rem] text-gray-400 font-mono truncate">
-                            {tab.date} · {tab.timeSlot} · {tab.duration}h
-                          </p>
+                          <p className="text-[15px] font-bold truncate">{tab.guestName}</p>
+                          <p className="ad-mono ad-muted text-xs truncate">{tab.date} · {tab.timeSlot} · {tab.duration}h</p>
                         </div>
-                        <span className={`font-mono text-sm font-semibold shrink-0 ${tab.total > 0 ? 'text-yellow-900' : 'text-gray-300'}`}>
-                          {fmt(tab.total)}
-                        </span>
+                        <span className={`ad-mono text-sm font-bold shrink-0 ${tab.total > 0 ? '' : 'ad-muted'}`}>{fmt(tab.total)}</span>
                       </div>
 
                       {!!tab.paymentSummary && (
-                        <div className="px-4 py-2 border-b border-blue-50 text-[0.7rem] text-gray-600 bg-blue-50/20">
-                          <div className="flex justify-between"><span>Court Fee</span><span>₱{tab.paymentSummary.reservationFee.toFixed(2)}</span></div>
-                          <div className="flex justify-between"><span>Paid Online</span><span>₱{tab.paymentSummary.paidOnline.toFixed(2)}</span></div>
-                          <div className="flex justify-between"><span>Balance Due</span><span>₱{tab.paymentSummary.remainingBalance.toFixed(2)}</span></div>
+                        <div className="px-4 py-2 border-b border-[#E1DBCB] text-xs ad-mono">
+                          <div className="flex justify-between"><span>Court fee</span><span>₱{tab.paymentSummary.reservationFee.toFixed(2)}</span></div>
+                          <div className="flex justify-between"><span>Paid online</span><span>₱{tab.paymentSummary.paidOnline.toFixed(2)}</span></div>
+                          <div className="flex justify-between font-bold"><span>Balance due</span><span>₱{tab.paymentSummary.remainingBalance.toFixed(2)}</span></div>
                         </div>
                       )}
 
-                      {/* Items */}
                       {tab.items.length > 0 && (
-                        <div className="px-4 py-1.5">
+                        <div className="px-4 py-1">
                           {tab.items.map((item, i) => (
-                            <div key={i} className={`flex items-center gap-2 py-1.5 ${i < tab.items.length - 1 ? 'border-b border-gray-50' : ''}`}>
-                              <span className="flex-1 text-xs text-gray-600 truncate">{item.name}</span>
-                              <span className="text-[0.7rem] text-gray-400 font-mono">×{item.quantity}</span>
-                              <span className="text-xs text-gray-600 font-mono min-w-[44px] text-right">{fmt(item.price * item.quantity)}</span>
-                              <button
-                                disabled={offline}
-                                title={offlineTitle}
+                            <div key={i} className={`flex items-center gap-2 py-1 ${i < tab.items.length - 1 ? 'border-b border-[#E1DBCB]' : ''}`}>
+                              <span className="flex-1 text-sm truncate">{item.name}</span>
+                              <span className="ad-mono ad-muted text-xs">×{item.quantity}</span>
+                              <span className="ad-mono text-xs min-w-[56px] text-right">{fmt(item.price * item.quantity)}</span>
+                              <button type="button" aria-label={`Remove ${item.name}`} disabled={offline} title={offlineTitle}
                                 onClick={async e => {
                                   e.stopPropagation();
                                   await removeItemFromReservationTab(tab._id, i);
                                   loadAll();
                                 }}
-                                className="text-gray-300 hover:text-red-400 transition-colors text-xs px-0.5 leading-none">
-                                ✕
-                              </button>
+                                className="w-9 h-9 text-[#8A9A94] hover:text-[#B8431F] transition-colors disabled:opacity-40">✕</button>
                             </div>
                           ))}
                         </div>
                       )}
 
-                      {/* Actions */}
-                      <div className="px-4 py-2 border-t border-gray-100 bg-gray-50/60 flex gap-1.5">
+                      <div className="px-4 py-2 border-t border-[#E1DBCB] flex gap-2 flex-wrap items-center">
                         {tab.total > 0 && (
-                          <button
-                            disabled={offline}
-                            title={offlineTitle}
+                          <Button v="primary" size="sm" className="flex-1" disabled={offline} title={offlineTitle}
                             onClick={async e => {
                               e.stopPropagation();
                               await sileo.promise(payReservationTab(tab._id), {
@@ -662,24 +518,20 @@ export default function BillingPage() {
                                 error:   { title: 'Payment failed' },
                               });
                               loadAll();
-                            }}
-                            className="flex-1 py-1.5 rounded-md border border-yellow-200 bg-yellow-50 text-yellow-900 text-xs font-semibold cursor-pointer hover:bg-yellow-100 transition-all">
+                            }}>
                             Pay {fmt(tab.total)}
-                          </button>
+                          </Button>
                         )}
-                        <button
-                          disabled={offline}
-                          title={offlineTitle}
+                        <Button v="danger" size="sm" disabled={offline} title={offlineTitle}
                           onClick={async e => {
                             e.stopPropagation();
                             if (!confirm(`Clear ${tab.guestName}'s tab?`)) return;
                             await clearReservationTab(tab._id);
                             sileo.success({ title: 'Tab cleared' });
                             loadAll();
-                          }}
-                          className="px-2.5 py-1.5 rounded-md border border-red-100 bg-red-50/60 text-red-400 text-xs cursor-pointer hover:bg-red-100 transition-all">
-                          ✕
-                        </button>
+                          }}>
+                          Clear tab…
+                        </Button>
                       </div>
                     </div>
                   );
@@ -688,356 +540,185 @@ export default function BillingPage() {
             )}
           </div>
 
-          {/* RIGHT: Same item sidebar, wired to active reservation tab */}
-          <div className="w-full lg:w-auto bg-white border border-gray-200 rounded-xl overflow-hidden lg:sticky lg:top-4">
-            <div className="px-4 py-3 border-b border-blue-100 bg-blue-50/40">
-              <p className="text-[0.65rem] font-bold tracking-widest uppercase text-blue-400">
-                {activeResTab
-                  ? `Add to ${resTabs.find(t => t._id === activeResTab)?.guestName ?? '—'}`
-                  : 'Select a reservation tab'}
-              </p>
-            </div>
-
-            <div className="max-h-[60vh] lg:max-h-[calc(100vh-280px)] overflow-y-auto">
-              {Object.entries(
-                (['court fee', 'equipment', 'drinks', 'food', 'general']).reduce((acc, cat) => {
-                  const catItems = items.filter(i => i.category === cat);
-                  if (catItems.length > 0) acc[cat] = catItems;
-                  return acc;
-                }, {} as Record<string, CatalogItem[]>)
-              ).map(([cat, catItems]) => (
-                <div key={cat}>
-                  <div className="px-4 py-1.5 bg-gray-50/60 border-b border-gray-100">
-                    <span className="text-[0.62rem] font-bold tracking-widest uppercase text-gray-300">{cat}</span>
-                  </div>
-                  {catItems.map(item => {
-                    const q = resQty[item._id] ?? 1;
-                    return (
-                      <div key={item._id}
-                        className={`flex items-center px-3 py-2 gap-1.5 border-b border-gray-50 transition-colors ${activeResTab ? 'hover:bg-gray-50' : 'opacity-45'}`}>
-                        <span className="flex-1 text-xs text-gray-600 truncate min-w-0">{item.name}</span>
-                        <span className="text-[0.7rem] font-mono text-gray-400 shrink-0 min-w-[46px] text-right">
-                          {fmt(item.price * q)}
-                        </span>
-                        {/* Qty stepper */}
-                        <div className="flex items-center gap-0.5 shrink-0">
-                          <button disabled={!activeResTab}
-                            onClick={e => { e.stopPropagation(); setResQty(q2 => ({ ...q2, [item._id]: Math.max(1, q - 1) })); }}
-                            className="w-5 h-5 rounded border border-gray-200 bg-white text-gray-500 text-sm flex items-center justify-center disabled:cursor-not-allowed hover:border-gray-300">−</button>
-                          <span className="font-mono text-xs min-w-[18px] text-center text-gray-800 font-semibold">{q}</span>
-                          <button disabled={!activeResTab}
-                            onClick={e => { e.stopPropagation(); setResQty(q2 => ({ ...q2, [item._id]: q + 1 })); }}
-                            className="w-5 h-5 rounded border border-gray-200 bg-white text-gray-500 text-sm flex items-center justify-center disabled:cursor-not-allowed hover:border-gray-300">+</button>
-                        </div>
-                        {/* Add button */}
-                        <button disabled={!activeResTab || offline} title={offlineTitle}
-                          onClick={async () => {
-                            if (!activeResTab) return;
-                            setAddingResItem(item._id);
-                            const resTab = resTabs.find(t => t._id === activeResTab);
-                            await addItemToReservationTab(activeResTab, {
-                              itemId: item._id, name: item.name, price: item.price, quantity: q,
-                            });
-                            sileo.success({ title: 'Added', description: `${item.name} ×${q} → ${resTab?.guestName}` });
-                            setResQty(q2 => ({ ...q2, [item._id]: 1 }));
-                            await loadAll();
-                            setAddingResItem(null);
-                          }}
-                          className={`px-2 py-1 rounded text-[0.7rem] font-semibold shrink-0 border transition-all ${
-                            !activeResTab
-                              ? 'bg-gray-50 border-gray-200 text-gray-300 cursor-not-allowed'
-                              : 'bg-blue-50 border-blue-200 text-blue-700 cursor-pointer hover:bg-blue-100'
-                          }`}>
-                          {addingResItem === item._id ? '...' : 'Add'}
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              ))}
-            </div>
-
-            <div className="px-4 py-2.5 border-t border-gray-100 bg-gray-50/60">
-              <p className="text-[0.65rem] text-gray-300">Reservation billing — no auto-split</p>
-            </div>
-          </div>
+          <ProductPanel items={items} targetName={activeResObj?.guestName ?? null}
+            qty={resQty} onQty={(id, v) => setResQty(q2 => ({ ...q2, [id]: Math.max(1, v) }))}
+            onAdd={handleResAdd} addingId={addingResItem}
+            offline={offline} offlineTitle={offlineTitle} total={activeResObj?.total ?? null}
+            footnote="Reservation billing has no auto-split." />
         </div>
       )}
 
       {/* ── HISTORY VIEW ── */}
       {view === 'history' && (
         <div>
-
-          {/* Controls row */}
-          <div className="flex flex-wrap gap-2 mb-4 items-center">
-
-            {/* Queue / Reservations sub-toggle */}
-            <div className="flex gap-1">
-              <button onClick={() => { setHistoryTab('queue'); setHistPage(1); }}
-                className={`px-3 py-1.5 rounded-md text-xs font-medium border transition-all ${historyTab === 'queue' ? 'bg-gray-900 border-gray-900 text-white' : 'bg-white border-gray-200 text-gray-500'}`}>
-                Queue ({historyPaged?.pagination.total ?? 0})
-              </button>
-              <button onClick={() => { setHistoryTab('reservations'); setResHistPage(1); }}
-                className={`px-3 py-1.5 rounded-md text-xs font-medium border transition-all ${historyTab === 'reservations' ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-gray-200 text-gray-500'}`}>
-                Reservations ({resHistory?.pagination.total ?? 0})
-              </button>
+          <div className="flex flex-wrap gap-3 mb-5 items-end">
+            <div className="flex gap-2">
+              {subBtn(historyTab === 'queue', `Queue (${historyPaged?.pagination.total ?? 0})`, () => { setHistoryTab('queue'); setHistPage(1); })}
+              {subBtn(historyTab === 'reservations', `Reservations (${resHistory?.pagination.total ?? 0})`, () => { setHistoryTab('reservations'); setResHistPage(1); })}
             </div>
-
-            {/* Status filter */}
-            <div className="flex gap-1">
+            <div className="flex gap-2">
               {(['all', 'paid', 'unpaid'] as const).map(s => (
-                <button key={s} onClick={() => { setHistStatus(s); setHistPage(1); setResHistPage(1); }}
-                  className={`px-2.5 py-1.5 rounded-md text-xs font-medium border transition-all ${
-                    histStatus === s
-                      ? s === 'unpaid' ? 'bg-orange-500 border-orange-500 text-white'
-                        : 'bg-gray-700 border-gray-700 text-white'
-                      : 'bg-white border-gray-200 text-gray-400'
-                  }`}>
+                <button key={s} type="button" aria-pressed={histStatus === s} className={`filter-btn${histStatus === s ? ' active' : ''}`}
+                  onClick={() => { setHistStatus(s); setHistPage(1); setResHistPage(1); }}>
                   {s.charAt(0).toUpperCase() + s.slice(1)}
                 </button>
               ))}
             </div>
-
-            {/* Date filter */}
-            <div className="flex items-center gap-1.5">
-              <input type="date" value={histDate} onChange={e => { setHistDate(e.target.value); setHistPage(1); setResHistPage(1); }}
-                className="bg-white border border-gray-200 rounded-md px-3 py-1.5 text-xs text-gray-700 outline-none focus:border-green-400" />
-              {histDate && (
-                <button onClick={() => setHistDate('')} className="text-xs text-gray-400 hover:text-gray-600">Clear</button>
-              )}
+            <div className="flex items-end gap-2">
+              <div>
+                <label htmlFor="bl-date" className="ad-label">Date</label>
+                <input id="bl-date" type="date" className="ad-input" value={histDate}
+                  onChange={e => { setHistDate(e.target.value); setHistPage(1); setResHistPage(1); }} />
+              </div>
+              {histDate && <Button v="ghost" onClick={() => setHistDate('')}>Clear</Button>}
             </div>
           </div>
 
           {/* ── Queue History ── */}
           {historyTab === 'queue' && (
             <>
-              <div className="hidden sm:block bg-white border border-gray-200 rounded-xl overflow-hidden">
-                <div className="grid px-5 py-2.5 border-b border-gray-100 bg-gray-50/60"
-                  style={{ gridTemplateColumns: '1fr 140px 90px 80px 90px' }}>
-                  {['Player', 'Items', 'Total', 'Status', 'Time'].map(h => (
-                    <span key={h} className="text-[0.65rem] font-bold tracking-widest uppercase text-gray-300">{h}</span>
-                  ))}
+              <div className="hidden sm:block">
+                <div className="grid items-center border-b-2 border-[#0E2420] py-2 gap-3" style={{ gridTemplateColumns: '1fr 1.4fr 100px 150px 80px' }}>
+                  {['Player', 'Items', 'Total', 'Status', 'Time'].map(h => <span key={h} className="ad-eyebrow">{h}</span>)}
                 </div>
                 {loading ? (
-                  <div className="p-12 text-center text-gray-400 text-sm">Loading...</div>
+                  <div className="p-12 text-center ad-muted text-sm">Loading...</div>
                 ) : queueHistory.length === 0 ? (
-                  <div className="p-12 text-center text-gray-400 text-sm">No records found.</div>
-                ) : queueHistory.map((tab, i) => (
-                  <div key={tab._id} className="grid px-5 py-3 items-center hover:bg-gray-50/50 transition-colors"
-                    style={{ gridTemplateColumns: '1fr 140px 90px 80px 90px', borderBottom: i < queueHistory.length - 1 ? '1px solid #f9fafb' : 'none' }}>
+                  <div className="p-12 text-center ad-muted text-sm">No records found.</div>
+                ) : queueHistory.map(tab => (
+                  <div key={tab._id} className="grid items-center gap-3 py-3 border-b border-[#E1DBCB]" style={{ gridTemplateColumns: '1fr 1.4fr 100px 150px 80px' }}>
                     <div className="flex items-center gap-2 min-w-0">
-                      <LevelBadge level={tab.player.level} />
-                      <span className="text-sm font-medium text-gray-700 truncate">{tab.player.name}</span>
+                      <LevelMark level={tab.player.level} />
+                      <span className="text-[15px] font-bold truncate">{tab.player.name}</span>
                     </div>
-                    <div className="flex flex-wrap gap-1">
-                      {tab.items.slice(0, 2).map((item, j) => (
-                        <span key={j} className="text-[0.65rem] bg-green-50 text-green-700 border border-green-200 rounded px-1.5 py-0.5 font-mono">
-                          {item.name} ×{item.quantity}
-                        </span>
-                      ))}
-                      {tab.items.length > 2 && <span className="text-[0.65rem] bg-gray-100 text-gray-500 rounded px-1.5 py-0.5">+{tab.items.length - 2}</span>}
+                    <div>
+                      {chips(tab.items.slice(0, 2))}
+                      {tab.items.length > 2 && <span className="ad-mono ad-muted text-xs">+{tab.items.length - 2} more</span>}
                     </div>
-                    <span className="font-mono text-sm font-semibold text-yellow-900">{fmt(tab.total)}</span>
+                    <span className="ad-mono text-sm font-bold">{fmt(tab.total)}</span>
                     <div>
                       {tab.status === 'unpaid' ? (
-                        <button onClick={async () => {
+                        <Button v="warning" size="sm" disabled={offline} title={offlineTitle} onClick={async () => {
                           await payUnpaid(tab._id);
                           sileo.success({ title: 'Marked as paid', description: tab.player.name });
                           loadHistory();
-                        }} disabled={offline} title={offlineTitle} className="text-[0.65rem] font-semibold px-2 py-0.5 rounded-full border border-orange-300 bg-orange-50 text-orange-600 cursor-pointer hover:bg-orange-100 transition-all mr-4">
-                          Collect Unpaid
-                        </button>
-                      ) : (
-                        <span className="text-[0.65rem] font-semibold text-green-600 bg-green-50 px-2 py-0.5 rounded-full border border-green-200">Paid</span>
-                      )}
+                        }}>Collect unpaid</Button>
+                      ) : <StatusDot tone="ok">Paid</StatusDot>}
                     </div>
-                    <span className="font-mono text-[0.65rem] text-gray-400">
+                    <span className="ad-mono ad-muted text-xs">
                       {new Date(tab.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </span>
                   </div>
                 ))}
               </div>
 
-              {/* Mobile cards */}
-              <div className="sm:hidden flex flex-col gap-3">
-                {history.length === 0 ? (
-                  <div className="p-12 text-center text-gray-400 text-sm">No records found.</div>
-                ) : history.map(tab => (
-                  <div key={tab._id} className={`bg-white rounded-xl p-4 border ${tab.status === 'unpaid' ? 'border-orange-200' : 'border-gray-200'}`}>
+              {/* Mobile list — uses the same paged queue history as desktop */}
+              <div className="sm:hidden">
+                {queueHistory.length === 0 ? (
+                  <div className="p-12 text-center ad-muted text-sm">No records found.</div>
+                ) : queueHistory.map(tab => (
+                  <div key={tab._id} className="border-b border-[#E1DBCB] py-4">
                     <div className="flex items-center justify-between gap-3 mb-2">
-                      <div className="flex items-center gap-2">
-                        <LevelBadge level={tab.player.level} />
-                        <span className="text-sm font-semibold text-gray-800">{tab.player.name}</span>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <LevelMark level={tab.player.level} />
+                        <span className="text-[15px] font-bold truncate">{tab.player.name}</span>
                       </div>
-                      <div className="text-right">
-                        <p className="font-mono text-sm font-semibold text-yellow-900">{fmt(tab.total)}</p>
-                        {tab.status === 'unpaid' && (
-                          <button onClick={async () => { await payUnpaid(tab._id); sileo.success({ title: 'Paid', description: tab.player.name }); loadHistory(); }}
-                            disabled={offline} title={offlineTitle}
-                            className="text-[0.65rem] text-orange-600 underline cursor-pointer mt-0.5">Collect</button>
-                        )}
-                      </div>
+                      <span className="ad-mono text-sm font-bold">{fmt(tab.total)}</span>
                     </div>
-                    <div className="flex flex-wrap gap-1 mb-1.5">
-                      {tab.items.map((item, j) => (
-                        <span key={j} className="text-[0.65rem] bg-green-50 text-green-700 border border-green-200 rounded px-1.5 py-0.5 font-mono">
-                          {item.name} ×{item.quantity}
-                        </span>
-                      ))}
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <p className="font-mono text-[0.65rem] text-gray-400">{new Date(tab.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
-                      <span className={`text-[0.62rem] font-semibold px-1.5 py-0.5 rounded-full border ${tab.status === 'unpaid' ? 'bg-orange-50 border-orange-200 text-orange-600' : 'bg-green-50 border-green-200 text-green-600'}`}>
-                        {tab.status}
-                      </span>
+                    <div className="mb-2">{chips(tab.items)}</div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="ad-mono ad-muted text-xs">{new Date(tab.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                      {tab.status === 'unpaid' ? (
+                        <Button v="warning" size="sm" disabled={offline} title={offlineTitle}
+                          onClick={async () => { await payUnpaid(tab._id); sileo.success({ title: 'Paid', description: tab.player.name }); loadHistory(); }}>
+                          Collect unpaid
+                        </Button>
+                      ) : <StatusDot tone={tab.status === 'paid' ? 'ok' : 'wait'}>{tab.status}</StatusDot>}
                     </div>
                   </div>
                 ))}
               </div>
 
-              {/* Queue Pagination */}
-              {historyPaged && historyPaged.pagination.totalPages > 1 && (
-                <div className="flex items-center justify-between mt-4 px-1">
-                  <span className="text-xs text-gray-400 font-mono">
-                    Page {historyPaged.pagination.page} of {historyPaged.pagination.totalPages} · {historyPaged.pagination.total} records
-                  </span>
-                  <div className="flex gap-1">
-                    <button disabled={!historyPaged.pagination.hasPrev} onClick={() => setHistPage(p => p - 1)}
-                      className="px-3 py-1.5 rounded-md border text-xs font-medium disabled:opacity-30 disabled:cursor-not-allowed bg-white border-gray-200 text-gray-600 hover:border-gray-300 transition-all">
-                      ← Prev
-                    </button>
-                    <button disabled={!historyPaged.pagination.hasNext} onClick={() => setHistPage(p => p + 1)}
-                      className="px-3 py-1.5 rounded-md border text-xs font-medium disabled:opacity-30 disabled:cursor-not-allowed bg-white border-gray-200 text-gray-600 hover:border-gray-300 transition-all">
-                      Next →
-                    </button>
-                  </div>
-                </div>
-              )}
+              {historyPaged && pager(historyPaged.pagination, setHistPage)}
             </>
           )}
 
-         {/* ── Reservation History ── */}
+          {/* ── Reservation History ── */}
           {historyTab === 'reservations' && (
             <>
-              <div className="hidden sm:block bg-white border border-blue-100 rounded-xl overflow-hidden">
-                <div className="grid px-5 py-2.5 border-b border-blue-50 bg-blue-50/40"
-                  style={{ gridTemplateColumns: '1fr 70px 140px 90px 80px 90px' }}>
-                  {['Guest', 'Court', 'Items', 'Total', 'Status', 'Date'].map(h => (
-                    <span key={h} className="text-[0.65rem] font-bold tracking-widest uppercase text-blue-300">{h}</span>
-                  ))}
+              <div className="hidden sm:block">
+                <div className="grid items-center border-b-2 border-[#0E2420] py-2 gap-3" style={{ gridTemplateColumns: '1.2fr 60px 1.4fr 100px 170px 100px' }}>
+                  {['Guest', 'Court', 'Items', 'Total', 'Status', 'Date'].map(h => <span key={h} className="ad-eyebrow">{h}</span>)}
                 </div>
                 {historyLoading ? (
-                  <div className="p-12 text-center text-gray-400 text-sm">Loading...</div>
+                  <div className="p-12 text-center ad-muted text-sm">Loading...</div>
                 ) : historyError ? (
-                  <div className="p-12 text-center text-amber-700 text-sm">{historyError}</div>
+                  <div className="p-12 text-center text-amber-800 text-sm">{historyError}</div>
                 ) : (resHistory?.tabs ?? []).length === 0 ? (
-                  <div className="p-12 text-center text-gray-400 text-sm">No records found.</div>
-                ) : (resHistory?.tabs ?? []).map((tab, i) => (
-                  <div key={tab._id} className="grid px-5 py-3 items-center hover:bg-blue-50/30 transition-colors"
-                    style={{ gridTemplateColumns: '1fr 70px 140px 90px 80px 90px', borderBottom: i < (resHistory?.tabs.length ?? 0) - 1 ? '1px solid #f0f4ff' : 'none' }}>
+                  <div className="p-12 text-center ad-muted text-sm">No records found.</div>
+                ) : (resHistory?.tabs ?? []).map(tab => (
+                  <div key={tab._id} className="grid items-center gap-3 py-3 border-b border-[#E1DBCB]" style={{ gridTemplateColumns: '1.2fr 60px 1.4fr 100px 170px 100px' }}>
                     <div className="min-w-0">
-                      <p className="text-sm font-medium text-gray-700 truncate">{tab.guestName}</p>
-                      <p className="text-[0.65rem] text-gray-400 font-mono">{tab.date} · {tab.timeSlot} · {tab.duration}h</p>
+                      <p className="text-[15px] font-bold truncate">{tab.guestName}</p>
+                      <p className="ad-mono ad-muted text-xs">{tab.timeSlot} · {tab.duration}h</p>
                     </div>
-                    <span className="text-xs font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded w-fit">C{tab.court}</span>
-                    <div className="flex flex-wrap gap-1">
-                      {tab.items.slice(0, 2).map((item, j) => (
-                        <span key={j} className="text-[0.65rem] bg-blue-50 text-blue-700 border border-blue-200 rounded px-1.5 py-0.5 font-mono">
-                          {item.name} ×{item.quantity}
-                        </span>
-                      ))}
-                      {tab.items.length > 2 && <span className="text-[0.65rem] bg-gray-100 text-gray-500 rounded px-1.5 py-0.5">+{tab.items.length - 2}</span>}
-                      {tab.items.length === 0 && <span className="text-[0.65rem] text-gray-300">—</span>}
+                    <span className="ad-mono text-xs font-bold">C{tab.court}</span>
+                    <div>
+                      {tab.items.length === 0 ? <span className="ad-muted text-xs">—</span> : chips(tab.items.slice(0, 2))}
+                      {tab.items.length > 2 && <span className="ad-mono ad-muted text-xs">+{tab.items.length - 2} more</span>}
                     </div>
-                    <span className="font-mono text-sm font-semibold text-yellow-900">{fmt(tab.total)}</span>
+                    <span className="ad-mono text-sm font-bold">{fmt(tab.total)}</span>
                     <div>
                       {tab.status === 'unpaid' ? (
-                          <button onClick={async () => {
-                            await payReservationUnpaid(tab._id);
-                            sileo.success({ title: 'Paid', description: tab.guestName });
+                        <Button v="warning" size="sm" disabled={offline} title={offlineTitle} onClick={async () => {
+                          await payReservationUnpaid(tab._id);
+                          sileo.success({ title: 'Paid', description: tab.guestName });
+                          loadHistory();
+                        }}>Unpaid — collect</Button>
+                      ) : tab.status === 'open' ? (
+                        tab.total > 0 ? (
+                          <Button v="primary" size="sm" disabled={offline} title={offlineTitle} onClick={async () => {
+                            await payReservationTab(tab._id);
+                            sileo.success({ title: 'Paid!', description: tab.guestName });
                             loadHistory();
-                          }} disabled={offline} title={offlineTitle} className="text-[0.65rem] font-semibold px-2 py-0.5 rounded-full border border-orange-300 bg-orange-50 text-orange-600 cursor-pointer hover:bg-orange-100">
-                            Unpaid — Collect
-                          </button>
-                        ) : tab.status === 'open' ? (
-                          tab.total > 0 ? (
-                            <button onClick={async () => {
-                              await payReservationTab(tab._id);
-                              sileo.success({ title: 'Paid!', description: tab.guestName });
-                              loadHistory();
-                            }} disabled={offline} title={offlineTitle} className="text-[0.65rem] font-semibold px-2 py-0.5 rounded-full border border-blue-300 bg-blue-50 text-blue-700 cursor-pointer hover:bg-blue-100">
-                              Pay {fmt(tab.total)}
-                            </button>
-                          ) : (
-                            <span className="text-[0.65rem] font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200">Open</span>
-                          )
-                        ) : (
-                          <span className="text-[0.65rem] font-semibold text-green-600 bg-green-50 px-2 py-0.5 rounded-full border border-green-200">Paid</span>
-                        )}
-                      </div>
-                    <span className="font-mono text-[0.65rem] text-gray-400">{tab.date}</span>
+                          }}>Pay {fmt(tab.total)}</Button>
+                        ) : <StatusDot tone="wait">Open</StatusDot>
+                      ) : <StatusDot tone="ok">Paid</StatusDot>}
+                    </div>
+                    <span className="ad-mono ad-muted text-xs">{tab.date}</span>
                   </div>
                 ))}
               </div>
 
-              {/* Mobile */}
-              <div className="sm:hidden flex flex-col gap-3">
+              <div className="sm:hidden">
                 {(resHistory?.tabs ?? []).length === 0 ? (
-                  <div className="p-12 text-center text-gray-400 text-sm">No records found.</div>
+                  <div className="p-12 text-center ad-muted text-sm">No records found.</div>
                 ) : (resHistory?.tabs ?? []).map(tab => (
-                  <div key={tab._id} className={`bg-white rounded-xl p-4 border ${tab.status === 'unpaid' ? 'border-orange-200' : 'border-blue-100'}`}>
+                  <div key={tab._id} className="border-b border-[#E1DBCB] py-4">
                     <div className="flex items-start justify-between gap-3 mb-2">
                       <div>
-                        <p className="text-sm font-semibold text-gray-800">{tab.guestName}</p>
-                        <p className="text-[0.65rem] text-gray-400 font-mono">{tab.timeSlot} · {tab.duration}h</p>
+                        <p className="text-[15px] font-bold">{tab.guestName}</p>
+                        <p className="ad-mono ad-muted text-xs">{tab.timeSlot} · {tab.duration}h · Court {tab.court}</p>
                       </div>
-                      <div className="text-right">
-                        <span className="text-xs font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded block mb-1">Court {tab.court}</span>
-                        <span className="font-mono text-sm font-semibold text-yellow-900">{fmt(tab.total)}</span>
-                        {tab.status === 'unpaid' && (
-                          <button onClick={async () => { await payReservationUnpaid(tab._id); sileo.success({ title: 'Paid', description: tab.guestName }); loadHistory(); }}
-                            disabled={offline} title={offlineTitle}
-                            className="block text-[0.65rem] text-orange-600 underline cursor-pointer mt-0.5">Collect</button>
-                        )}
-                      </div>
+                      <span className="ad-mono text-sm font-bold">{fmt(tab.total)}</span>
                     </div>
-                    <div className="flex flex-wrap gap-1 mb-1.5">
-                      {tab.items.length === 0
-                        ? <span className="text-xs text-gray-300">No items charged</span>
-                        : tab.items.map((item, j) => (
-                          <span key={j} className="text-[0.65rem] bg-blue-50 text-blue-700 border border-blue-200 rounded px-1.5 py-0.5 font-mono">
-                            {item.name} ×{item.quantity}
-                          </span>
-                        ))}
+                    <div className="mb-2">
+                      {tab.items.length === 0 ? <span className="ad-muted text-xs">No items charged</span> : chips(tab.items)}
                     </div>
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs text-gray-400 font-mono">{tab.date}</p>
-                      <span className={`text-[0.62rem] font-semibold px-1.5 py-0.5 rounded-full border ${tab.status === 'unpaid' ? 'bg-orange-50 border-orange-200 text-orange-600' : 'bg-green-50 border-green-200 text-green-600'}`}>
-                        {tab.status}
-                      </span>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="ad-mono ad-muted text-xs">{tab.date}</span>
+                      {tab.status === 'unpaid' ? (
+                        <Button v="warning" size="sm" disabled={offline} title={offlineTitle}
+                          onClick={async () => { await payReservationUnpaid(tab._id); sileo.success({ title: 'Paid', description: tab.guestName }); loadHistory(); }}>
+                          Collect unpaid
+                        </Button>
+                      ) : <StatusDot tone={tab.status === 'paid' ? 'ok' : 'wait'}>{tab.status}</StatusDot>}
                     </div>
                   </div>
                 ))}
               </div>
 
-              {/* Reservation Pagination */}
-              {resHistory && resHistory.pagination.totalPages > 1 && (
-                <div className="flex items-center justify-between mt-4 px-1">
-                  <span className="text-xs text-gray-400 font-mono">
-                    Page {resHistory.pagination.page} of {resHistory.pagination.totalPages} · {resHistory.pagination.total} records
-                  </span>
-                  <div className="flex gap-1">
-                    <button disabled={!resHistory.pagination.hasPrev} onClick={() => setResHistPage(p => p - 1)}
-                      className="px-3 py-1.5 rounded-md border text-xs font-medium disabled:opacity-30 disabled:cursor-not-allowed bg-white border-gray-200 text-gray-600 hover:border-gray-300 transition-all">
-                      ← Prev
-                    </button>
-                    <button disabled={!resHistory.pagination.hasNext} onClick={() => setResHistPage(p => p + 1)}
-                      className="px-3 py-1.5 rounded-md border text-xs font-medium disabled:opacity-30 disabled:cursor-not-allowed bg-white border-gray-200 text-gray-600 hover:border-gray-300 transition-all">
-                      Next →
-                    </button>
-                  </div>
-                </div>
-              )}
+              {resHistory && pager(resHistory.pagination, setResHistPage)}
             </>
           )}
         </div>

@@ -405,11 +405,13 @@ async function handleAdminNavigation(request, generation) {
     return adminOfflineResponse();
   }
 
-  if (
-    response.status === 401 ||
-    response.status === 403
-  ) {
+  if (response.status === 401) {
     await wipeAndNotifyClients();
+    return response;
+  }
+
+  if (response.status === 403) {
+    // Preserve cached data for subscription-restricted features.
     return response;
   }
 

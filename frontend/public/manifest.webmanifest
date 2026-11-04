@@ -1,9 +1,10 @@
 {
+  "id": "/",
   "name": "Kourtly",
   "short_name": "Kourtly",
   "description": "Court booking and management platform.",
   "start_url": "/",
-  "scope": "/",
+  "scope": "/admin/",
   "display": "standalone",
   "background_color": "#0F464B",
   "theme_color": "#0F464B",

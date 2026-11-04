@@ -1,9 +1,10 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { signOut, useSession } from 'next-auth/react';
-import { useState, useEffect, type MouseEvent } from 'react';
+import { useState, useEffect, useRef, type MouseEvent, type CSSProperties } from 'react';
 import {
   Users,
   ListOrdered,
@@ -13,8 +14,10 @@ import {
   CalendarDays,
   ShieldUser,
   Settings,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react';
-import Image from 'next/image';
+import { ProfileMenu, initials } from '@/app/components/ui/ProfileMenu';
 import { useCapabilities } from '@/lib/entitlements';
 import { wipeOfflineData } from '@/lib/offlineCache';
 import { proxyFetch } from '@/lib/api';
@@ -24,6 +27,10 @@ interface Props {
   offline: boolean;
   onClose: () => void;
   user: { name: string; email: string; image: string };
+  title: string;
+  fsSupported: boolean;
+  isFullscreen: boolean;
+  onToggleFullscreen: () => void;
 }
 
 const NAV = [
@@ -36,12 +43,16 @@ const NAV = [
   { href: '/admin/schedule', label: 'Scheduling', icon: CalendarClock, module: 'booking' as const },
   { href: '/admin/settings', label: 'Settings', icon: Settings },
 ];
-
+/**
+ * REcheck this part
+ 
 const SUPERADMIN_NAV = [
   { href: '/admin/superadmin', label: 'Super Admin' },
 ];
-
-export default function AdminSidebar({ isOpen, offline, onClose, user }: Props) {
+  */
+export default function AdminSidebar({
+  isOpen, offline, onClose, user, title, fsSupported, isFullscreen, onToggleFullscreen,
+}: Props) {
   const pathname = usePathname();
   const { data: session } = useSession();
   const isSuperAdmin = session?.user?.role === 'superadmin';
@@ -111,129 +122,98 @@ export default function AdminSidebar({ isOpen, offline, onClose, user }: Props) 
     ? 'Admin Panel'
     : courtName ?? 'My Court';
 
+  const items = NAV.filter(item => !item.module || capabilities.modules[item.module]);
+  const isActive = (item: typeof NAV[number]) =>
+    item.exact ? pathname === item.href : pathname.startsWith(item.href);
+  const activeIndex = items.findIndex(isActive);
+  const profileSubtitle = isSuperAdmin ? 'Super admin' : courtName ?? '';
+
+  const logo = isSuperAdmin
+    ? 'AP'
+    : courtLogoUrl
+      ? <Image src={courtLogoUrl} alt="" width={32} height={32} unoptimized />
+      : initials(brandName);
+
   return (
-    <aside className={`admin-sidebar-aside ${isOpen ? 'open' : ''}`}>
-
-      {/* Brand */}
-      <div className="px-5 py-5 pb-4 border-b border-gray-100">
-        <Link href="/" className="no-underline flex items-center gap-2.5" onClick={handleNavigation('/')}>
-          {isSuperAdmin ? (
-            <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 bg-purple-700">
-              <div className="w-2.5 h-2.5 rounded-full bg-white opacity-90" />
-            </div>
-          ) : courtLogoUrl ? (
-            <Image
-              src={courtLogoUrl}
-              alt=""
-              width={28}
-              height={28}
-              className="w-7 h-7 rounded-lg object-cover shrink-0 border border-gray-200"
-              unoptimized
-            />
-          ) : (
-            <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 bg-green-700">
-              <div className="w-2.5 h-2.5 rounded-full bg-white opacity-90" />
-            </div>
-          )}
-
-          <span className="font-bold text-sm text-gray-900 tracking-tight truncate max-w-[140px]" title={brandName}>
-            {brandName}
-          </span>
-        </Link>
-      </div>
-
-      {/* Nav */}
-      <nav className="px-3 py-3 flex-1 flex flex-col gap-0.5">
-        <p className="text-[0.65rem] font-semibold tracking-widest uppercase text-gray-400 px-3.5 mb-1">
-          Management
-        </p>
-
-        {NAV.filter(item => !item.module || capabilities.modules[item.module]).map((item) => {
-          const active = item.exact
-            ? pathname === item.href
-            : pathname.startsWith(item.href);
-
-          const Icon = item.icon;
-
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={handleNavigation(item.href)}
-              className={`sidebar-item ${active ? 'active' : ''}`}
-            >
-              <Icon
-                className={`w-4 h-4 shrink-0 transition-colors ${
-                  active ? 'text-green-700' : 'text-gray-400'
-                }`}
-              />
-              {item.label}
-            </Link>
-          );
-        })}
-      </nav>
-
-      {/* Footer */}
-      <div className="px-3 py-4 border-t border-gray-100 flex flex-col gap-2">
-
-        <div className="flex items-center gap-2.5 px-3.5 py-2">
-          {user.image ? (
-            <Image
-              src={user.image}
-              alt={user.name}
-              width={26}
-              height={26}
-              className="rounded-full shrink-0"
-            />
-          ) : (
-            <div className="w-[26px] h-[26px] rounded-full bg-green-50 border border-green-200 flex items-center justify-center shrink-0">
-              <span className="text-[0.65rem] font-semibold text-green-700">
-                {user.name?.[0]?.toUpperCase() ?? '?'}
-              </span>
-            </div>
-          )}
-
-          <div className="min-w-0">
-            <p className="text-xs font-semibold text-gray-800 truncate leading-tight">
-              {user.name || 'Admin'}
-            </p>
-
-            <p className="text-[0.62rem] text-gray-400 truncate leading-tight">
-              {user.email}
-            </p>
-
-            {isSuperAdmin && (
-              <p className="text-[0.58rem] font-semibold text-purple-500 uppercase tracking-wide leading-tight">
-                Super Admin
-              </p>
-            )}
-
-            {!isSuperAdmin && courtName && (
-              <p className="text-[0.58rem] font-semibold text-green-600 uppercase tracking-wide leading-tight truncate">
-                {courtName}
-              </p>
-            )}
-          </div>
+    <>
+      <aside
+        id="ad-side"
+        className={`ad-side${isOpen ? ' is-open' : ''}`}
+        style={{ '--i': Math.max(activeIndex, 0) } as CSSProperties}
+      >
+        {/* Brand: logo always visible, full court name when the shell slides out */}
+        <div className="ad-brand">
+          <Link href="/" onClick={handleNavigation('/')}>
+            <span className="ad-logo">{logo}</span>
+            <span className="ad-lbl ad-brandname" title={brandName}>
+              {brandName}
+              {isSuperAdmin && <small className="ad-brandtag">SUPER ADMIN</small>}
+            </span>
+          </Link>
         </div>
 
-        <button
-          onClick={handleSignOut}
-          disabled={signingOut}
-          className="flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs text-red-500 border border-red-100 bg-transparent cursor-pointer transition-colors hover:bg-red-50 disabled:opacity-50 w-full font-medium"
-          style={{ fontFamily: 'inherit' }}
-        >
-          <span>↪</span>
-          {signingOut ? 'Signing out...' : 'Sign Out'}
-        </button>
+        {/* Nav */}
+        <nav className={`ad-nav${activeIndex < 0 ? ' no-active' : ''}`} aria-label="Admin">
+          <span className="ad-mk" aria-hidden="true" />
+          {items.map(item => {
+            const Icon = item.icon;
+            const active = isActive(item);
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={handleNavigation(item.href)}
+                aria-current={active ? 'page' : undefined}
+                className={`ad-link${active ? ' active' : ''}`}
+              >
+                <Icon className="w-5 h-5" aria-hidden="true" />
+                <span className="ad-lbl">{item.label}</span>
+              </Link>
+            );
+          })}
+        </nav>
 
-        <Link
-          href="/"
-          onClick={handleNavigation('/')}
-          className="flex items-center gap-2 px-3.5 py-2 rounded-lg no-underline text-gray-500 text-xs hover:bg-gray-100 transition-colors"
-        >
-          ← View Site
-        </Link>
+        <ProfileMenu
+          variant="rail"
+          user={user}
+          subtitle={profileSubtitle}
+          signingOut={signingOut}
+          onSignOut={handleSignOut}
+          onNavigate={handleNavigation}
+        />
+      </aside>
+
+      {/* Phone top bar (hidden on desktop by CSS) */}
+      <div className="ad-appbar">
+        <div className="ad-appbar-id">
+          <span className="ad-logo ad-logo-sm">{logo}</span>
+          <span className="ad-appbar-text">
+            <b title={brandName}>{brandName}</b>
+            <small>{title}</small>
+          </span>
+        </div>
+        <div className="ad-appbar-actions">
+          {fsSupported && (
+            <button
+              type="button"
+              className="ad-iconbtn"
+              onClick={onToggleFullscreen}
+              aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+              title={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+            >
+              {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+            </button>
+          )}
+          <ProfileMenu
+            variant="bar"
+            user={user}
+            subtitle={profileSubtitle}
+            signingOut={signingOut}
+            onSignOut={handleSignOut}
+            onNavigate={handleNavigation}
+          />
+        </div>
       </div>
-    </aside>
+    </>
   );
 }

@@ -44,13 +44,13 @@ export const authOptions: NextAuthOptions = {
         trigger === 'signIn' ||
         trigger === 'update' ||
         !token.role;
-        console.log('[jwt] trigger:', trigger, 'shouldRefresh:', shouldRefresh, 'email:', token.email);
+        // console.log('[jwt] trigger:', trigger, 'shouldRefresh:', shouldRefresh, 'email:', token.email);
 
       if (token.email && shouldRefresh) {
         try {
           const res  = await fetch(`${BASE}/api/users/by-email/${encodeURIComponent(token.email!)}`);
           const user = await res.json();
-          console.log('[jwt] backend response:', res.status, JSON.stringify(user));
+          // console.log('[jwt] backend response:', res.status, JSON.stringify(user));
 
           token.role    = user.role    ?? 'user';
           token.dbId    = user._id     ?? '';

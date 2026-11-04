@@ -35,7 +35,7 @@ const FEATURES: Feature[] = [
     description: 'Block times for maintenance, leagues or private events so they cannot be booked. Blocked time shows on the schedule.',
     visual: <BlockTimePreview />, joy: { sprites: SLEEPY, place: 'peek', bubble: 'Shh. Court 2 is resting.' } },
   { id: 'directory', title: 'Player directory', tier: 'Standard+',
-    description: 'Keep a list of your regular players with their skill tier and how many games they played today.',
+    description: 'Keep a list of your regular players with their skill level and how many games they played today.',
     visual: <PlayerDirectoryPreview />, joy: { sprites: DIRECTORY, place: 'peek', tracked: true } },
   { id: 'queue', title: 'Queue and match generation', tier: 'Standard+',
     description: 'Walk-ins join a fair, visible queue. Matches pair players by play count and skill tier, with live updates on every screen.',

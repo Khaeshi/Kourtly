@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { usePathname } from 'next/navigation';
+import { Menu, X } from 'lucide-react';
 import { Toaster } from 'sileo';
-import { APP_NAME } from '@/lib/config';
 import AdminSidebar from './AdminSidebar';
 import { CapabilitiesProvider, CapabilityGate } from '@/lib/entitlements';
 import { ConnectivityProvider, useConnectivity } from '@/lib/connectivity';
@@ -49,6 +49,7 @@ function AdminLayoutContent({
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [fsSupported, setFsSupported] = useState(false);
+  const shellRef = useRef<HTMLElement>(null);
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
   const offline = status !== 'online';
   const title = pageTitle(pathname);
@@ -75,6 +76,22 @@ function AdminLayoutContent({
     document.addEventListener('fullscreenchange', handler);
     return () => document.removeEventListener('fullscreenchange', handler);
   }, []);
+
+  // The shell is now the scroll container, so reset it (and drop rail focus) on every page change.
+  useEffect(() => {
+    shellRef.current?.scrollTo({ top: 0 });
+    const active = document.activeElement as HTMLElement | null;
+    if (active?.closest?.('.ad-side')) active.blur();
+  }, [pathname]);
+
+  useEffect(() => {
+    if (!sidebarOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setSidebarOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [sidebarOpen]);
 
   const toggleFullscreen = useCallback(() => {
     if (typeof document === 'undefined') return;
@@ -114,64 +131,58 @@ function AdminLayoutContent({
           },
         }}
       />
-      <div className="mobile-topbar">
-        <button
-          onClick={() => setSidebarOpen(open => !open)}
-          aria-label="Toggle menu"
-          className="flex flex-col gap-1 p-1.5 rounded-md border-none bg-transparent cursor-pointer"
-        >
-          <span className={`block w-[18px] h-[2px] bg-gray-700 rounded-sm transition-all duration-200 ${sidebarOpen ? 'rotate-45 translate-x-1 translate-y-1' : ''}`} />
-          <span className={`block w-[18px] h-[2px] bg-gray-700 rounded-sm transition-all duration-200 ${sidebarOpen ? 'opacity-0' : 'opacity-100'}`} />
-          <span className={`block w-[18px] h-[2px] bg-gray-700 rounded-sm transition-all duration-200 ${sidebarOpen ? '-rotate-45 translate-x-1 -translate-y-1' : ''}`} />
-        </button>
-        <span className="font-bold text-sm text-gray-900 tracking-tight">
-          {APP_NAME}<span className="ml-2 text-gray-500 font-medium">· {title}</span>
-        </span>
-
-        {fsSupported && (
-          <button
-            onClick={toggleFullscreen}
-            title={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
-            className="ml-auto w-8 h-8 flex items-center justify-center rounded-md text-gray-400 hover:text-gray-600 transition-colors"
-          >
-            {isFullscreen ? (
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 0 2-2h3M3 16h3a2 2 0 0 0 2 2v3"/>
-              </svg>
-            ) : (
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
-              </svg>
-            )}
-          </button>
-        )}
-      </div>
-
-      {sidebarOpen && <div className="sidebar-backdrop" onClick={() => setSidebarOpen(false)} />}
 
       <CapabilitiesProvider key={identity ?? 'anonymous'}>
         <AdminPrefetchRunner />
-        <div className="flex min-h-screen bg-gray-100 font-sans">
+        <div className="ad-app" data-nav-open={sidebarOpen ? 'true' : 'false'}>
+          {/* Pine layer (rail on desktop, bottom bar on phones) + phone top bar */}
           <AdminSidebar
             isOpen={sidebarOpen}
             offline={offline}
             onClose={() => setSidebarOpen(false)}
             user={user}
+            title={title}
+            fsSupported={fsSupported}
+            isFullscreen={isFullscreen}
+            onToggleFullscreen={toggleFullscreen}
           />
-          <main className="admin-main flex-1 px-[clamp(1rem,3vw,2rem)] pb-[clamp(1rem,3vw,2rem)] pt-[clamp(1rem,3vw,2rem)] md:pt-[clamp(1rem,3vw,2rem)]">
-            {offline && (
-              <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                {canRenderSnapshotPage
-                  ? oldestSnapshot
-                    ? `Offline. Showing data from ${new Date(oldestSnapshot.fetchedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-                    : 'Offline. No saved data is available for this page.'
-                  : `${title} is not available offline`}
-              </p>
+
+          {/* Paper shell: slides out on rail hover (desktop), lifts when the menu is open (phone) */}
+          <main ref={shellRef} className="ad-shell">
+            <div key={pathname} className="ad-page">
+              {offline && (
+                <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                  {canRenderSnapshotPage
+                    ? oldestSnapshot
+                      ? `Offline. Showing data from ${new Date(oldestSnapshot.fetchedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                      : 'Offline. No saved data is available for this page.'
+                    : `${title} is not available offline`}
+                </p>
+              )}
+              {offline && !canRenderSnapshotPage
+                ? null
+                : <CapabilityGate>{children}</CapabilityGate>}
+            </div>
+            {sidebarOpen && (
+              <button
+                type="button"
+                className="ad-scrim"
+                aria-label="Close menu"
+                onClick={() => setSidebarOpen(false)}
+              />
             )}
-            {offline && !canRenderSnapshotPage
-              ? null
-              : <CapabilityGate>{children}</CapabilityGate>}
           </main>
+
+          <button
+            type="button"
+            className="ad-navtog"
+            aria-label={sidebarOpen ? 'Close menu' : 'Open menu'}
+            aria-expanded={sidebarOpen}
+            aria-controls="ad-side"
+            onClick={() => setSidebarOpen(open => !open)}
+          >
+            {sidebarOpen ? <X size={22} /> : <Menu size={22} />}
+          </button>
         </div>
       </CapabilitiesProvider>
     </>
