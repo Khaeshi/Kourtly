@@ -15,6 +15,7 @@ const StockMovementSchema = new mongoose.Schema({
   tabType: { type: String, enum: ['queue', 'reservation', null], default: null },
   tabId: { type: mongoose.Schema.Types.ObjectId, default: null },
   tabLineId: { type: mongoose.Schema.Types.ObjectId, default: null },
+  chargeGroupId: { type: mongoose.Schema.Types.ObjectId, default: null },
   actorId: { type: String, required: true },
   idempotencyKey: { type: String, required: true },
   requestHash: { type: String, required: true },

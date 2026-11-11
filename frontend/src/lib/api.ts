@@ -101,6 +101,7 @@ export interface StockCountSummary {
 export interface TabItem {
   _id?: string; item?: string; name: string;
   price: number; quantity: number; addedAt?: string;
+  chargeGroupId?: string | null;
 }
 
 export interface Tab {

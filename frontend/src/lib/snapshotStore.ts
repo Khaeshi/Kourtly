@@ -85,7 +85,9 @@ function projectMatch(value: unknown): unknown {
 
 function projectBillingItems(value: unknown): unknown {
   if (!Array.isArray(value)) return [];
-  return value.map(item => project(item, ['_id', 'item', 'name', 'price', 'quantity', 'addedAt']));
+  return value.map(item => project(item, [
+    '_id', 'item', 'name', 'price', 'quantity', 'addedAt', 'chargeGroupId',
+  ]));
 }
 
 function projectTab(value: unknown): unknown {

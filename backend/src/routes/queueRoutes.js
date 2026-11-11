@@ -1,10 +1,15 @@
 import express from 'express';
+import mongoose from 'mongoose';
 import Match from '../models/Match.js';
 import Player from '../models/Player.js';
 import Tab from '../models/Tab.js';
 import Item from '../models/Item.js';
 import { emitCourtEvent } from '../lib/emitCourtEvent.js';
 import { generateAIText } from '../lib/ai/index.js';
+import {
+  emitBillingStockUpdates,
+  recordBillingStockMovement,
+} from '../services/billingStock.js';
 
 const router = express.Router();
 const LEVEL_ORDER = { A: 4, B: 3, C: 2, D: 1 };
@@ -50,46 +55,91 @@ router.delete('/history', async (req, res) => {
 // POST create match + increment matchCount + optional shuttlecock split
 // Body: { team1, team2, matchType, court, shuttlecockId? }
 router.post('/', async (req, res) => {
+  const session = await mongoose.startSession();
+  const stockChanges = [];
+  let match;
+  let tabIds = [];
   try {
     const { team1, team2, matchType, court, shuttlecockId } = req.body;
 
-    // Create match
-    const match = await Match.create({ courtId: req.courtId, team1, team2, matchType, court });
-
-    // Increment matchCount for all 4 players
     const allPlayerIds = [...team1, ...team2];
-    await Player.updateMany(
-      { _id: { $in: allPlayerIds }, courtId: req.courtId }, 
-      { $inc: { matchCount: 1 } }
-    );
+    let shuttlecockGroupId;
+    await session.withTransaction(async () => {
+      stockChanges.length = 0;
+      tabIds = [];
+      [match] = await Match.create([{
+        courtId: req.courtId, team1, team2, matchType, court,
+      }], { session });
 
+      await Player.updateMany(
+        { _id: { $in: allPlayerIds }, courtId: req.courtId },
+        { $inc: { matchCount: 1 } },
+        { session }
+      );
 
-    // Auto-split shuttlecock if provided
-    if (shuttlecockId) {
-      const shuttle = await Item.findOne({ _id: shuttlecockId, courtId: req.courtId });
-      if (shuttle && shuttle.isSplittable) {
-        const splitPrice = Math.round((shuttle.price / allPlayerIds.length) * 100) / 100;
-        const itemName = `${shuttle.name} (÷${allPlayerIds.length})`;
+      if (shuttlecockId) {
+        const shuttle = await Item.findOne({
+          _id: shuttlecockId, courtId: req.courtId,
+        }).session(session);
+        if (shuttle && shuttle.isSplittable) {
+          shuttlecockGroupId = new mongoose.Types.ObjectId();
+          const splitPrice = Math.round((shuttle.price / allPlayerIds.length) * 100) / 100;
+          const itemName = `${shuttle.name} (÷${allPlayerIds.length})`;
+          let firstTab;
+          let firstLine;
 
-        for (const playerId of allPlayerIds) {
-          // Find or auto-create open tab
-          let tab = await Tab.findOne({ courtId: req.courtId, player: playerId, status: 'open' });
-          if (!tab) {
-            tab = await Tab.create({ courtId: req.courtId, player: playerId, items: [], total: 0 });
+          for (const playerId of allPlayerIds) {
+            let tab = await Tab.findOne({
+              courtId: req.courtId, player: playerId, status: 'open',
+            }).session(session);
+            if (!tab) {
+              [tab] = await Tab.create([{
+                courtId: req.courtId, player: playerId, items: [], total: 0,
+              }], { session });
+            }
+            tab.items.push({
+              item: shuttle._id,
+              name: itemName,
+              price: splitPrice,
+              quantity: 1,
+              chargeGroupId: shuttlecockGroupId,
+              addedAt: new Date(),
+            });
+            tab.total += splitPrice;
+            const line = tab.items[tab.items.length - 1];
+            await tab.save({ session });
+            firstTab ??= tab;
+            firstLine ??= line;
+            tabIds.push(String(tab._id));
           }
-          await Tab.findOneAndUpdate(tab._id, {
-            $push: { items: { item: shuttle._id, name: itemName, price: splitPrice, quantity: 1, addedAt: new Date() } },
-            $inc:  { total: splitPrice },
+
+          const change = await recordBillingStockMovement({
+            req, session, itemId: shuttle._id, type: 'sale', quantity: 1,
+            unitPrice: splitPrice * allPlayerIds.length,
+            note: 'Queue shuttlecock split',
+            tabType: 'queue', tabId: firstTab._id, tabLineId: firstLine._id,
+            chargeGroupId: shuttlecockGroupId,
           });
+          if (change) stockChanges.push(change);
         }
       }
-    }
+    });
 
     const populated = await Match.findById(match._id).populate('team1 team2');
     emitCourtEvent(req, 'queue:updated', { action: 'added', matchId: populated?._id });
+    if (shuttlecockGroupId) {
+      emitCourtEvent(req, 'billing:tab_updated', {
+        action: 'queue_shuttlecock_split',
+        matchId: String(match._id),
+        tabIds,
+      });
+    }
+    await emitBillingStockUpdates(req, stockChanges);
     res.status(201).json(populated);
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    res.status(err.status ?? 400).json({ error: err.message });
+  } finally {
+    await session.endSession();
   }
 });
 

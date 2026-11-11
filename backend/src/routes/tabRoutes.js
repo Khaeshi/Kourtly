@@ -1,6 +1,12 @@
 import express from 'express';
+import mongoose from 'mongoose';
 import Tab from '../models/Tab.js';
 import { emitCourtEvent } from '../lib/emitCourtEvent.js';
+import {
+  emitBillingStockUpdates,
+  recordBillingStockMovement,
+  removeChargeGroup,
+} from '../services/billingStock.js';
 
 const router = express.Router();
 
@@ -86,24 +92,45 @@ router.post('/', async (req, res) => {
   }
 });
 
-// POST add item to a single tab — no .save()
+// POST add item to a single tab
 router.post('/:id/items', async (req, res) => {
+  const session = await mongoose.startSession();
+  const stockChanges = [];
+  let tab;
   try {
     const { itemId, name, price, quantity = 1 } = req.body;
-    const newItem = { item: itemId, name, price, quantity, addedAt: new Date() };
     const lineTotal = price * quantity;
 
-    const tab = await Tab.findOneAndUpdate(
-      { _id: req.params.id, courtId: req.courtId },
-      { $push: { items: newItem }, $inc: { total: lineTotal } },
-      { new: true }
-    ).populate('player', 'name level');
+    await session.withTransaction(async () => {
+      stockChanges.length = 0;
+      tab = await Tab.findOne({ _id: req.params.id, courtId: req.courtId }).session(session);
+      if (!tab) {
+        const error = new Error('Tab not found');
+        error.status = 404;
+        throw error;
+      }
 
-    if (!tab) return res.status(404).json({ error: 'Tab not found' });
+      tab.items.push({ item: itemId, name, price, quantity, addedAt: new Date() });
+      tab.total += lineTotal;
+      const line = tab.items[tab.items.length - 1];
+      await tab.save({ session });
+
+      const change = await recordBillingStockMovement({
+        req, session, itemId, type: 'sale', quantity, unitPrice: price,
+        note: 'Tab charge', tabType: 'queue', tabId: tab._id, tabLineId: line._id,
+      });
+      if (change) stockChanges.push(change);
+    });
+
+    tab = await Tab.findOne({ _id: req.params.id, courtId: req.courtId })
+      .populate('player', 'name level');
     emitCourtEvent(req, 'billing:tab_updated', { action: 'item_added', tabId: tab._id });
+    await emitBillingStockUpdates(req, stockChanges);
     res.json(tab);
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    res.status(err.status ?? 400).json({ error: err.message });
+  } finally {
+    await session.endSession();
   }
 });
 
@@ -112,6 +139,9 @@ router.post('/:id/items', async (req, res) => {
 // 1 player  → full price charged to that player, label unchanged
 // 2+ players → price divided evenly, label gets "(split ÷N)"
 router.post('/split', async (req, res) => {
+  const session = await mongoose.startSession();
+  const stockChanges = [];
+  let results = [];
   try {
     const { itemId, name, price, playerIds } = req.body;
     if (!playerIds || playerIds.length < 1) {
@@ -126,63 +156,137 @@ router.post('/split', async (req, res) => {
       ? `${name} (split ÷${playerIds.length})`
       : name; // full charge — keep original name
 
-    const results = [];
+    const chargeGroupId = playerIds.length > 1 ? new mongoose.Types.ObjectId() : null;
+    await session.withTransaction(async () => {
+      stockChanges.length = 0;
+      results = [];
+      let firstLine;
+      let firstTab;
 
-    for (const playerId of playerIds) {
-      // Find open tab for this player (must exist — frontend only shows open tabs)
-      let tab = await Tab.findOne({ courtId: req.courtId, player: playerId, status: 'open' });
-      if (!tab) {
-        tab = await Tab.create({ courtId: req.courtId, player: playerId, items: [], total: 0 });
+      for (const playerId of playerIds) {
+        let tab = await Tab.findOne({ courtId: req.courtId, player: playerId, status: 'open' })
+          .session(session);
+        if (!tab) {
+          [tab] = await Tab.create([{
+            courtId: req.courtId, player: playerId, items: [], total: 0,
+          }], { session });
+        }
+
+        tab.items.push({
+          item: itemId || undefined,
+          name: itemLabel,
+          price: chargeAmt,
+          quantity: 1,
+          ...(chargeGroupId ? { chargeGroupId } : {}),
+          addedAt: new Date(),
+        });
+        tab.total += chargeAmt;
+        const line = tab.items[tab.items.length - 1];
+        await tab.save({ session });
+        firstLine ??= line;
+        firstTab ??= tab;
+        results.push(tab);
       }
 
-      const newItem = {
-        item:     itemId || undefined,
-        name:     itemLabel,
-        price:    chargeAmt,
-        quantity: 1,
-        addedAt:  new Date(),
-      };
+      if (chargeGroupId && firstLine && firstTab) {
+        const change = await recordBillingStockMovement({
+          req, session, itemId, type: 'sale', quantity: 1,
+          unitPrice: chargeAmt * playerIds.length,
+          note: 'Split tab charge', tabType: 'queue', tabId: firstTab._id,
+          tabLineId: firstLine._id, chargeGroupId,
+        });
+        if (change) stockChanges.push(change);
+      } else if (firstLine && firstTab) {
+        const change = await recordBillingStockMovement({
+          req, session, itemId, type: 'sale', quantity: 1, unitPrice: chargeAmt,
+          note: 'Tab charge', tabType: 'queue', tabId: firstTab._id,
+          tabLineId: firstLine._id,
+        });
+        if (change) stockChanges.push(change);
+      }
+    });
 
-      const updated = await Tab.findOneAndUpdate(
-        tab._id,
-        { $push: { items: newItem }, $inc: { total: chargeAmt } },
-        { new: true }
-      ).populate('player', 'name level');
-
-      results.push(updated);
-    }
-
+    const resultTabIds = results.map(tab => String(tab._id));
+    const populatedTabs = await Tab.find({
+      _id: { $in: resultTabIds },
+      courtId: req.courtId,
+    }).populate('player', 'name level');
+    const tabsById = new Map(populatedTabs.map(tab => [String(tab._id), tab]));
+    results = resultTabIds.map(id => tabsById.get(id)).filter(Boolean);
     emitCourtEvent(req, 'billing:tab_updated', { action: 'split_item_added', tabIds: results.map(t => t?._id).filter(Boolean) });
+    await emitBillingStockUpdates(req, stockChanges);
     res.json(results);
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    res.status(err.status ?? 400).json({ error: err.message });
+  } finally {
+    await session.endSession();
   }
 });
 
 // DELETE remove item from tab by index
 router.delete('/:id/items/:itemIndex', async (req, res) => {
+  const session = await mongoose.startSession();
+  const stockChanges = [];
+  let updated;
+  let affectedTabIds = [];
   try {
-    const tab = await Tab.findOne({ _id: req.params.id, courtId: req.courtId });
-    if (!tab) return res.status(404).json({ error: 'Tab not found' });
+    await session.withTransaction(async () => {
+      stockChanges.length = 0;
+      affectedTabIds = [];
+      const tab = await Tab.findOne({ _id: req.params.id, courtId: req.courtId }).session(session);
+      if (!tab) {
+        const error = new Error('Tab not found');
+        error.status = 404;
+        throw error;
+      }
 
-    const idx = Number(req.params.itemIndex);
-    const removed = tab.items[idx];
-    if (!removed) return res.status(404).json({ error: 'Item not found' });
+      const idx = Number(req.params.itemIndex);
+      const removed = tab.items[idx];
+      if (!removed) {
+        const error = new Error('Item not found');
+        error.status = 404;
+        throw error;
+      }
 
-    await Tab.findOneAndUpdate(
-      { _id: req.params.id, courtId: req.courtId },
-      { $unset: { [`items.${idx}`]: 1 } }
-    );
-    const updated = await Tab.findOneAndUpdate(
-      { _id: req.params.id, courtId: req.courtId },
-      { $pull: { items: null }, $inc: { total: -(removed.price * removed.quantity) } },
-      { new: true }
-    ).populate('player', 'name level');
+      if (removed.chargeGroupId) {
+        const groupTabs = await removeChargeGroup({
+          model: Tab, courtId: req.courtId, chargeGroupId: removed.chargeGroupId, session,
+        });
+        affectedTabIds = groupTabs.map(entry => String(entry.tab._id));
+        const change = await recordBillingStockMovement({
+          req, session, itemId: removed.item, type: 'void', quantity: 1,
+          unitPrice: removed.price,
+          note: 'Split tab charge removed', tabType: 'queue',
+          tabId: tab._id, tabLineId: removed._id,
+          chargeGroupId: removed.chargeGroupId,
+        });
+        if (change) stockChanges.push(change);
+      } else {
+        tab.items.splice(idx, 1);
+        tab.total -= removed.price * removed.quantity;
+        await tab.save({ session });
+        affectedTabIds = [String(tab._id)];
+        const change = await recordBillingStockMovement({
+          req, session, itemId: removed.item, type: 'void',
+          quantity: removed.quantity, unitPrice: removed.price,
+          note: 'Tab line removed', tabType: 'queue',
+          tabId: tab._id, tabLineId: removed._id,
+        });
+        if (change) stockChanges.push(change);
+      }
+    });
 
-    emitCourtEvent(req, 'billing:tab_updated', { action: 'item_removed', tabId: updated?._id });
+    updated = await Tab.findOne({ _id: req.params.id, courtId: req.courtId })
+      .populate('player', 'name level');
+    emitCourtEvent(req, 'billing:tab_updated', {
+      action: 'item_removed', tabId: req.params.id, tabIds: affectedTabIds,
+    });
+    await emitBillingStockUpdates(req, stockChanges);
     res.json(updated);
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    res.status(err.status ?? 400).json({ error: err.message });
+  } finally {
+    await session.endSession();
   }
 });
 
@@ -241,13 +345,60 @@ router.put('/:id/pay', async (req, res) => {
 
 // DELETE close/discard tab
 router.delete('/:id', async (req, res) => {
+  const session = await mongoose.startSession();
+  const stockChanges = [];
   try {
-    const deleted = await Tab.findOneAndDelete({ _id: req.params.id, courtId: req.courtId });
+    let deleted = false;
+    let affectedTabIds = [];
+    await session.withTransaction(async () => {
+      stockChanges.length = 0;
+      deleted = false;
+      affectedTabIds = [];
+      const tab = await Tab.findOne({ _id: req.params.id, courtId: req.courtId }).session(session);
+      if (!tab) return;
+
+      const groups = [...new Set(tab.items
+        .map(line => line.chargeGroupId && String(line.chargeGroupId))
+        .filter(Boolean))];
+      for (const groupId of groups) {
+        const line = tab.items.find(entry => String(entry.chargeGroupId) === groupId);
+        const groupTabs = await removeChargeGroup({
+          model: Tab, courtId: req.courtId, chargeGroupId: groupId, session,
+        });
+        affectedTabIds.push(...groupTabs.map(entry => String(entry.tab._id)));
+        const change = await recordBillingStockMovement({
+          req, session, itemId: line.item, type: 'void', quantity: 1,
+          unitPrice: line.price,
+          note: 'Split tab discarded', tabType: 'queue',
+          tabId: tab._id, tabLineId: line._id, chargeGroupId: line.chargeGroupId,
+        });
+        if (change) stockChanges.push(change);
+      }
+
+      for (const line of tab.items) {
+        if (line.chargeGroupId) continue;
+        const change = await recordBillingStockMovement({
+          req, session, itemId: line.item, type: 'void',
+          quantity: line.quantity, unitPrice: line.price,
+          note: 'Tab discarded', tabType: 'queue',
+          tabId: tab._id, tabLineId: line._id,
+        });
+        if (change) stockChanges.push(change);
+      }
+      await Tab.deleteOne({ _id: tab._id, courtId: req.courtId }).session(session);
+      affectedTabIds.push(String(tab._id));
+      deleted = true;
+    });
     if (!deleted) return res.status(404).json({ error: 'Tab not found' });
-    emitCourtEvent(req, 'billing:tab_updated', { action: 'deleted', tabId: req.params.id });
+    emitCourtEvent(req, 'billing:tab_updated', {
+      action: 'deleted', tabId: req.params.id, tabIds: [...new Set(affectedTabIds)],
+    });
+    await emitBillingStockUpdates(req, stockChanges);
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.status ?? 500).json({ error: err.message });
+  } finally {
+    await session.endSession();
   }
 });
 

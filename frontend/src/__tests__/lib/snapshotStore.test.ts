@@ -230,6 +230,37 @@ describe('snapshotStore', () => {
     }]);
   });
 
+  test('preserves split group ids in billing tab snapshots', () => {
+    expect(sanitizeSnapshot('/tabs/open', [{
+      _id: 'tab-1',
+      total: 25,
+      status: 'open',
+      player: { _id: 'player-1', name: 'Player One', level: 'B' },
+      items: [{
+        _id: 'line-1',
+        item: 'item-1',
+        name: 'Shuttlecock (split ÷4)',
+        price: 25,
+        quantity: 1,
+        chargeGroupId: 'split-group-1',
+        privateField: 'drop',
+      }],
+    }])).toEqual([{
+      _id: 'tab-1',
+      total: 25,
+      status: 'open',
+      player: { _id: 'player-1', name: 'Player One', level: 'B' },
+      items: [{
+        _id: 'line-1',
+        item: 'item-1',
+        name: 'Shuttlecock (split ÷4)',
+        price: 25,
+        quantity: 1,
+        chargeGroupId: 'split-group-1',
+      }],
+    }]);
+  });
+
   test('filters reservations locally by date, status and court', () => {
     const rows = [
       { date: '2026-10-05', status: 'confirmed', court: 1 },
