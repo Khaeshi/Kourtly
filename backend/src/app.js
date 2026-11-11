@@ -5,6 +5,7 @@ import userRoutes from './routes/userRoutes.js';
 import playerRoutes from './routes/playerRoutes.js';
 import queueRoutes from './routes/queueRoutes.js';
 import itemRoutes from './routes/itemRoutes.js';
+import stockRoutes from './routes/stockRoutes.js';
 import tabRoutes from './routes/tabRoutes.js';
 import reservationRoutes from './routes/reservationRoutes.js';
 import scheduleRoutes from './routes/scheduleRoutes.js';
@@ -81,7 +82,7 @@ app.use('/api/court', tenantAdminLimiter, tenantMiddleware, courtRoutes);
 // Tenant-scoped admin routes
 app.use('/api/players', tenantAdminLimiter, tenantMiddleware, requireModule(MODULES.QUEUE), playerRoutes);
 app.use('/api/queue', tenantAdminLimiter, tenantMiddleware, requireModule(MODULES.QUEUE), queueRoutes);
-app.use('/api/items', tenantAdminLimiter, tenantMiddleware, requireModule(MODULES.ITEM_TABS), itemRoutes);
+app.use('/api/items', tenantAdminLimiter, tenantMiddleware, requireModule(MODULES.ITEM_TABS), stockRoutes, itemRoutes);
 app.use('/api/tabs', tenantAdminLimiter, tenantMiddleware, requireModule(MODULES.ITEM_TABS), tabRoutes);
 app.use('/api/reservations', tenantAdminLimiter, tenantMiddleware, requireModule(MODULES.BOOKING), reservationRoutes);
 app.use('/api/schedule', tenantAdminLimiter, tenantMiddleware, requireModule(MODULES.BOOKING), scheduleRoutes);

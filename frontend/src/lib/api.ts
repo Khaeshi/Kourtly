@@ -44,6 +44,58 @@ export interface Bill {
 export interface CatalogItem {
   _id: string; name: string; price: number;
   category: string; isActive: boolean; isSplittable: boolean;
+  trackStock?: boolean;
+  stockOnHand?: number;
+  lowStockThreshold?: number;
+  note?: string;
+  soldToday?: number;
+  leftNow?: number | null;
+  isLowStock?: boolean;
+}
+
+export type StockMovementType = 'opening' | 'restock' | 'adjustment' | 'sale' | 'void' | 'count';
+
+export interface StockMovement {
+  _id: string;
+  itemId: string;
+  type: StockMovementType;
+  quantityDelta: number;
+  balanceAfter: number;
+  unitPrice: number;
+  note: string;
+  tabType?: 'queue' | 'reservation' | null;
+  tabId?: string | null;
+  tabLineId?: string | null;
+  actorId: string;
+  idempotencyKey: string;
+  createdAt: string;
+}
+
+export interface StockMovementPage {
+  movements: StockMovement[];
+  pagination: { page: number; limit: number; total: number; totalPages: number };
+}
+
+export interface StockCountItem {
+  itemId: string;
+  name: string;
+  expectedQuantity: number;
+  countedQuantity: number;
+  difference: number;
+  note: string;
+  movementId?: string | null;
+}
+
+export interface StockCountSummary {
+  countId: string;
+  countedAt: string;
+  timezone: string;
+  salesToday: number;
+  unitsSoldToday: number;
+  itemsMatched: number;
+  itemsShort: number;
+  itemsOver: number;
+  items: StockCountItem[];
 }
 
 export interface TabItem {
@@ -331,6 +383,32 @@ export const getSplittableItems = () => req<CatalogItem[]>('/items/splittable');
 export const createItem = (data: Omit<CatalogItem,'_id'>) => req<CatalogItem>('/items', { method:'POST', body: JSON.stringify(data) });
 export const updateItem = (id: string, data: Partial<CatalogItem>) => req<CatalogItem>(`/items/${id}`, { method:'PUT', body: JSON.stringify(data) });
 export const deleteItem = (id: string) => req<void>(`/items/${id}`, { method:'DELETE' });
+export const startItemStockTracking = (id: string, body: {
+  openingQuantity: number; lowStockThreshold?: number; note: string; idempotencyKey: string;
+}) => req<{ item: CatalogItem; movement: StockMovement }>(`/items/${id}/stock/start`, {
+  method: 'POST', body: JSON.stringify(body),
+});
+export const restockItem = (id: string, body: {
+  quantity: number; note: string; idempotencyKey: string;
+}) => req<{ item: CatalogItem; movement: StockMovement }>(`/items/${id}/stock/restock`, {
+  method: 'POST', body: JSON.stringify(body),
+});
+export const adjustItemStock = (id: string, body: {
+  quantityDelta: number; note: string; idempotencyKey: string;
+}) => req<{ item: CatalogItem; movement: StockMovement }>(`/items/${id}/stock/adjust`, {
+  method: 'POST', body: JSON.stringify(body),
+});
+export const updateItemNote = (id: string, note: string) =>
+  req<CatalogItem>(`/items/${id}/note`, { method: 'PATCH', body: JSON.stringify({ note }) });
+export const getItemStockMovements = (id: string, page = 1, limit = 20) =>
+  req<StockMovementPage>(`/items/${id}/stock/movements?${new URLSearchParams({
+    page: String(page), limit: String(limit),
+  })}`);
+export const countItemStock = (body: {
+  idempotencyKey: string;
+  items: Array<{ itemId: string; countedQuantity: number; note?: string }>;
+}) => req<StockCountSummary>('/items/stock/counts', { method: 'POST', body: JSON.stringify(body) });
+export const getLatestStockCount = () => req<StockCountSummary | null>('/items/stock/counts/latest');
 
 // ─── Tabs ─────────────────────────────────────────────────────────────────────
 

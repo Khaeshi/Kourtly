@@ -197,6 +197,39 @@ describe('snapshotStore', () => {
     expect(sanitizeSnapshot('/payout-transfers', [{ accountNumber: 'private' }])).toBeUndefined();
   });
 
+  test('preserves inventory fields in existing item snapshots and drops unknown fields', () => {
+    expect(sanitizeSnapshot('/items', [{
+      _id: 'item-1',
+      name: 'Water',
+      price: 30,
+      category: 'drinks',
+      isActive: true,
+      isSplittable: false,
+      trackStock: true,
+      stockOnHand: 12,
+      lowStockThreshold: 3,
+      note: 'Keep chilled',
+      soldToday: 2,
+      leftNow: 12,
+      isLowStock: false,
+      privateField: 'drop',
+    }])).toEqual([{
+      _id: 'item-1',
+      name: 'Water',
+      price: 30,
+      category: 'drinks',
+      isActive: true,
+      isSplittable: false,
+      trackStock: true,
+      stockOnHand: 12,
+      lowStockThreshold: 3,
+      note: 'Keep chilled',
+      soldToday: 2,
+      leftNow: 12,
+      isLowStock: false,
+    }]);
+  });
+
   test('filters reservations locally by date, status and court', () => {
     const rows = [
       { date: '2026-10-05', status: 'confirmed', court: 1 },

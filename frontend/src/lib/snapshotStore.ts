@@ -211,6 +211,8 @@ export function sanitizeSnapshot(path: string, value: unknown): unknown | undefi
     }
     return value.map(row => project(row, [
       '_id', 'name', 'price', 'category', 'isActive', 'isSplittable',
+      'trackStock', 'stockOnHand', 'lowStockThreshold', 'note',
+      'soldToday', 'leftNow', 'isLowStock',
     ]));
   }
   if (pathname === '/tabs/history') return projectPaginated(value, projectTab);
