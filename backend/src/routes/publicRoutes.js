@@ -113,7 +113,9 @@ router.get('/courts/:slug/availability', async (req, res) => {
         .select('court timeSlot duration').lean(),
     ]);
 
-    const { isFullyClosed, baseSlots, perCourt } = resolveSchedule(rule, blocks);
+    const courtCount = Math.max(1, Number(court.courtCount) || 4);
+    const { isFullyClosed, baseSlots, perCourt } =
+      resolveSchedule(rule, blocks, courtCount);
 
     const nowUtc    = new Date();
     const phOffset  = 8 * 60;
@@ -128,7 +130,7 @@ router.get('/courts/:slug/availability', async (req, res) => {
       return true;
     });
 
-    const courtNums = Array.from({ length: court.courtCount }, (_, i) => i + 1);
+    const courtNums = Array.from({ length: courtCount }, (_, i) => i + 1);
     const result = courtNums.map(courtNum => {
       if (isFullyClosed) return { court: courtNum, isFullyClosed: true, availableSlots: [], blockedSlots: ALL_SLOTS };
       const adminBlocked       = perCourt[courtNum]?.adminBlockedSlots ?? [];
@@ -203,7 +205,12 @@ router.post('/courts/:slug/reserve', async (req, res) => {
       ScheduleBlock.find({ courtId, date }).lean(),
     ]);
 
-    const { isFullyClosed, baseSlots, perCourt } = resolveSchedule(rule, blocks);
+    const courtCount = Math.max(1, Number(court.courtCount) || 4);
+    if (!Number.isInteger(courtNum) || courtNum < 1 || courtNum > courtCount) {
+      return res.status(400).json({ error: `courtNum must be between 1 and ${courtCount}.` });
+    }
+    const { isFullyClosed, baseSlots, perCourt } =
+      resolveSchedule(rule, blocks, courtCount);
     if (isFullyClosed) return res.status(403).json({ error: 'The venue is closed on this date.' });
 
     const startHour   = Math.floor(startMins / 60);
