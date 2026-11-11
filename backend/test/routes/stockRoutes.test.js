@@ -12,6 +12,7 @@ async function makeCourt(name = 'Stock Court') {
     slug: `${name.toLowerCase().replaceAll(' ', '-')}-${Date.now()}-${Math.random().toString(36).slice(2)}`,
     adminEmail: 'stock@court.com',
     isActive: true,
+    registrationStatus: 'approved',
     subscription: { status: 'active', tier: 'premium' },
     settings: { timezone: 'Asia/Manila' },
   });
@@ -184,6 +185,7 @@ describe('stock routes', () => {
       slug: `basic-court-${Date.now()}`,
       adminEmail: 'basic@court.com',
       isActive: true,
+      registrationStatus: 'approved',
       subscription: { status: 'active', tier: 'basic' },
     });
     const item = await Item.create({ courtId: court._id, name: 'Water', price: 30 });

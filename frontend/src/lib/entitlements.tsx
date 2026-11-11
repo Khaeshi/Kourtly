@@ -88,6 +88,7 @@ export function useCapabilities(): Capabilities {
 export function CapabilityGate({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { status, capabilities } = useCapabilityState();
+  if (pathname === '/admin/registration') return <>{children}</>;
   const requiredModule = pathname.startsWith('/admin/queue') || pathname.startsWith('/admin/players')
     ? 'queue'
     : pathname.startsWith('/admin/items') || pathname.startsWith('/admin/billing')

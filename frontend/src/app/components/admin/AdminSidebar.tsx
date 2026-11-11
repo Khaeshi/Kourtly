@@ -131,10 +131,11 @@ export default function AdminSidebar({
     ? 'Admin Panel'
     : courtName ?? 'My Court';
 
-  const items = NAV.filter(item =>
-    (!item.module || capabilities.modules[item.module]) &&
-    (!item.statusOnly || ['pending', 'rejected'].includes(registrationStatus ?? ''))
-  );
+  const items = registrationStatus === null
+    ? []
+    : registrationStatus === 'approved'
+      ? NAV.filter(item => !item.statusOnly && (!item.module || capabilities.modules[item.module]))
+      : NAV.filter(item => item.statusOnly);
   const isActive = (item: typeof NAV[number]) =>
     item.exact ? pathname === item.href : pathname.startsWith(item.href);
   const activeIndex = items.findIndex(isActive);

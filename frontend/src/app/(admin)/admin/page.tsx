@@ -26,16 +26,28 @@ type Period = 'today' | 'week' | 'month' | 'year';
 
 interface AnalyticsSummary {
   period: Period;
+  timezone?: string;
   dateRange: { start: string; end: string };
+  comparison?: {
+    dateRange: { start: string; end: string };
+    revenue: number;
+    changePercent: number | null;
+  };
   reservations: { total: number; confirmed: number; pending: number; cancelled: number; completed: number };
   billing: { totalRevenue: number; reservationRevenue: number; combinedRevenue: number; paidTabs: number; avgPerTab: number };
+  tabs?: { open: { count: number; total: number }; unpaid: { count: number; total: number } };
+  payments?: { online: number; counter: number; courtFees: number; items: number };
   players: { total: number; active: number };
   queue: { matchesPlayed: number };
   revenueByDay: { date: string; reservationRevenue: number; billingRevenue: number; total: number }[];
   courtUtilization: { court: number; bookings: number; hours: number }[];
-  topItems: { name: string; quantity: number; revenue: number }[];
+  topItems: { itemId: string | null; name: string; quantity: number; revenue: number }[];
   peakHours: { hour: number; label: string; count: number }[];
   statusBreakdown: { status: string; count: number }[];
+  bookingsByWeekdayHour?: { weekday: number; hour: number; count: number }[];
+  todayUtilization?: { bookedHours: number; openHours: number; bookedShare: number };
+  lowStockItems?: { itemId: string; name: string; stockOnHand: number; lowStockThreshold: number; soldToday: number }[];
+  monthlyRevenueGoal?: number;
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -333,6 +345,15 @@ export default function AdminDashboard() {
                 <p className="ad-mono text-lg font-bold">{fmt(l.value)}</p>
               </div>
             ))}
+            <div>
+              <p className="text-xs ad-muted">Previous period</p>
+              <p className="ad-mono text-lg font-bold">{fmt(analytics.comparison?.revenue ?? 0)}</p>
+              <p className="ad-muted text-xs">
+                {analytics.comparison?.changePercent == null
+                  ? 'No previous-period revenue'
+                  : `${analytics.comparison.changePercent >= 0 ? '+' : ''}${analytics.comparison.changePercent}% vs previous`}
+              </p>
+            </div>
           </div>
         )}
 
@@ -358,6 +379,39 @@ export default function AdminDashboard() {
             </ResponsiveContainer>
           </div>
         )}
+      </Chunk>
+
+      <Chunk eyebrow="Operations" title="Tabs and payments">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          {[
+            { label: 'Open tabs', value: analytics ? `${analytics.tabs?.open.count ?? 0} · ${fmt(analytics.tabs?.open.total ?? 0)}` : '—' },
+            { label: 'Unpaid tabs', value: analytics ? `${analytics.tabs?.unpaid.count ?? 0} · ${fmt(analytics.tabs?.unpaid.total ?? 0)}` : '—' },
+            { label: 'Online payments', value: analytics ? fmt(analytics.payments?.online ?? 0) : '—' },
+            { label: 'Counter payments', value: analytics ? fmt(analytics.payments?.counter ?? 0) : '—' },
+            { label: 'Court fees', value: analytics ? fmt(analytics.payments?.courtFees ?? 0) : '—' },
+            { label: 'Items', value: analytics ? fmt(analytics.payments?.items ?? 0) : '—' },
+            {
+              label: 'Today booked share',
+              value: analytics
+                ? `${Math.round((analytics.todayUtilization?.bookedShare ?? 0) * 100)}%`
+                : '—',
+            },
+            {
+              label: 'Monthly goal',
+              value: analytics?.monthlyRevenueGoal ? fmt(analytics.monthlyRevenueGoal) : 'Not set',
+            },
+          ].map(card => (
+            <div key={card.label} className="border-y border-[#E1DBCB] py-3">
+              <p className="ad-eyebrow">{card.label}</p>
+              <p className="ad-mono mt-1 text-lg font-bold">{card.value}</p>
+              {card.label === 'Today booked share' && analytics && (
+                <p className="ad-muted text-xs">
+                  {analytics.todayUtilization?.bookedHours ?? 0}h / {analytics.todayUtilization?.openHours ?? 0}h open
+                </p>
+              )}
+            </div>
+          ))}
+        </div>
       </Chunk>
 
       {/* ── Busy times ── */}
@@ -407,6 +461,47 @@ export default function AdminDashboard() {
             )}
           </Block>
         </div>
+      </Chunk>
+
+      <Chunk eyebrow="Booking pattern" title="Bookings by weekday and hour">
+        {analyticsLoading ? (
+          <Skeleton h={120} />
+        ) : !analytics?.bookingsByWeekdayHour?.length ? (
+          <Empty title="No booked slots in this period." hint="Confirmed and completed reservations appear here." />
+        ) : (
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
+            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, weekday) => {
+              const rows = (analytics.bookingsByWeekdayHour ?? []).filter(item => item.weekday === weekday);
+              return (
+                <div key={day} className="border-t border-[#C9C3B3] py-2">
+                  <p className="ad-eyebrow">{day}</p>
+                  {rows.length ? rows.sort((a, b) => b.count - a.count).slice(0, 3).map(row => (
+                    <p key={row.hour} className="ad-mono mt-1 text-xs">
+                      {`${String(row.hour).padStart(2, '0')}:00`} · {row.count}
+                    </p>
+                  )) : <p className="ad-muted mt-1 text-xs">No bookings</p>}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Chunk>
+
+      <Chunk eyebrow="Inventory" title="Low stock">
+        {analyticsLoading ? (
+          <Skeleton h={80} />
+        ) : !analytics?.lowStockItems?.length ? (
+          <Empty title="No low-stock items." hint="Tracked active items at or below their threshold appear here." />
+        ) : (
+          analytics.lowStockItems.map(item => (
+            <div key={item.itemId} className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E1DBCB] py-2.5">
+              <b>{item.name}</b>
+              <span className="ad-mono text-sm">
+                {item.stockOnHand} left · threshold {item.lowStockThreshold} · sold today {item.soldToday}
+              </span>
+            </div>
+          ))
+        )}
       </Chunk>
 
       {/* ── Reservations and items ── */}

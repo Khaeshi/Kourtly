@@ -25,7 +25,10 @@ interface Court {
   location: { address: string; city: string; province: string; };
   contact:  { phone: string; email: string; facebook: string; instagram: string; website: string; };
   subscription: { status: string; plan: string; amount: number; tier?: string; trialEnds: string; nextBilling: string | null; };
-  settings: { timezone: string; currency: string; reservationFee?: number; hourlyRate?: number; weeklySummary?: boolean; };
+  settings: {
+    timezone: string; currency: string; reservationFee?: number; hourlyRate?: number;
+    weeklySummary?: boolean; monthlyRevenueGoal?: number;
+  };
   adminEmail?: string;
 }
 
@@ -209,6 +212,7 @@ export default function SettingsPage() {
     address: '', city: '', province: '',
     phone: '', email: '', facebook: '', instagram: '', website: '',
     hourlyRate: '210',
+    monthlyRevenueGoal: '0',
     weeklySummary: true,
   });
 
@@ -232,6 +236,7 @@ export default function SettingsPage() {
           instagram:      c.contact?.instagram ?? '',
           website:        c.contact?.website   ?? '',
           hourlyRate:     String(c.settings?.hourlyRate ?? c.settings?.reservationFee ?? 210),
+          monthlyRevenueGoal: String(c.settings?.monthlyRevenueGoal ?? 0),
           weeklySummary: c.settings?.weeklySummary ?? true,
         });
       } catch (error) {
@@ -265,6 +270,7 @@ export default function SettingsPage() {
           settings:    {
             hourlyRate: Number(form.hourlyRate),
             reservationFee: Number(form.hourlyRate), // keep legacy consumers aligned
+            monthlyRevenueGoal: Number(form.monthlyRevenueGoal),
             weeklySummary: Boolean(form.weeklySummary),
           },
         }),
@@ -496,6 +502,14 @@ const removePhoto = async (url: string) => {
         <Field label="Court Rate Per Hour (₱)" hint="Used in public booking computation">
           <input type="number" value={form.hourlyRate} onChange={e => set('hourlyRate', e.target.value)}
             className={`${INPUT} max-w-[160px]`} />
+        </Field>
+      </Section>
+
+      <Section title="Monthly Revenue Goal">
+        <Field label="Revenue goal (₱)" hint="Used as a reference on the dashboard. Enter 0 to leave it unset.">
+          <input type="number" min="0" step="0.01" value={form.monthlyRevenueGoal}
+            onChange={e => set('monthlyRevenueGoal', e.target.value)}
+            className={`${INPUT} max-w-[220px]`} />
         </Field>
       </Section>
 

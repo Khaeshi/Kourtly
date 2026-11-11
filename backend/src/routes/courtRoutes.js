@@ -593,6 +593,13 @@ router.patch('/me', async (req, res) => {
   if (!req.courtId) return res.status(401).json({ error: 'Missing court context.' });
 
   const { name, description, sports, courtCount, amenities, location, contact, settings } = req.body;
+  if (settings?.monthlyRevenueGoal !== undefined) {
+    const goal = Number(settings.monthlyRevenueGoal);
+    if (!Number.isFinite(goal) || goal < 0) {
+      return res.status(400).json({ error: 'settings.monthlyRevenueGoal must be a nonnegative number.' });
+    }
+    settings.monthlyRevenueGoal = goal;
+  }
   const update = {};
   if (name        !== undefined) update.name        = name;
   if (description !== undefined) update.description = description;

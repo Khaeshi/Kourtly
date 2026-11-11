@@ -159,22 +159,45 @@ function projectAnalytics(value: unknown): unknown {
   const billing = project(value.billing, [
     'totalRevenue', 'reservationRevenue', 'combinedRevenue', 'paidTabs', 'avgPerTab',
   ]);
+  const projectTotals = (totals: unknown) => project(totals, ['count', 'total']);
+  const tabs = project(value.tabs, []);
+  if (tabs && isRecord(value.tabs)) {
+    Object.assign(tabs, {
+      open: projectTotals(value.tabs.open),
+      unpaid: projectTotals(value.tabs.unpaid),
+    });
+  }
+  const payments = project(value.payments, ['online', 'counter', 'courtFees', 'items']);
+  const comparison = project(value.comparison, ['revenue', 'changePercent']);
+  if (comparison && isRecord(value.comparison)) {
+    Object.assign(comparison, {
+      dateRange: project(value.comparison.dateRange, ['start', 'end']),
+    });
+  }
   const players = project(value.players, ['total', 'active']);
   const queue = project(value.queue, ['matchesPlayed']);
   return {
-    ...project(value, ['period']),
+    ...project(value, ['period', 'timezone', 'monthlyRevenueGoal']),
     dateRange: project(value.dateRange, ['start', 'end']),
     reservations,
     billing,
+    comparison,
+    tabs,
+    payments,
     players,
     queue,
     revenueByDay: projectRows(value.revenueByDay, [
       'date', 'reservationRevenue', 'billingRevenue', 'total',
     ]),
     courtUtilization: projectRows(value.courtUtilization, ['court', 'bookings', 'hours']),
-    topItems: projectRows(value.topItems, ['name', 'quantity', 'revenue']),
+    topItems: projectRows(value.topItems, ['itemId', 'name', 'quantity', 'revenue']),
     peakHours: projectRows(value.peakHours, ['hour', 'label', 'count']),
     statusBreakdown: projectRows(value.statusBreakdown, ['status', 'count']),
+    bookingsByWeekdayHour: projectRows(value.bookingsByWeekdayHour, ['weekday', 'hour', 'count']),
+    todayUtilization: project(value.todayUtilization, ['bookedHours', 'openHours', 'bookedShare']),
+    lowStockItems: projectRows(value.lowStockItems, [
+      'itemId', 'name', 'stockOnHand', 'lowStockThreshold', 'soldToday',
+    ]),
   };
 }
 

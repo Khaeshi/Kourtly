@@ -14,6 +14,7 @@ async function makeCourt(name) {
     slug: `${name.toLowerCase().replace(/\s+/g, '-')}-${Date.now()}`,
     adminEmail: `${name.toLowerCase().replace(/\s+/g, '')}@court.com`,
     isActive: true,
+    registrationStatus: 'approved',
     subscription: { status: 'active', tier: 'premium' },
     courtCount: 4,
   });
@@ -148,4 +149,3 @@ describe('tenant isolation (Court A cannot access Court B resources by id)', () 
     expect(stillThere).toBeTruthy();
   });
 });
-

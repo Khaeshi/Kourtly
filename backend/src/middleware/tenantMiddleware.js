@@ -52,7 +52,7 @@ export async function tenantMiddleware(req, res, next) {
   }
 
   const court = await Court.findById(courtId)
-    .select('isActive subscription settings.timezone courtCount')
+    .select('isActive registrationStatus subscription settings.timezone settings.monthlyRevenueGoal courtCount')
     .lean();
   if (!court || !court.isActive) {
     return res.status(403).json({ error: 'Court not found or inactive.' });
@@ -60,6 +60,20 @@ export async function tenantMiddleware(req, res, next) {
 
   if (court.subscription.status === 'expired' || court.subscription.status === 'suspended') {
     return res.status(402).json({ error: 'Court subscription has expired.' });
+  }
+
+  const isRegistrationStatusRead = req.method === 'GET' && req.path === '/me';
+  const isRejectedRegistrationResubmission =
+    court.registrationStatus === 'rejected' &&
+    req.method === 'PATCH' &&
+    req.path === '/me/registration';
+  if (court.registrationStatus !== 'approved' &&
+      !isRegistrationStatusRead &&
+      !isRejectedRegistrationResubmission) {
+    const error = court.registrationStatus === 'rejected'
+      ? 'Court registration was rejected. Update and resubmit it before using tenant features.'
+      : 'Court registration is awaiting approval.';
+    return res.status(403).json({ error });
   }
 
   req.courtId = courtId;
