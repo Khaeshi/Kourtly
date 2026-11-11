@@ -13,6 +13,7 @@ import {
 } from '../services/xenditService.js';
 import { tenantCourtResponse } from '../lib/courtResponse.js';
 import { canAcceptOnlinePayments } from '../lib/xenditReadiness.js';
+import { parseCourtRegistration } from '../services/courtRegistration.js';
 
 const router = express.Router();
 
@@ -452,6 +453,51 @@ router.get('/me', async (req, res) => {
   const court = await Court.findById(req.courtId).lean();
   if (!court) return res.status(404).json({ error: 'Court not found.' });
   res.json(tenantCourtResponse(court));
+});
+
+router.patch('/me/registration', async (req, res) => {
+  if (!req.courtId) return res.status(401).json({ error: 'Missing court context.' });
+  if (req.userRole !== 'admin') return res.status(403).json({ error: 'Court admin access required.' });
+
+  const parsed = parseCourtRegistration(req.body);
+  if (parsed.error) return res.status(400).json({ error: parsed.error });
+
+  try {
+    const existing = await Court.findById(req.courtId).select('registrationStatus').lean();
+    if (!existing) return res.status(404).json({ error: 'Court not found.' });
+    if (existing.registrationStatus !== 'rejected') {
+      return res.status(409).json({ error: 'Only rejected registrations can be resubmitted.' });
+    }
+
+    const { name, slug, sports, courtCount, location, contact, contactPerson } = parsed.value;
+    const court = await Court.findOneAndUpdate(
+      { _id: req.courtId, registrationStatus: 'rejected' },
+      {
+        $set: {
+          name,
+          slug,
+          sports,
+          courtCount,
+          location,
+          contact,
+          contactPerson,
+          registrationStatus: 'pending',
+          rejectionReason: '',
+          isPublic: false,
+        },
+      },
+      { new: true, runValidators: true },
+    );
+    if (!court) return res.status(409).json({ error: 'This registration has already been updated.' });
+    res.json({
+      success: true,
+      registrationStatus: court.registrationStatus,
+      court: tenantCourtResponse(court),
+    });
+  } catch (err) {
+    if (err.code === 11000) return res.status(409).json({ error: 'This slug is already taken.' });
+    res.status(400).json({ error: err.message });
+  }
 });
 
 // GET /api/court/me/capabilities

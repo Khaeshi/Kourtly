@@ -17,6 +17,11 @@ describe('POST /api/public/register-court route', () => {
   });
 
   test('passes payload through to backend and returns backend status', async () => {
+    const registrationPayload = {
+      name: 'New Court',
+      slug: 'new-court',
+      contactPerson: { name: 'Juan Dela Cruz', phone: '09171234567' },
+    };
     global.fetch = jest.fn().mockResolvedValue({
       status: 201,
       json: async () => ({ success: true, slug: 'new-court' }),
@@ -24,7 +29,7 @@ describe('POST /api/public/register-court route', () => {
 
     const req = new Request('http://localhost:3000/api/public/register-court', {
       method: 'POST',
-      body: JSON.stringify({ name: 'New Court', slug: 'new-court', adminEmail: 'admin@court.com' }),
+      body: JSON.stringify(registrationPayload),
       headers: { 'content-type': 'application/json' },
     });
 
@@ -44,6 +49,7 @@ describe('POST /api/public/register-court route', () => {
     expect(createInternalAssertion).toHaveBeenCalledWith({ email: 'admin@court.com' });
     expect(res.status).toBe(201);
     expect(body.success).toBe(true);
+    expect(JSON.parse((global.fetch as jest.Mock).mock.calls[0][1].body)).toEqual(registrationPayload);
   });
 
   test('returns 500 fallback when request fails', async () => {

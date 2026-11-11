@@ -95,6 +95,21 @@ describe('public routes', () => {
     expect(res.body.error).toMatch(/required/i);
   });
 
+  test('POST /api/register-court requires contact person name and phone', async () => {
+    await User.create({ email: 'registration-contact@court.com' });
+    const res = await request(app)
+      .post('/api/register-court')
+      .set('x-kourtly-auth', signedInAs('registration-contact@court.com'))
+      .send({
+        name: 'Contact Court',
+        slug: 'contact-court',
+        location: { city: 'Manila', lat: 14.6, lng: 120.98 },
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/contactPerson\.name and contactPerson\.phone are required/i);
+  });
+
   test('POST /api/register-court creates a pending court and links the signed-in admin', async () => {
     await User.create({ email: 'admin@prime.com' });
     const payload = {
@@ -125,6 +140,8 @@ describe('public routes', () => {
     expect(createdCourt.location.lat).toBe(14.5995);
     expect(createdCourt.location.lng).toBe(120.9842);
     expect(createdCourt.contactPerson.name).toBe('Prime Contact');
+    expect(createdCourt.contactPerson.phone).toBe('09170000000');
+    expect(createdCourt.contact.phone).toBe('09170000000');
     expect(adminUser).toBeTruthy();
     expect(adminUser.role).toBe('admin');
     expect(attackerUser).toBeNull();

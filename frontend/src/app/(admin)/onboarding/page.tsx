@@ -69,6 +69,7 @@ export default function OnboardingPage() {
     address:      '',
     lat:          '',
     lng:          '',
+    contactName:  '',
     phone:        '',
     facebook:     '',
   });
@@ -106,6 +107,11 @@ export default function OnboardingPage() {
       setStep(2);
       return;
     }
+    if (!form.contactName.trim() || !form.phone.trim()) {
+      setError('Contact person and phone are required.');
+      setStep(2);
+      return;
+    }
     setLoading(true);
     setError('');
     try {
@@ -129,6 +135,10 @@ export default function OnboardingPage() {
             phone:    form.phone,
             facebook: form.facebook,
           },
+          contactPerson: {
+            name: form.contactName.trim(),
+            phone: form.phone.trim(),
+          },
         }),
       });
 
@@ -148,8 +158,11 @@ export default function OnboardingPage() {
   const geoBad       = form.lat === '' || form.lng === '' || !Number.isFinite(Number(form.lat)) || !Number.isFinite(Number(form.lng));
   const cityMissing  = !!error && step === 2 && !form.city;
   const geoMissing   = !!error && step === 2 && geoBad;
+  const contactMissing = !!error && step === 2 && !form.contactName.trim();
+  const phoneMissing = !!error && step === 2 && !form.phone.trim();
   const sportMissing = !!error && step === 3 && form.sports.length === 0;
-  const showBanner   = !!error && !nameMissing && !cityMissing && !geoMissing && !sportMissing;
+  const showBanner   = !!error && !nameMissing && !cityMissing && !geoMissing &&
+    !contactMissing && !phoneMissing && !sportMissing;
 
   const side = (sprite: string, title: string, lead: string, now: number) => (
     <>
@@ -182,7 +195,8 @@ export default function OnboardingPage() {
           Your court is awaiting approval. Your 14-day trial will begin after a superadmin approves it.
         </p>
         <div className="mt-6 border-t-2 border-[#0E2420]">
-          {[['Court', form.name], ['Booking link', `/book/${form.slug}`], ['City', form.city || '—']].map(([a, b]) => (
+          {[['Court', form.name], ['Booking link', `/book/${form.slug}`], ['City', form.city || '—'],
+            ['Contact person', form.contactName], ['Contact phone', form.phone]].map(([a, b]) => (
             <div key={a} className="flex justify-between gap-4 py-2.5 border-b border-[#E1DBCB]">
               <span className={MUTED}>{a}</span><span className="text-right">{b}</span>
             </div>
@@ -290,10 +304,19 @@ export default function OnboardingPage() {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-t border-[#E1DBCB] pt-5">
+            <div className="sm:col-span-2">
+              <label htmlFor="ob-contact-name" className={LABEL}>Contact person *</label>
+              <input id="ob-contact-name" value={form.contactName} onChange={e => set('contactName', e.target.value)}
+                aria-invalid={contactMissing} autoComplete="name" className={`${INPUT} ${contactMissing ? INVALID : ''}`}
+                placeholder="Juan Dela Cruz" />
+              {contactMissing && <p className={ERR}>Enter the name of the person we can contact.</p>}
+            </div>
             <div>
-              <label htmlFor="ob-phone" className={LABEL}>Phone (optional)</label>
+              <label htmlFor="ob-phone" className={LABEL}>Contact phone *</label>
               <input id="ob-phone" type="tel" value={form.phone} onChange={e => set('phone', e.target.value)}
-                className={INPUT} placeholder="09XX XXX XXXX" />
+                aria-invalid={phoneMissing} autoComplete="tel"
+                className={`${INPUT} ${phoneMissing ? INVALID : ''}`} placeholder="09XX XXX XXXX" />
+              {phoneMissing && <p className={ERR}>Enter a contact phone number.</p>}
             </div>
             <div>
               <label htmlFor="ob-fb" className={LABEL}>Facebook page (optional)</label>
@@ -365,6 +388,10 @@ export default function OnboardingPage() {
               if (step === 2 && (!form.city || form.lat === '' || form.lng === '' ||
                   !Number.isFinite(Number(form.lat)) || !Number.isFinite(Number(form.lng)))) {
                 setError('City, latitude, and longitude are required.');
+                return;
+              }
+              if (step === 2 && (!form.contactName.trim() || !form.phone.trim())) {
+                setError('Contact person and phone are required.');
                 return;
               }
               if (step === 3 && form.sports.length === 0) {

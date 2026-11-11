@@ -75,6 +75,110 @@ describe('analytics and court routes', () => {
     expect(res.status).toBe(403);
   });
 
+  test('GET /api/court/me exposes registration status and rejection reason', async () => {
+    const court = await Court.create({
+      name: 'Rejected Court',
+      slug: 'rejected-court',
+      adminEmail: 'rejected@court.com',
+      registrationStatus: 'rejected',
+      rejectionReason: 'Please confirm your location pin.',
+      subscription: { status: 'pending' },
+    });
+
+    const res = await request(app)
+      .get('/api/court/me')
+      .set('x-court-id', String(court._id))
+      .set('x-user-role', 'admin');
+
+    expect(res.status).toBe(200);
+    expect(res.body.registrationStatus).toBe('rejected');
+    expect(res.body.rejectionReason).toBe('Please confirm your location pin.');
+  });
+
+  test('PATCH /api/court/me/registration resubmits the same rejected court', async () => {
+    const court = await Court.create({
+      name: 'Rejected Court',
+      slug: 'rejected-court',
+      adminEmail: 'rejected@court.com',
+      registrationStatus: 'rejected',
+      rejectionReason: 'Please confirm your location pin.',
+      subscription: { status: 'pending', trialEnds: null },
+    });
+    const res = await request(app)
+      .patch('/api/court/me/registration')
+      .set('x-court-id', String(court._id))
+      .set('x-user-role', 'admin')
+      .send({
+        name: 'Updated Court',
+        slug: 'updated-court',
+        sports: ['badminton', 'pickleball'],
+        courtCount: 8,
+        location: { city: 'Biñan', province: 'Laguna', address: 'Court St.', lat: 14.33, lng: 121.08 },
+        contact: { phone: '09171234567', email: 'hello@example.com' },
+        contactPerson: { name: 'Juan Dela Cruz', phone: '09171234567' },
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.registrationStatus).toBe('pending');
+    expect(res.body.court._id).toBe(String(court._id));
+    expect(res.body.court.rejectionReason).toBe('');
+
+    const updated = await Court.findById(court._id).lean();
+    expect(updated).toMatchObject({
+      name: 'Updated Court',
+      slug: 'updated-court',
+      registrationStatus: 'pending',
+      rejectionReason: '',
+      courtCount: 8,
+    });
+    expect(updated.contactPerson.name).toBe('Juan Dela Cruz');
+    expect(updated.subscription.status).toBe('pending');
+    expect(updated.subscription.trialEnds).toBeNull();
+    expect(await Court.countDocuments({ adminEmail: 'rejected@court.com' })).toBe(1);
+  });
+
+  test('PATCH /api/court/me/registration rejects non-rejected registrations and duplicate slugs', async () => {
+    const pending = await Court.create({
+      name: 'Pending Court', slug: 'pending-court', adminEmail: 'pending@court.com',
+      registrationStatus: 'pending', subscription: { status: 'pending' },
+    });
+    const rejected = await Court.create({
+      name: 'Rejected Court', slug: 'rejected-court', adminEmail: 'rejected@court.com',
+      registrationStatus: 'rejected', subscription: { status: 'pending' },
+    });
+    await Court.create({
+      name: 'Existing Slug Court', slug: 'taken-slug', adminEmail: 'other@court.com',
+      subscription: { status: 'active' },
+    });
+    const payload = {
+      name: 'Resubmitted Court', slug: 'taken-slug',
+      location: { city: 'Manila', lat: 14.6, lng: 120.98 },
+      contactPerson: { name: 'Contact', phone: '09170000000' },
+    };
+
+    const pendingRes = await request(app)
+      .patch('/api/court/me/registration')
+      .set('x-court-id', String(pending._id))
+      .set('x-user-role', 'admin')
+      .send(payload);
+    const nonAdminRes = await request(app)
+      .patch('/api/court/me/registration')
+      .set('x-court-id', String(rejected._id))
+      .set('x-user-role', 'user')
+      .send(payload);
+    const slugRes = await request(app)
+      .patch('/api/court/me/registration')
+      .set('x-court-id', String(rejected._id))
+      .set('x-user-role', 'admin')
+      .send(payload);
+
+    expect(pendingRes.status).toBe(409);
+    expect(nonAdminRes.status).toBe(403);
+    expect(slugRes.status).toBe(409);
+    expect(slugRes.body.error).toMatch(/slug is already taken/i);
+  });
+
   test('subscription upgrade stores the invoice attempt before returning its checkout URL', async () => {
     const previousEnv = {
       PAYMENT_PROVIDER: process.env.PAYMENT_PROVIDER,

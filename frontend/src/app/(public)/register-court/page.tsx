@@ -38,7 +38,7 @@ export default function RegisterCourtPage() {
     name: '', slug: '', adminEmail: '',
     sports: ['badminton'] as string[], courtCount: '4',
     city: '', province: '', address: '', lat: '', lng: '',
-    phone: '', email: '', facebook: '', instagram: '',
+    contactName: '', phone: '', email: '', facebook: '', instagram: '',
   });
 
   useEffect(() => {
@@ -68,11 +68,17 @@ export default function RegisterCourtPage() {
       setError('City, latitude, and longitude are required.');
       return false;
     }
+    if (step === 4 && (!form.contactName.trim() || !form.phone.trim())) {
+      setError('Contact person and phone are required.');
+      return false;
+    }
     setError(null); return true;
   };
 
   const next = () => { if (validate()) setStep(s => s + 1); };
   const back = () => { setError(null); setStep(s => s - 1); };
+  const contactNameMissing = step === 4 && !!error && !form.contactName.trim();
+  const contactPhoneMissing = step === 4 && !!error && !form.phone.trim();
 
   const submit = async () => {
     if (!validate()) return;
@@ -94,6 +100,7 @@ export default function RegisterCourtPage() {
             lat: Number(form.lat), lng: Number(form.lng),
           },
           contact:  { phone: form.phone, email: form.email, facebook: form.facebook, instagram: form.instagram },
+          contactPerson: { name: form.contactName.trim(), phone: form.phone.trim() },
         }),
       });
       const data = await res.json();
@@ -119,7 +126,7 @@ export default function RegisterCourtPage() {
           Your court is awaiting approval. We&apos;ll start your 14-day trial once a superadmin approves the registration.
         </p>
         <div className="bg-blue-500/10 border border-blue-400/25 rounded-lg px-4 py-3 text-[0.78rem] text-blue-200 mb-5 text-left">
-          We&apos;ll notify <strong>{session?.user?.email}</strong> when there&apos;s an update.
+          Check back here, or sign in again, to see the result.
         </div>
         <Link href="/" className="block mt-3 text-sm text-white/45 no-underline hover:text-blue-300">← Back to home</Link>
       </div>
@@ -166,7 +173,9 @@ export default function RegisterCourtPage() {
 
         {/* Body */}
         <div className="px-8 py-6 flex flex-col gap-4">
-          {error && <div className="bg-red-500/10 border border-red-400/25 rounded-lg px-4 py-3 text-[0.78rem] text-red-300">{error}</div>}
+          {error && !contactNameMissing && !contactPhoneMissing && (
+            <div className="bg-red-500/10 border border-red-400/25 rounded-lg px-4 py-3 text-[0.78rem] text-red-300">{error}</div>
+          )}
 
           {step === 1 && <>
             <Field label="Court Name *">
@@ -236,10 +245,16 @@ export default function RegisterCourtPage() {
           </>}
 
           {step === 4 && <>
+            <Field label="Contact person *">
+              <input value={form.contactName} onChange={e => set('contactName', e.target.value)}
+                aria-invalid={contactNameMissing} autoComplete="name" placeholder="Juan Dela Cruz" className={INPUT} />
+              {contactNameMissing && <p role="alert" className="text-xs text-red-300">Enter the name of the person we can contact.</p>}
+            </Field>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Phone">
-                <input value={form.phone} onChange={e => set('phone', e.target.value)}
-                  placeholder="+63 9XX XXX XXXX" className={INPUT} />
+              <Field label="Contact phone *">
+                <input type="tel" autoComplete="tel" value={form.phone} onChange={e => set('phone', e.target.value)}
+                  aria-invalid={contactPhoneMissing} placeholder="+63 9XX XXX XXXX" className={INPUT} />
+                {contactPhoneMissing && <p role="alert" className="text-xs text-red-300">Enter a contact phone number.</p>}
               </Field>
               <Field label="Contact Email">
                 <input type="email" value={form.email} onChange={e => set('email', e.target.value)}

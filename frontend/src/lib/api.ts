@@ -53,6 +53,54 @@ export interface CatalogItem {
   isLowStock?: boolean;
 }
 
+export interface CourtRegistrationPayload {
+  name: string;
+  slug: string;
+  sports: string[];
+  courtCount: number;
+  location: {
+    address?: string;
+    city: string;
+    province?: string;
+    country?: string;
+    lat: number;
+    lng: number;
+  };
+  contact: {
+    phone: string;
+    email?: string;
+    facebook?: string;
+    instagram?: string;
+    website?: string;
+  };
+  contactPerson: { name: string; phone: string };
+}
+
+export interface CourtRegistrationStatus extends CourtRegistrationPayload {
+  _id: string;
+  createdAt: string;
+  registrationStatus: 'pending' | 'approved' | 'rejected';
+  rejectionReason: string;
+}
+
+export function getCourtRegistration(): Promise<CourtRegistrationStatus> {
+  return proxyFetch<CourtRegistrationStatus>(
+    '/court/me',
+    { method: 'GET' },
+    { allowSnapshotFallback: false }
+  );
+}
+
+export function resubmitCourtRegistration(
+  payload: CourtRegistrationPayload
+): Promise<{ success: true; registrationStatus: 'pending'; court: CourtRegistrationStatus }> {
+  return proxyFetch(
+    '/court/me/registration',
+    { method: 'PATCH', body: JSON.stringify(payload) },
+    { allowSnapshotFallback: false }
+  );
+}
+
 export type StockMovementType = 'opening' | 'restock' | 'adjustment' | 'sale' | 'void' | 'count';
 
 export interface StockMovement {
