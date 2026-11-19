@@ -10,6 +10,7 @@ import { startExpirePendingPaymentsJob } from './src/jobs/expirePendingPayments.
 import { registerWeeklyReportCron } from './src/cron/weeklyReport.js';
 import { verifyInternalAssertion } from './src/lib/internalAuth.js';
 import User from './src/models/User.js';
+import Court from './src/models/Court.js';
 
 dotenv.config();
 validateCoreEnv();
@@ -50,8 +51,19 @@ io.use(async (socket, next) => {
       return next();
     }
 
-    socket.data.verifiedCourtId = user.role === 'superadmin' ? null : user.courtId ?? null;
+    socket.data.verifiedCourtId = null;
     socket.data.verifiedRole = user.role ?? 'user';
+    if (user.role !== 'superadmin' && user.courtId) {
+      const court = await Court.findById(user.courtId)
+        .select('registrationStatus subscription.status isActive').lean();
+      const status = court?.registrationStatus ??
+        (['trial', 'active', 'expired', 'suspended'].includes(court?.subscription?.status)
+          ? 'approved'
+          : 'pending');
+      if (court?.isActive && status === 'approved') {
+        socket.data.verifiedCourtId = user.courtId;
+      }
+    }
     next();
   } catch (err) {
     next(err);

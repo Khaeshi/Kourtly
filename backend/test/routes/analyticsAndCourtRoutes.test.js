@@ -1,4 +1,5 @@
 import { jest } from '@jest/globals';
+import mongoose from 'mongoose';
 import request from 'supertest';
 import app from '../../src/app.js';
 import Court from '../../src/models/Court.js';
@@ -212,6 +213,7 @@ describe('analytics and court routes', () => {
       name: 'Pending Gate Court', slug: 'pending-gate-court', adminEmail: 'pending-gate@court.com',
       registrationStatus: 'pending', subscription: { status: 'pending' },
     });
+
     const status = await request(app)
       .get('/api/court/me')
       .set('x-court-id', String(pending._id))
@@ -230,6 +232,33 @@ describe('analytics and court routes', () => {
     expect(analytics.status).toBe(403);
     expect(analytics.body.error).toMatch(/awaiting approval/i);
     expect(resubmit.status).toBe(403);
+  });
+
+  test('legacy courts without registrationStatus use subscription status for approval', async () => {
+    const approvedId = new mongoose.Types.ObjectId();
+    const pendingId = new mongoose.Types.ObjectId();
+    await Court.collection.insertMany([
+      {
+        _id: approvedId, name: 'Legacy Active', slug: 'legacy-active',
+        adminEmail: 'legacy-active@court.com', isActive: true,
+        subscription: { status: 'active' },
+      },
+      {
+        _id: pendingId, name: 'Legacy Pending', slug: 'legacy-pending',
+        adminEmail: 'legacy-pending@court.com', isActive: true,
+        subscription: { status: 'pending' },
+      },
+    ]);
+
+    const approved = await request(app)
+      .get('/api/analytics/summary?period=today')
+      .set('x-court-id', String(approvedId));
+    const pending = await request(app)
+      .get('/api/analytics/summary?period=today')
+      .set('x-court-id', String(pendingId));
+
+    expect(approved.status).toBe(200);
+    expect(pending.status).toBe(403);
   });
 
   test('PATCH /api/court/me/subscription blocks non-annual request', async () => {

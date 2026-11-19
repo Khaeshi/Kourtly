@@ -7,6 +7,9 @@ import Reservation from '../../src/models/Reservation.js';
 import ScheduleRule from '../../src/models/ScheduleRule.js';
 import User from '../../src/models/User.js';
 
+const bookingDate = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+const bookingDay = new Date(`${bookingDate}T00:00:00.000Z`).getUTCDay();
+
 function signedInAs(email) {
   const now = Math.floor(Date.now() / 1000);
   const payload = Buffer.from(JSON.stringify({ email, iat: now, exp: now + 300 })).toString('base64url');
@@ -45,7 +48,7 @@ async function makePublicBookingCourt(slug, xendit = {}) {
   });
   await ScheduleRule.create({
     courtId: court._id,
-    dayOfWeek: 2,
+    dayOfWeek: bookingDay,
     isClosed: false,
     openTime: '09:00',
     closeTime: '23:00',
@@ -56,7 +59,7 @@ async function makePublicBookingCourt(slug, xendit = {}) {
 function validPublicBooking(slots = {}) {
   return {
     courtNum: 1,
-    date: '2026-04-14',
+    date: bookingDate,
     timeSlot: '13:00-14:00',
     duration: 1,
     name: 'New Guest',
@@ -159,7 +162,7 @@ describe('public routes', () => {
 
     await ScheduleRule.create({
       courtId: court._id,
-      dayOfWeek: 2,
+      dayOfWeek: bookingDay,
       isClosed: false,
       openTime: '09:00',
       closeTime: '23:00',
@@ -168,7 +171,7 @@ describe('public routes', () => {
     await Reservation.create({
       courtId: court._id,
       court: 1,
-      date: '2026-04-14',
+      date: bookingDate,
       timeSlot: '13:00-14:00',
       duration: 1,
       name: 'Existing',
@@ -178,7 +181,7 @@ describe('public routes', () => {
 
     const res = await request(app).post('/api/public/courts/overlap-court/reserve').send({
       courtNum: 1,
-      date: '2026-04-14',
+      date: bookingDate,
       timeSlot: '13:00-14:00',
       duration: 1,
       name: 'New User',
@@ -198,10 +201,10 @@ describe('public routes', () => {
       isActive: true,
       subscription: { status: 'active' },
     });
-    await ScheduleRule.create({ courtId: court._id, dayOfWeek: 2, isClosed: false, openTime: '09:00', closeTime: '16:00' });
+    await ScheduleRule.create({ courtId: court._id, dayOfWeek: bookingDay, isClosed: false, openTime: '09:00', closeTime: '16:00' });
 
     const res = await request(app).post('/api/public/courts/hours-court/reserve').send({
-      courtNum: 1, date: '2026-04-14', timeSlot: '15:00-16:00', duration: 4,
+      courtNum: 1, date: bookingDate, timeSlot: '15:00-16:00', duration: 4,
       name: 'New User', phone: '09179999999',
     });
 
@@ -214,11 +217,11 @@ describe('public routes', () => {
       name: 'Pending Court', slug: 'pending-court', adminEmail: 'owner@pending.com', courtCount: 1,
       isActive: true, subscription: { status: 'active' },
     });
-    await ScheduleRule.create({ courtId: court._id, dayOfWeek: 2, isClosed: false, openTime: '09:00', closeTime: '23:00' });
-    await Reservation.create({ courtId: court._id, court: 1, date: '2026-04-14', timeSlot: '13:00-14:00', duration: 1, name: 'Pending', phone: '09170000000', status: 'pending_admin' });
+    await ScheduleRule.create({ courtId: court._id, dayOfWeek: bookingDay, isClosed: false, openTime: '09:00', closeTime: '23:00' });
+    await Reservation.create({ courtId: court._id, court: 1, date: bookingDate, timeSlot: '13:00-14:00', duration: 1, name: 'Pending', phone: '09170000000', status: 'pending_admin' });
 
     const res = await request(app).post('/api/public/courts/pending-court/reserve').send({
-      courtNum: 1, date: '2026-04-14', timeSlot: '13:00-14:00', duration: 1,
+      courtNum: 1, date: bookingDate, timeSlot: '13:00-14:00', duration: 1,
       name: 'New User', phone: '09179999999',
     });
 
@@ -243,7 +246,7 @@ describe('public routes', () => {
       });
       await ScheduleRule.create({
         courtId: await Court.findOne({ slug: 'not-ready-court' }).then(court => court._id),
-        dayOfWeek: 2,
+        dayOfWeek: bookingDay,
         isClosed: false,
         openTime: '09:00',
         closeTime: '23:00',
@@ -251,7 +254,7 @@ describe('public routes', () => {
 
       const response = await request(app).post('/api/public/courts/not-ready-court/reserve').send({
         courtNum: 1,
-        date: '2026-04-14',
+        date: bookingDate,
         timeSlot: '13:00-14:00',
         name: 'Guest',
         phone: '09170000000',
@@ -340,7 +343,7 @@ describe('public routes', () => {
       await Reservation.create({
         courtId: await Court.findOne({ slug: 'not-ready-invalid-conflict' }).then(court => court._id),
         court: 1,
-        date: '2026-04-14',
+        date: bookingDate,
         timeSlot: '13:00-14:00',
         duration: 1,
         name: 'Existing Guest',

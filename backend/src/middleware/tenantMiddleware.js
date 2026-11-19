@@ -67,10 +67,14 @@ export async function tenantMiddleware(req, res, next) {
     court.registrationStatus === 'rejected' &&
     req.method === 'PATCH' &&
     req.path === '/me/registration';
-  if (court.registrationStatus !== 'approved' &&
+  const effectiveRegistrationStatus = court.registrationStatus ??
+    (['trial', 'active', 'expired', 'suspended'].includes(court.subscription?.status)
+      ? 'approved'
+      : 'pending');
+  if (effectiveRegistrationStatus !== 'approved' &&
       !isRegistrationStatusRead &&
       !isRejectedRegistrationResubmission) {
-    const error = court.registrationStatus === 'rejected'
+    const error = effectiveRegistrationStatus === 'rejected'
       ? 'Court registration was rejected. Update and resubmit it before using tenant features.'
       : 'Court registration is awaiting approval.';
     return res.status(403).json({ error });
