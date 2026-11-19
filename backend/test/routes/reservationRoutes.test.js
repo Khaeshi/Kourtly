@@ -158,7 +158,7 @@ describe('reservation routes with tenant middleware', () => {
     process.env.APP_BASE_URL = 'https://kourtly.example';
     try {
       const { court, date } = await makeGridCourt();
-      const response = await postWalkIn(court, date, { paymentMode: 'payment_link' });
+      const response = await postWalkIn(court, date, { paymentMode: 'payment_link', paymentOption: 'downpayment' });
 
       expect(response.status).toBe(201);
       expect(response.body.amountDue).toBe(107.1);

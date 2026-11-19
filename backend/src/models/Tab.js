@@ -6,6 +6,7 @@ const TabItemSchema = new mongoose.Schema({
   price:    { type: Number, required: true },
   quantity: { type: Number, default: 1 },
   chargeGroupId: { type: mongoose.Schema.Types.ObjectId, default: null },
+  idempotencyKey: { type: String, default: null },
   addedAt:  { type: Date, default: Date.now },
 });
 

@@ -79,6 +79,7 @@ function movementResponse(movement) {
     tabLineId: row.tabLineId ? String(row.tabLineId) : null,
     actorId: row.actorId,
     idempotencyKey: row.idempotencyKey,
+    originalSaleAt: row.originalSaleAt ?? null,
     createdAt: row.createdAt,
   };
 }
@@ -275,6 +276,57 @@ router.post('/:id/stock/adjust', async (req, res) => {
       action: 'stock_adjusted',
       quantityDelta,
       note: parseNote(req.body?.note),
+    });
+
+    router.post('/:id/stock/stop', async (req, res) => {
+      let session;
+      try {
+        const key = parseIdempotencyKey(req.body?.idempotencyKey);
+        const note = parseNote(req.body?.note);
+        const hash = requestHash({ itemId: req.params.id, type: 'stop', note });
+        const actor = actorId(req);
+        session = await mongoose.startSession();
+        let result;
+        await session.withTransaction(async () => {
+          const existing = await findExistingMovement(req.courtId, key, hash, session);
+          if (existing) {
+            const item = await Item.findOne({ _id: req.params.id, courtId: req.courtId }).session(session).lean();
+            if (!item) throw new StockRouteError(404, 'Item not found.');
+            result = { item, movement: existing };
+            return;
+          }
+          const item = await Item.findOneAndUpdate(
+            { _id: req.params.id, courtId: req.courtId, trackStock: true },
+            { $set: { trackStock: false } },
+            { new: true, session },
+          ).lean();
+          if (!item) throw new StockRouteError(409, 'Stock tracking is not enabled for this item.');
+          const [movement] = await StockMovement.create([{
+            courtId: req.courtId,
+            itemId: item._id,
+            type: 'adjustment',
+            quantityDelta: 0,
+            balanceAfter: item.stockOnHand,
+            note,
+            actorId: actor,
+            idempotencyKey: key,
+            requestHash: hash,
+          }], { session });
+          result = { item, movement: movement.toObject() };
+        });
+        const [item] = await enrichItemsWithStock([result.item], req.courtId, new Date(), req.court?.settings?.timezone || 'Asia/Manila');
+        emitCourtEvent(req, 'items:updated', {
+          action: 'stock_stopped',
+          itemId: String(item._id),
+          leftNow: null,
+          isLowStock: false,
+        });
+        res.json({ item, movement: movementResponse(result.movement) });
+      } catch (error) {
+        routeError(res, error);
+      } finally {
+        if (session) await session.endSession();
+      }
     });
     res.json(result);
   } catch (error) {

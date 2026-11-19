@@ -116,6 +116,7 @@ export interface StockMovement {
   tabLineId?: string | null;
   actorId: string;
   idempotencyKey: string;
+  originalSaleAt?: string | null;
   createdAt: string;
 }
 
@@ -150,6 +151,7 @@ export interface TabItem {
   _id?: string; item?: string; name: string;
   price: number; quantity: number; addedAt?: string;
   chargeGroupId?: string | null;
+  idempotencyKey?: string | null;
 }
 
 export interface Tab {
@@ -447,6 +449,11 @@ export const adjustItemStock = (id: string, body: {
 }) => req<{ item: CatalogItem; movement: StockMovement }>(`/items/${id}/stock/adjust`, {
   method: 'POST', body: JSON.stringify(body),
 });
+export const stopItemStockTracking = (id: string, body: {
+  note: string; idempotencyKey: string;
+}) => req<{ item: CatalogItem; movement: StockMovement }>(`/items/${id}/stock/stop`, {
+  method: 'POST', body: JSON.stringify(body),
+});
 export const updateItemNote = (id: string, note: string) =>
   req<CatalogItem>(`/items/${id}/note`, { method: 'PATCH', body: JSON.stringify({ note }) });
 export const getItemStockMovements = (id: string, page = 1, limit = 20) =>
@@ -467,10 +474,10 @@ export const getTabHistory = () => req<Tab[]>('/tabs/history');
 export const openTab = (playerId: string) =>
   req<Tab>('/tabs', { method:'POST', body: JSON.stringify({ player: playerId }) });
 
-export const addItemToTab = (tabId: string, item: { itemId: string; name: string; price: number; quantity: number }) =>
+export const addItemToTab = (tabId: string, item: { itemId: string; name: string; price: number; quantity: number; idempotencyKey?: string }) =>
   req<Tab>(`/tabs/${tabId}/items`, { method:'POST', body: JSON.stringify(item) });
 
-export const splitItem = (body: { itemId: string; name: string; price: number; playerIds: string[] }) =>
+export const splitItem = (body: { itemId: string; name: string; price: number; playerIds: string[]; idempotencyKey?: string }) =>
   req<Tab[]>('/tabs/split', { method:'POST', body: JSON.stringify(body) });
 
 export const removeItemFromTab = (tabId: string, itemIndex: number) =>
@@ -578,7 +585,7 @@ export interface ReservationGrid {
 
 export interface WalkInBookingPayload {
   name: string;
-  phone: string;
+  phone?: string;
   email?: string;
   court: number;
   date: string;
@@ -586,6 +593,8 @@ export interface WalkInBookingPayload {
   duration: number;
   playerCount: number;
   paymentMode: 'counter' | 'payment_link';
+  paymentOption?: 'full' | 'downpayment';
+  notes?: string;
 }
 
 export interface WalkInBookingResponse {
@@ -727,6 +736,7 @@ export const getReservationTabHistory = () =>
 export const addItemToReservationTab = (
   tabId: string,
   item: { itemId: string; name: string; price: number; quantity: number }
+  & { idempotencyKey?: string }
 ) => req<ReservationTab>(`/reservation-tabs/${tabId}/items`, {
   method: 'POST', body: JSON.stringify(item),
 });
