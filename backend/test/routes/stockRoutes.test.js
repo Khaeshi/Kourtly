@@ -207,4 +207,23 @@ describe('stock routes', () => {
     expect(range.start.toISOString()).toBe('2025-01-02T16:00:00.000Z');
     expect(range.end.toISOString()).toBe('2025-01-03T16:00:00.000Z');
   });
+
+  test('stops tracking without deleting history and can restart with a new opening count', async () => {
+    const court = await makeCourt();
+    const item = await Item.create({ courtId: court._id, name: 'Water', price: 30 });
+    const started = await courtRequest('post', `/api/items/${item._id}/stock/start`, court._id)
+      .send({ openingQuantity: 6, note: 'Opening', idempotencyKey: 'stop-open' });
+    expect(started.status).toBe(200);
+
+    const stopped = await courtRequest('post', `/api/items/${item._id}/stock/stop`, court._id)
+      .send({ note: 'Court fee item', idempotencyKey: 'stop-water' });
+    expect(stopped.status).toBe(200);
+    expect(stopped.body.item).toMatchObject({ trackStock: false, leftNow: null });
+    expect(await StockMovement.countDocuments({ courtId: court._id })).toBe(2);
+
+    const restarted = await courtRequest('post', `/api/items/${item._id}/stock/start`, court._id)
+      .send({ openingQuantity: 4, note: 'Recount', idempotencyKey: 'restart-water' });
+    expect(restarted.status).toBe(200);
+    expect(restarted.body.item).toMatchObject({ trackStock: true, leftNow: 4 });
+  });
 });
