@@ -41,8 +41,23 @@ export default function CountUp({ value, prefix = '₱', duration = 4000, classN
 
   return (
     <span ref={ref} className={`tabular-nums ${className}`}>
-      {prefix}
-      {n.toLocaleString('en-US')}
+      {/**
+       * @author: Khaesey Tablante 
+       * @description: This is a hack to make screen readers read the number correctly.
+       *  The prefix is visually hidden but still read by screen readers.   
+       */}
+      <span className="sr-only">
+        {prefix}
+        {value.toLocaleString('en-US')}
+      </span>
+
+      {/**
+       * @author: Khaesey Tablante 
+       * @description: Visual count-up for human  visitors only
+       */}
+      <span aria-hidden="true">{prefix}
+        {n.toLocaleString('en-US')}
+      </span>
     </span>
   );
 }
