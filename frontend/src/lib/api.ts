@@ -397,8 +397,11 @@ export const createMatch = (body: {
   shuttlecockId?: string; // optional — triggers auto-split
 }) => req<Match>('/queue', { method:'POST', body: JSON.stringify(body) });
 
-export const updateMatch = (id: string, body: Partial<Pick<Match,'status'|'court'>>) =>
+export const updateMatch = (id: string, body: Partial<Pick<Match,'court'>>) =>
   req<Match>(`/queue/${id}`, { method:'PATCH', body: JSON.stringify(body) });
+
+export const updateMatchStatus = (id: string, status: Extract<Match['status'], 'playing' | 'done'>) =>
+  req<Match>(`/queue/${id}/status`, { method:'POST', body: JSON.stringify({ status }) });
 
 export const deleteMatch = (id: string) =>
   req<{success:boolean}>(`/queue/${id}`, { method:'DELETE' });

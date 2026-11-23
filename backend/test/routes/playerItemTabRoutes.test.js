@@ -8,7 +8,7 @@ import Tab from '../../src/models/Tab.js';
 async function makeCourt() {
   return Court.create({
     name: 'Ops Court',
-    slug: `ops-court-${Date.now()}`,
+    slug: `ops-court-${Date.now()}-${Math.random().toString(36).slice(2)}`,
     adminEmail: 'ops@court.com',
     isActive: true,
     registrationStatus: 'approved',
@@ -20,18 +20,84 @@ async function makeCourt() {
 describe('player, item, and tab routes', () => {
   test('player create + list works under tenant context', async () => {
     const court = await makeCourt();
+    const otherCourt = await makeCourt();
     const createRes = await request(app)
       .post('/api/players')
       .set('x-court-id', String(court._id))
-      .send({ name: 'Ace', level: 'B', gender: 'Male', age: 25 });
+      .send({
+        courtId: String(otherCourt._id),
+        name: 'Ace',
+        level: 'B',
+        gender: 'Male',
+        age: 25,
+        matchCount: 99,
+        isActive: false,
+      });
 
     expect(createRes.status).toBe(201);
+    expect(createRes.body.courtId).toBe(String(court._id));
+    expect(createRes.body.matchCount).toBe(0);
+    expect(createRes.body.isActive).toBe(true);
 
     const listRes = await request(app)
       .get('/api/players')
       .set('x-court-id', String(court._id));
     expect(listRes.status).toBe(200);
     expect(listRes.body).toHaveLength(1);
+  });
+
+  test('player updates ignore tenant and server-managed fields and validate editable fields', async () => {
+    const court = await makeCourt();
+    const otherCourt = await makeCourt();
+    const player = await Player.create({
+      courtId: court._id,
+      name: 'Original',
+      level: 'B',
+      gender: 'Male',
+      age: 25,
+    });
+
+    const response = await request(app)
+      .patch(`/api/players/${player._id}`)
+      .set('x-court-id', String(court._id))
+      .send({
+        courtId: String(otherCourt._id),
+        name: 'Updated',
+        matchCount: 99,
+        isActive: false,
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      courtId: String(court._id),
+      name: 'Updated',
+      matchCount: 0,
+      isActive: true,
+    });
+  });
+
+  test.each([
+    [{ $set: { name: 'Injected' } }],
+    [{ 'name.display': 'Injected' }],
+    [{ name: { value: 'Injected' } }],
+    [{ age: ['25'] }],
+  ])('player update rejects unsafe keys and invalid field types: %o', async body => {
+    const court = await makeCourt();
+    const player = await Player.create({
+      courtId: court._id,
+      name: 'Original',
+      level: 'B',
+      gender: 'Male',
+      age: 25,
+    });
+
+    const response = await request(app)
+      .patch(`/api/players/${player._id}`)
+      .set('x-court-id', String(court._id))
+      .send(body);
+
+    expect(response.status).toBe(400);
+    await expect(Player.findById(player._id).lean()).resolves.toMatchObject({ name: 'Original' });
   });
 
   test('item create + splittable list returns only active splittable items', async () => {

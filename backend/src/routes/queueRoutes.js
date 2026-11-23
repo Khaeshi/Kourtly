@@ -13,6 +13,72 @@ import {
 
 const router = express.Router();
 const LEVEL_ORDER = { A: 4, B: 3, C: 2, D: 1 };
+const MATCH_TYPES = new Set(['MD', 'WD', 'XD']);
+
+function readQueueBody(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    throw new Error('Request body must be an object.');
+  }
+  if (Object.keys(body).some(key =>
+    key.startsWith('$') || key.includes('.') ||
+    ['__proto__', 'prototype', 'constructor'].includes(key)
+  )) {
+    throw new Error('Operator and dotted-path keys are not allowed.');
+  }
+  return body;
+}
+
+function readPlayerIds(value, field) {
+  if (!Array.isArray(value) || value.length !== 2 ||
+      value.some(id => typeof id !== 'string' || !mongoose.Types.ObjectId.isValid(id))) {
+    throw new Error(`${field} must contain exactly 2 valid player IDs.`);
+  }
+  return value;
+}
+
+function readQueueFields(body, { allowShuttlecock = false } = {}) {
+  const source = readQueueBody(body);
+  const fields = {};
+
+  for (const field of ['team1', 'team2']) {
+    if (Object.prototype.hasOwnProperty.call(source, field)) {
+      fields[field] = readPlayerIds(source[field], field);
+    }
+  }
+
+  if (Object.prototype.hasOwnProperty.call(source, 'matchType')) {
+    if (typeof source.matchType !== 'string' || !MATCH_TYPES.has(source.matchType)) {
+      throw new Error('matchType must be MD, WD, or XD.');
+    }
+    fields.matchType = source.matchType;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(source, 'court')) {
+    if (typeof source.court !== 'number' || !Number.isInteger(source.court) || source.court < 1) {
+      throw new Error('court must be a positive integer.');
+    }
+    fields.court = source.court;
+  }
+
+  if (allowShuttlecock && Object.prototype.hasOwnProperty.call(source, 'shuttlecockId')) {
+    if (typeof source.shuttlecockId !== 'string' ||
+        !mongoose.Types.ObjectId.isValid(source.shuttlecockId)) {
+      throw new Error('shuttlecockId must be a valid item ID.');
+    }
+    fields.shuttlecockId = source.shuttlecockId;
+  }
+
+  return fields;
+}
+
+async function playerIdsBelongToCourt(playerIds, courtId, session) {
+  if (playerIds.length === 0) return true;
+  const players = await Player.find({
+    _id: { $in: playerIds },
+    courtId,
+  }).select('_id').session(session);
+  return players.length === playerIds.length;
+}
 
 // GET active matches (queued + playing)
 router.get('/', async (req, res) => {
@@ -60,13 +126,24 @@ router.post('/', async (req, res) => {
   let match;
   let tabIds = [];
   try {
-    const { team1, team2, matchType, court, shuttlecockId } = req.body;
-
+    const fields = readQueueFields(req.body, { allowShuttlecock: true });
+    const { team1, team2, matchType, court, shuttlecockId } = fields;
+    if (!team1 || !team2 || !matchType || !court) {
+      return res.status(400).json({ error: 'team1, team2, matchType, and court are required.' });
+    }
     const allPlayerIds = [...team1, ...team2];
+    if (new Set(allPlayerIds).size !== allPlayerIds.length) {
+      return res.status(400).json({ error: 'A player may only appear once in a match.' });
+    }
     let shuttlecockGroupId;
     await session.withTransaction(async () => {
       stockChanges.length = 0;
       tabIds = [];
+      if (!await playerIdsBelongToCourt(allPlayerIds, req.courtId, session)) {
+        const error = new Error('Some players are missing or outside court scope.');
+        error.status = 400;
+        throw error;
+      }
       [match] = await Match.create([{
         courtId: req.courtId, team1, team2, matchType, court,
       }], { session });
@@ -125,7 +202,7 @@ router.post('/', async (req, res) => {
       }
     });
 
-    const populated = await Match.findById(match._id).populate('team1 team2');
+    const populated = await Match.findOne({ _id: match._id, courtId: req.courtId }).populate('team1 team2');
     emitCourtEvent(req, 'queue:updated', { action: 'added', matchId: populated?._id });
     if (shuttlecockGroupId) {
       emitCourtEvent(req, 'billing:tab_updated', {
@@ -143,14 +220,71 @@ router.post('/', async (req, res) => {
   }
 });
 
-// PATCH update match status or court
+// PATCH update match teams, type, or court
 router.patch('/:id', async (req, res) => {
   try {
-    const match = await Match.findOneAndUpdate({ _id: req.params.id, courtId: req.courtId }, req.body, { new: true })
-      .populate('team1 team2');
-    if (!match) return res.status(404).json({ error: 'Match not found' });
+    const updates = readQueueFields(req.body);
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: 'Provide an editable match field.' });
+    }
+    const existing = await Match.findOne({ _id: req.params.id, courtId: req.courtId });
+    if (!existing) return res.status(404).json({ error: 'Match not found.' });
+    const team1 = updates.team1 ?? existing.team1.map(String);
+    const team2 = updates.team2 ?? existing.team2.map(String);
+    if (!await playerIdsBelongToCourt([...team1, ...team2], req.courtId)) {
+      return res.status(400).json({ error: 'Some players are missing or outside court scope.' });
+    }
+    const match = await Match.findOneAndUpdate(
+      { _id: req.params.id, courtId: req.courtId },
+      { $set: updates },
+      { new: true, runValidators: true }
+    );
+    if (!match) return res.status(404).json({ error: 'Match not found.' });
+    await match.populate('team1 team2');
     emitCourtEvent(req, 'queue:updated', { action: 'updated', matchId: match._id, status: match.status });
     res.json(match);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// POST apply the only supported queue status transitions.
+router.post('/:id/status', async (req, res) => {
+  try {
+    const body = readQueueBody(req.body);
+    if (Object.keys(body).some(key => key !== 'status')) {
+      return res.status(400).json({ error: 'Only status may be provided.' });
+    }
+    if (typeof body.status !== 'string') {
+      return res.status(400).json({ error: 'status must be a string.' });
+    }
+    const previousStatus = body.status === 'playing'
+      ? 'queued'
+      : body.status === 'done'
+        ? 'playing'
+        : null;
+    if (!previousStatus) {
+      return res.status(400).json({ error: 'Only queued-to-playing and playing-to-done transitions are allowed.' });
+    }
+
+    const match = await Match.findOneAndUpdate(
+      { _id: req.params.id, courtId: req.courtId, status: previousStatus },
+      { $set: { status: body.status } },
+      { new: true, runValidators: true }
+    );
+    if (match) {
+      await match.populate('team1 team2');
+      emitCourtEvent(req, 'queue:updated', { action: 'updated', matchId: match._id, status: match.status });
+      return res.json(match);
+    }
+
+    const existing = await Match.findOne({ _id: req.params.id, courtId: req.courtId });
+    if (!existing) return res.status(404).json({ error: 'Match not found.' });
+    if (existing.status === body.status) {
+      await existing.populate('team1 team2');
+      return res.json(existing);
+    }
+    return res.status(409).json({ error: 'Match status has changed or the transition is not allowed.' });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }

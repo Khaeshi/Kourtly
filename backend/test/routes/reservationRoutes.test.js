@@ -367,6 +367,15 @@ describe('reservation routes with tenant middleware', () => {
       subscription: { status: 'active' },
       courtCount: 4,
     });
+    const otherCourt = await Court.create({
+      name: 'Other Tenant Court',
+      slug: 'other-tenant-court',
+      adminEmail: 'other-tenant@court.com',
+      isActive: true,
+      registrationStatus: 'approved',
+      subscription: { status: 'active' },
+      courtCount: 4,
+    });
 
     await ScheduleRule.create({
       courtId: court._id,
@@ -380,18 +389,47 @@ describe('reservation routes with tenant middleware', () => {
       .post('/api/reservations')
       .set('x-court-id', String(court._id))
       .send({
-        courtId: court._id,
+        courtId: otherCourt._id,
         court: 1,
         date: '2026-04-14',
         timeSlot: '10:00-11:00',
         duration: 1,
         name: 'Walk-in',
         phone: '09171234567',
+        status: 'confirmed',
+        paymentStatus: 'paid',
+        paymentUrl: 'https://invalid.example/payment',
+        paymentExpiresAt: '2026-04-14T11:00:00.000Z',
+        publicRef: 'CLIENT-REFERENCE',
+        paymentExpectedAmount: 99999,
       });
 
     expect(res.status).toBe(201);
     expect(res.body.name).toBe('Walk-in');
     expect(res.body.timeSlot).toBe('10:00-11:00');
+    expect(res.body.courtId).toBe(String(court._id));
+    expect(res.body.status).toBe('pending_admin');
+    expect(res.body.paymentStatus).toBe('none');
+    expect(res.body.paymentUrl).toBe('');
+    expect(res.body.paymentExpiresAt).toBeNull();
+    expect(res.body.publicRef).toBe('');
+    expect(res.body.paymentExpectedAmount).toBe(0);
+  });
+
+  test.each([
+    [{ court: 1, date: '2026-04-14', timeSlot: '10:00-11:00', name: 'Guest', phone: '09170000000', $set: { status: 'confirmed' } }],
+    [{ court: 1, date: '2026-04-14', timeSlot: '10:00-11:00', name: 'Guest', phone: '09170000000', 'courtId.$set': 'foreign' }],
+    [{ court: 1, date: '2026-04-14', timeSlot: '10:00-11:00', name: { value: 'Guest' }, phone: '09170000000' }],
+    [{ court: 1, date: '2026-04-14', timeSlot: '10:00-11:00', name: 'Guest', phone: ['09170000000'] }],
+  ])('POST /api/reservations rejects operators, dotted paths, and invalid field types: %o', async body => {
+    const { court } = await makeGridCourt();
+    const response = await request(app)
+      .post('/api/reservations')
+      .set('x-court-id', String(court._id))
+      .send(body);
+
+    expect(response.status).toBe(400);
+    await expect(Reservation.countDocuments({ courtId: court._id })).resolves.toBe(0);
   });
 
   test('admin cannot create a reservation invoice before the court sub-account is ready', async () => {
