@@ -21,6 +21,15 @@ const XENDIT_ACCOUNT_SELECT =
   'name adminEmail registrationStatus xendit.status xendit.webhookConfigured xendit.setupInProgress xendit.webhookSetupInProgress +xendit.subAccountId';
 const SETUP_CLAIM_TTL_MS = 120_000;
 
+function hasOnlyBodyKeys(body, allowedKeys) {
+  return Boolean(
+    body
+    && typeof body === 'object'
+    && !Array.isArray(body)
+    && Object.keys(body).every(key => allowedKeys.includes(key))
+  );
+}
+
 function callbackTokenHash(token) {
   return crypto.createHash('sha256').update(token).digest('hex');
 }
@@ -402,51 +411,6 @@ router.patch('/me/photos', async (req, res) => {
   }
 });
 
-/**
- * PATCH /api/court/me/subscription
- * Admin can upgrade from monthly to annual only
- */
-router.patch('/me/subscription', async (req, res) => {
-  try {
-    const { plan } = req.body;
-
-    // Admin can only upgrade to annual — not downgrade or change status
-    if (plan !== 'annual') {
-      return res.status(403).json({ error: 'Admins can only upgrade to annual plan. Contact support for other changes.' });
-    }
-
-    const court = await Court.findById(req.courtId).lean();
-    if (!court) return res.status(404).json({ error: 'Court not found.' });
-
-    if (court.subscription.plan === 'annual') {
-      return res.status(400).json({ error: 'Already on annual plan.' });
-    }
-
-    if (court.subscription.status !== 'active') {
-      return res.status(403).json({ error: 'Only active subscriptions can be upgraded.' });
-    }
-
-    const nextBilling = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
-
-    const updated = await Court.findByIdAndUpdate(
-      req.courtId,
-      {
-        $set: {
-          'subscription.plan':        'annual',
-          'subscription.amount':      20000,
-          'subscription.nextBilling': nextBilling,
-        },
-      },
-      { new: true }
-    );
-
-    res.json(tenantCourtResponse(updated));
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-});
-
-
 // GET /api/court/me
 router.get('/me', async (req, res) => {
   if (!req.courtId) return res.status(401).json({ error: 'Missing court context.' });
@@ -509,6 +473,12 @@ router.get('/me/capabilities', async (req, res) => {
 
 router.post('/me/subscription/upgrade', async (req, res) => {
   try {
+    if (!req.courtId) return res.status(401).json({ error: 'Missing court context.' });
+    if (req.userRole !== 'admin') return res.status(403).json({ error: 'Court admin access required.' });
+    if (!hasOnlyBodyKeys(req.body, ['tier'])) {
+      return res.status(400).json({ error: 'Only tier may be provided.' });
+    }
+
     const { tier } = req.body;
     if (!Object.values(TIERS).includes(tier)) return res.status(400).json({ error: 'Invalid subscription tier.' });
 
@@ -557,6 +527,12 @@ router.post('/me/subscription/upgrade', async (req, res) => {
 
 router.post('/me/subscription/downgrade', async (req, res) => {
   try {
+    if (!req.courtId) return res.status(401).json({ error: 'Missing court context.' });
+    if (req.userRole !== 'admin') return res.status(403).json({ error: 'Court admin access required.' });
+    if (!hasOnlyBodyKeys(req.body, ['tier', 'confirmation'])) {
+      return res.status(400).json({ error: 'Only tier and confirmation may be provided.' });
+    }
+
     const { tier, confirmation } = req.body;
     if (!Object.values(TIERS).includes(tier)) return res.status(400).json({ error: 'Invalid subscription tier.' });
     if (confirmation !== TIER_DETAILS[tier].label) return res.status(400).json({ error: `Type ${TIER_DETAILS[tier].label} to confirm this downgrade.` });
