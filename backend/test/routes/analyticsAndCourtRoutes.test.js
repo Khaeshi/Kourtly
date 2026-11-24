@@ -4,6 +4,7 @@ import request from 'supertest';
 import app from '../../src/app.js';
 import Court from '../../src/models/Court.js';
 import SubscriptionPayment from '../../src/models/SubscriptionPayment.js';
+import TierPricing from '../../src/models/TierPricing.js';
 import Player from '../../src/models/Player.js';
 import Reservation from '../../src/models/Reservation.js';
 import ReservationTab from '../../src/models/ReservationTab.js';
@@ -548,6 +549,7 @@ describe('analytics and court routes', () => {
         registrationStatus: 'approved',
         subscription: { status: 'trial', tier: 'basic' },
       });
+      await TierPricing.create({ tier: 'standard', price: 4321 });
       const subscriptionBefore = (await Court.findById(court._id).lean()).subscription;
       const response = await request(app)
         .post('/api/court/me/subscription/upgrade')
@@ -562,7 +564,7 @@ describe('analytics and court routes', () => {
           externalId: expect.stringMatching(/^SUB-/),
           courtId: court._id,
           tier: 'standard',
-          expectedAmount: 3500,
+          expectedAmount: 4321,
           status: 'pending',
         });
       const updatedCourt = await Court.findById(court._id).lean();

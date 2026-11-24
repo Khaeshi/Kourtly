@@ -14,6 +14,7 @@ import reservationTabRoutes from './routes/reservationtabRoutes.js';
 import courtRoutes from './routes/courtRoutes.js';
 import superadminRoutes from './routes/superadminRoutes.js';
 import publicRoutes from './routes/publicRoutes.js';
+import pricingRoutes from './routes/pricingRoutes.js';
 import courtRegistrationRoutes from './routes/courtRegistrationRoutes.js';
 import paymentRoutes from './routes/paymentRoutes.js';
 import payoutTransferRoutes from './routes/payoutTransferRoutes.js';
@@ -69,6 +70,7 @@ app.use(/^\/api\/users\/(?!upsert$)[^/]+$/, limitMethods(superadminLimiter, ['DE
 
 // The Xendit webhook is intentionally not rate limited so provider retries are preserved.
 app.use('/api/public', publicRoutes);
+app.use('/api/pricing', pricingRoutes);
 app.use('/api/register-court', courtRegistrationRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/users', userRoutes);

@@ -5,6 +5,7 @@ import app from '../../src/app.js';
 import Court from '../../src/models/Court.js';
 import Reservation from '../../src/models/Reservation.js';
 import SubscriptionPayment from '../../src/models/SubscriptionPayment.js';
+import TierPricing from '../../src/models/TierPricing.js';
 import PaymentWebhookEvent from '../../src/models/PaymentWebhookEvent.js';
 
 const MASTER_USER_ID = 'master-user-1';
@@ -342,6 +343,149 @@ describe('Xendit webhook trust split and payment records', () => {
       paidAmount: 1200,
       paymentId: 'payment-provider-1',
     });
+  });
+
+  test('subscription activation uses saved expectedAmount after tier pricing changes', async () => {
+    const court = await Court.create({
+      name: 'Saved Subscription Amount Court',
+      slug: 'saved-subscription-amount-court',
+      adminEmail: 'saved-subscription-amount@example.com',
+      subscription: { status: 'trial', tier: 'basic', amount: 2400, isCustomPrice: true },
+    });
+    await TierPricing.create({ tier: 'standard', price: 1200 });
+    const attempt = await SubscriptionPayment.create({
+      invoiceId: 'invoice-saved-subscription-amount',
+      externalId: `SUB-${court._id}-standard-saved-amount`,
+      courtId: court._id,
+      tier: 'standard',
+      expectedAmount: 1200,
+    });
+    await TierPricing.updateOne({ tier: 'standard' }, { $set: { price: 1800 } });
+    const payload = paidPayload({
+      userId: MASTER_USER_ID,
+      id: attempt.invoiceId,
+      externalId: attempt.externalId,
+      amount: attempt.expectedAmount,
+    });
+    jest.spyOn(globalThis, 'fetch').mockResolvedValue(providerResponse(invoiceFor(payload)));
+
+    const response = await postWebhook(payload, { token: MASTER_TOKEN });
+
+    expect(response.status).toBe(200);
+    const updated = await Court.findById(court._id).lean();
+    expect(updated.subscription.amount).toBe(1200);
+    expect(updated.subscription.tier).toBe('standard');
+  });
+
+  test('subscription tier change clears a custom price override', async () => {
+    const court = await Court.create({
+      name: 'Subscription Override Change Court',
+      slug: 'subscription-override-change-court',
+      adminEmail: 'subscription-override-change@example.com',
+      subscription: { status: 'trial', tier: 'basic', amount: 2800, isCustomPrice: true },
+    });
+    const attempt = await SubscriptionPayment.create({
+      invoiceId: 'invoice-subscription-override-change',
+      externalId: `SUB-${court._id}-standard-override-change`,
+      courtId: court._id,
+      tier: 'standard',
+      expectedAmount: 1499,
+    });
+    const payload = paidPayload({
+      userId: MASTER_USER_ID,
+      id: attempt.invoiceId,
+      externalId: attempt.externalId,
+      amount: attempt.expectedAmount,
+    });
+    jest.spyOn(globalThis, 'fetch').mockResolvedValue(providerResponse(invoiceFor(payload)));
+
+    const response = await postWebhook(payload, { token: MASTER_TOKEN });
+
+    expect(response.status).toBe(200);
+    const updated = await Court.findById(court._id).lean();
+    expect(updated.subscription.amount).toBe(1499);
+    expect(updated.subscription.tier).toBe('standard');
+    expect(updated.subscription.isCustomPrice).toBe(false);
+  });
+
+  test('same-tier subscription payment keeps its custom price override', async () => {
+    const court = await Court.create({
+      name: 'Same Tier Subscription Court',
+      slug: 'same-tier-subscription-court',
+      adminEmail: 'same-tier-subscription@example.com',
+      subscription: { status: 'active', tier: 'standard', amount: 1350, isCustomPrice: true },
+    });
+    const attempt = await SubscriptionPayment.create({
+      invoiceId: 'invoice-same-tier-subscription',
+      externalId: `SUB-${court._id}-standard-renewal`,
+      courtId: court._id,
+      tier: 'standard',
+      expectedAmount: 1350,
+    });
+    const payload = paidPayload({
+      userId: MASTER_USER_ID,
+      id: attempt.invoiceId,
+      externalId: attempt.externalId,
+      amount: attempt.expectedAmount,
+    });
+    jest.spyOn(globalThis, 'fetch').mockResolvedValue(providerResponse(invoiceFor(payload)));
+
+    const response = await postWebhook(payload, { token: MASTER_TOKEN });
+
+    expect(response.status).toBe(200);
+    const updated = await Court.findById(court._id).lean();
+    expect(updated.subscription.amount).toBe(1350);
+    expect(updated.subscription.tier).toBe('standard');
+    expect(updated.subscription.isCustomPrice).toBe(true);
+  });
+
+  test('invalid reloaded expectedAmount rolls back the full subscription update', async () => {
+    const dates = {
+      trialEnds: new Date('2026-12-01T00:00:00.000Z'),
+      startDate: new Date('2026-01-01T00:00:00.000Z'),
+      nextBilling: new Date('2026-02-01T00:00:00.000Z'),
+    };
+    const court = await Court.create({
+      name: 'Invalid Expected Amount Court',
+      slug: 'invalid-expected-amount-court',
+      adminEmail: 'invalid-expected-amount@example.com',
+      subscription: {
+        status: 'trial',
+        tier: 'basic',
+        amount: 2400,
+        isCustomPrice: true,
+        ...dates,
+      },
+    });
+    const attempt = await SubscriptionPayment.create({
+      invoiceId: 'invoice-invalid-reloaded-expected-amount',
+      externalId: `SUB-${court._id}-standard-invalid-amount`,
+      courtId: court._id,
+      tier: 'standard',
+      expectedAmount: 1200,
+    });
+    const payload = paidPayload({
+      userId: MASTER_USER_ID,
+      id: attempt.invoiceId,
+      externalId: attempt.externalId,
+      amount: attempt.expectedAmount,
+    });
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    jest.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+      await SubscriptionPayment.updateOne({ _id: attempt._id }, { $set: { expectedAmount: 0 } });
+      return providerResponse(invoiceFor(payload));
+    });
+    const before = (await Court.findById(court._id).lean()).subscription;
+
+    const response = await postWebhook(payload, { token: MASTER_TOKEN });
+
+    expect(response.status).toBe(409);
+    expect(response.body.error).toBe('Stored subscription payment amount is invalid.');
+    const after = (await Court.findById(court._id).lean()).subscription;
+    expect(after).toEqual(before);
+    expect(errorSpy).toHaveBeenCalledWith('[webhook] subscription payment has invalid expected amount');
+    expect(await PaymentWebhookEvent.countDocuments()).toBe(0);
+    expect((await SubscriptionPayment.findById(attempt._id).lean()).status).toBe('pending');
   });
 
   test('records a paid event arriving after local cancellation and flags the reservation', async () => {
