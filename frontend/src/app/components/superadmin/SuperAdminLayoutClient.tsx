@@ -11,6 +11,7 @@ import {
   Users,
   ListOrdered,
   ClipboardCheck,
+  CircleDollarSign,
   Menu,
   X,
   Maximize2,
@@ -43,6 +44,11 @@ const NAV = [
     href: '/superadmin/pending-courts',
     label: 'Pending Courts',
     icon: ClipboardCheck,
+  },
+  {
+    href: '/superadmin/pricing',
+    label: 'Tier Pricing',
+    icon: CircleDollarSign,
   },
   {
     href: '/users',

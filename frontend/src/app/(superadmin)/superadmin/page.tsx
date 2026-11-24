@@ -14,7 +14,7 @@ interface Court {
   _id: string; name: string; slug: string; adminEmail: string;
   sports: string[]; courtCount: number; isActive: boolean;
   createdAt: string;
-  subscription: { status: string; plan: string; amount: number; trialEnds: string; };
+  subscription: { status: string; plan: string; amount: number | null; isCustomPrice?: boolean; trialEnds: string; };
 }
 
 const TONE: Record<string, StatusTone> = {
@@ -248,7 +248,12 @@ export default function SuperAdminDashboard() {
                   <p className="ad-muted text-sm truncate" title={court.adminEmail}>{court.adminEmail}</p>
                   <div>
                     <StatusDot tone={TONE[court.subscription.status] ?? 'off'}><span className="capitalize">{court.subscription.status}</span></StatusDot>
-                    <p className="ad-mono ad-muted text-xs">₱{court.subscription.amount.toLocaleString()}/{court.subscription.plan === 'annual' ? 'yr' : 'mo'}</p>
+                    <p className="ad-mono ad-muted text-xs">
+                      {court.subscription.amount == null
+                        ? 'not set'
+                        : `₱${court.subscription.amount.toLocaleString()}/${court.subscription.plan === 'annual' ? 'yr' : 'mo'}`}
+                      {court.subscription.isCustomPrice && <span className="ml-2 font-bold">Custom price</span>}
+                    </p>
                   </div>
                   <p className="ad-mono text-sm">{court.courtCount}</p>
                   <div className="flex gap-2 flex-wrap justify-end">{rowActions(court)}</div>
@@ -268,7 +273,12 @@ export default function SuperAdminDashboard() {
                     <StatusDot tone={TONE[court.subscription.status] ?? 'off'}><span className="capitalize">{court.subscription.status}</span></StatusDot>
                   </div>
                   <p className="ad-muted text-sm break-all mt-1">{court.adminEmail}</p>
-                  <p className="ad-mono ad-muted text-xs mt-0.5">₱{court.subscription.amount.toLocaleString()}/{court.subscription.plan === 'annual' ? 'yr' : 'mo'}</p>
+                  <p className="ad-mono ad-muted text-xs mt-0.5">
+                    {court.subscription.amount == null
+                      ? 'not set'
+                      : `₱${court.subscription.amount.toLocaleString()}/${court.subscription.plan === 'annual' ? 'yr' : 'mo'}`}
+                    {court.subscription.isCustomPrice && <span className="ml-2 font-bold">Custom price</span>}
+                  </p>
                   <div className="flex gap-2 flex-wrap mt-3">{rowActions(court)}</div>
                 </div>
               ))}

@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { PLANS } from '@/lib/plans';
-import CountUp from './CountUp';
+import { TierPrice } from './PublicPricingProvider';
 import Reveal from './Reveal';
 
 /** Landing page plans overview. Cards slide in from the right, one after another. */
@@ -21,8 +21,7 @@ export default function PlanStrip() {
               </span>
               <h3 className="font-display t-tier text-[var(--line)]">{plan.name}</h3>
               <p className="font-display t-price text-[var(--line)]">
-                <CountUp value={plan.price} />
-                <span className="font-sans normal-case text-[0.75rem] text-[var(--line-dim)] ml-1.5">/ month</span>
+                <TierPrice tier={plan.id} suffix="/ month" />
               </p>
               <p className="t-small text-[var(--line-dim)]">{plan.blurb}</p>
             </div>

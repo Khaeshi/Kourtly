@@ -146,7 +146,7 @@ describe('stock routes', () => {
     expect(latest.body.countId).toBe(result.body.countId);
   });
 
-  test('item list reports stock metrics and generic CRUD cannot bypass opening counts', async () => {
+  test('item CRUD rejects protected stock fields and preserves opening-count defaults', async () => {
     const court = await makeCourt();
     const item = await Item.create({
       courtId: court._id, name: 'Water', price: 30,
@@ -166,17 +166,45 @@ describe('stock routes', () => {
       trackStock: true, stockOnHand: 5, soldToday: 2, leftNow: 5, isLowStock: false,
     });
 
+    const trackedItemStock = { trackStock: true, stockOnHand: 5, lowStockThreshold: 2 };
+    const initialItemCount = await Item.countDocuments({ courtId: court._id });
+    for (const [field, value] of [['trackStock', true], ['stockOnHand', 99]]) {
+      const rejected = await courtRequest('post', '/api/items', court._id).send({
+        name: 'Rejected stock mutation', price: 200, [field]: value,
+      });
+
+      expect(rejected.status).toBe(400);
+      expect(rejected.body.error).toBe(`${field} is not an allowed field.`);
+      expect(await Item.countDocuments({ courtId: court._id })).toBe(initialItemCount);
+      await expect(Item.findById(item._id).select('trackStock stockOnHand lowStockThreshold').lean())
+        .resolves.toMatchObject(trackedItemStock);
+    }
+
     const created = await courtRequest('post', '/api/items', court._id).send({
-      name: 'Untracked fee', price: 200, trackStock: true, stockOnHand: 99,
+      name: 'Untracked fee', price: 200, lowStockThreshold: 3,
     });
     expect(created.status).toBe(201);
-    expect(created.body).toMatchObject({ trackStock: false, stockOnHand: 0, leftNow: null, soldToday: 0 });
-
-    const updated = await courtRequest('put', `/api/items/${created.body._id}`, court._id).send({
-      trackStock: true, stockOnHand: 99,
+    expect(created.body).toMatchObject({
+      trackStock: false, stockOnHand: 0, lowStockThreshold: 3, leftNow: null, soldToday: 0,
     });
+
+    const createdItemStock = { trackStock: false, stockOnHand: 0, lowStockThreshold: 3 };
+    for (const [field, value] of [['trackStock', true], ['stockOnHand', 99]]) {
+      const rejected = await courtRequest('put', `/api/items/${created.body._id}`, court._id)
+        .send({ [field]: value });
+
+      expect(rejected.status).toBe(400);
+      expect(rejected.body.error).toBe(`${field} is not an allowed field.`);
+      await expect(Item.findById(created.body._id).select('trackStock stockOnHand lowStockThreshold').lean())
+        .resolves.toMatchObject(createdItemStock);
+    }
+
+    const updated = await courtRequest('put', `/api/items/${created.body._id}`, court._id)
+      .send({ lowStockThreshold: 4 });
     expect(updated.status).toBe(200);
-    expect(updated.body).toMatchObject({ trackStock: false, stockOnHand: 0 });
+    expect(updated.body).toMatchObject({
+      trackStock: false, stockOnHand: 0, lowStockThreshold: 4,
+    });
   });
 
   test('inventory routes retain the existing item-tabs tier gate', async () => {
