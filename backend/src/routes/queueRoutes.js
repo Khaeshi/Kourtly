@@ -5,6 +5,7 @@ import Player from '../models/Player.js';
 import Tab from '../models/Tab.js';
 import Item from '../models/Item.js';
 import { emitCourtEvent } from '../lib/emitCourtEvent.js';
+import { readItemPrice, readTabTotal } from '../lib/billingValidation.js';
 import { generateAIText } from '../lib/ai/index.js';
 import {
   emitBillingStockUpdates,
@@ -144,6 +145,19 @@ router.post('/', async (req, res) => {
         error.status = 400;
         throw error;
       }
+      let shuttle;
+      if (shuttlecockId) {
+        shuttle = await Item.findOne({
+          _id: shuttlecockId,
+          courtId: req.courtId,
+        }).session(session);
+        if (!shuttle) {
+          const error = new Error('Shuttlecock item not found in this court.');
+          error.status = 400;
+          throw error;
+        }
+        readItemPrice(shuttle.price);
+      }
       [match] = await Match.create([{
         courtId: req.courtId, team1, team2, matchType, court,
       }], { session });
@@ -155,9 +169,6 @@ router.post('/', async (req, res) => {
       );
 
       if (shuttlecockId) {
-        const shuttle = await Item.findOne({
-          _id: shuttlecockId, courtId: req.courtId,
-        }).session(session);
         if (shuttle && shuttle.isSplittable) {
           shuttlecockGroupId = new mongoose.Types.ObjectId();
           const splitPrice = Math.round((shuttle.price / allPlayerIds.length) * 100) / 100;
@@ -174,6 +185,7 @@ router.post('/', async (req, res) => {
                 courtId: req.courtId, player: playerId, items: [], total: 0,
               }], { session });
             }
+            tab.total = readTabTotal(tab.total, splitPrice);
             tab.items.push({
               item: shuttle._id,
               name: itemName,
@@ -182,7 +194,6 @@ router.post('/', async (req, res) => {
               chargeGroupId: shuttlecockGroupId,
               addedAt: new Date(),
             });
-            tab.total += splitPrice;
             const line = tab.items[tab.items.length - 1];
             await tab.save({ session });
             firstTab ??= tab;

@@ -2,8 +2,34 @@ import express from 'express';
 import Item from '../models/Item.js';
 import { emitCourtEvent } from '../lib/emitCourtEvent.js';
 import { enrichItemsWithStock } from '../services/itemStock.js';
+import { readAllowedBody, readItemPrice } from '../lib/billingValidation.js';
 
 const router = express.Router();
+const ITEM_FIELDS = ['name', 'price', 'category', 'isActive', 'isSplittable', 'lowStockThreshold', 'note'];
+
+function readItemFields(body) {
+  const source = readAllowedBody(body, ITEM_FIELDS);
+  const fields = {};
+  for (const field of ITEM_FIELDS) {
+    if (!Object.prototype.hasOwnProperty.call(source, field)) continue;
+    const value = source[field];
+    if (field === 'price') {
+      fields.price = readItemPrice(value);
+    } else if (field === 'isActive' || field === 'isSplittable') {
+      if (typeof value !== 'boolean') throw new Error(`${field} must be a boolean.`);
+      fields[field] = value;
+    } else if (field === 'lowStockThreshold') {
+      if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
+        throw new Error('lowStockThreshold must be a non-negative integer.');
+      }
+      fields[field] = value;
+    } else {
+      if (typeof value !== 'string') throw new Error(`${field} must be a string.`);
+      fields[field] = value;
+    }
+  }
+  return fields;
+}
 
 async function respondWithItems(req, res, query) {
   const items = await query.lean();
@@ -57,16 +83,12 @@ router.get('/splittable', async (req, res) => {
 // POST create item
 router.post('/', async (req, res) => {
   try {
-    const item = await Item.create({
-      name: req.body?.name,
-      price: req.body?.price,
-      category: req.body?.category,
-      isActive: req.body?.isActive,
-      isSplittable: req.body?.isSplittable,
-      lowStockThreshold: req.body?.lowStockThreshold,
-      note: req.body?.note,
-      courtId: req.courtId,
-    });
+    const fields = readItemFields(req.body);
+    if (!Object.prototype.hasOwnProperty.call(fields, 'name') ||
+        !Object.prototype.hasOwnProperty.call(fields, 'price')) {
+      return res.status(400).json({ error: 'name and price are required.' });
+    }
+    const item = await Item.create({ ...fields, courtId: req.courtId });
     emitCourtEvent(req, 'items:updated', { action: 'created', itemId: item._id });
     const [enrichedItem] = await enrichItemsWithStock(
       [item.toObject()],
@@ -83,11 +105,9 @@ router.post('/', async (req, res) => {
 // PUT update item (supports isSplittable)
 router.put('/:id', async (req, res) => {
   try {
-    const updates = {};
-    for (const field of ['name', 'price', 'category', 'isActive', 'isSplittable', 'lowStockThreshold', 'note']) {
-      if (Object.prototype.hasOwnProperty.call(req.body ?? {}, field)) {
-        updates[field] = req.body[field];
-      }
+    const updates = readItemFields(req.body);
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: 'Provide an editable item field.' });
     }
     const item = await Item.findOneAndUpdate(
       { _id: req.params.id, courtId: req.courtId },

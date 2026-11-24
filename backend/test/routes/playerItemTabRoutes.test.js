@@ -117,6 +117,39 @@ describe('player, item, and tab routes', () => {
     expect(list.body[0].name).toBe('Shuttle');
   });
 
+  test('item create and update validate prices and reject unsafe request fields', async () => {
+    const court = await makeCourt();
+    const valid = await request(app)
+      .post('/api/items')
+      .set('x-court-id', String(court._id))
+      .send({ name: 'Valid item', price: 0, category: 'general', isActive: true });
+    expect(valid.status).toBe(201);
+    expect(valid.body.price).toBe(0);
+
+    for (const price of [-1, 10001, NaN, Infinity, null, {}, '10']) {
+      const response = await request(app)
+        .post('/api/items')
+        .set('x-court-id', String(court._id))
+        .send({ name: 'Invalid item', price });
+      expect(response.status).toBe(400);
+    }
+
+    const operator = await request(app)
+      .put(`/api/items/${valid.body._id}`)
+      .set('x-court-id', String(court._id))
+      .send({ $set: { price: 1 } });
+    expect(operator.status).toBe(400);
+
+    const dotted = await request(app)
+      .put(`/api/items/${valid.body._id}`)
+      .set('x-court-id', String(court._id))
+      .send({ 'price.value': 1 });
+    expect(dotted.status).toBe(400);
+
+    const updated = await Item.findById(valid.body._id).lean();
+    expect(updated.price).toBe(0);
+  });
+
   test('tab open rejects duplicate open tab for same player', async () => {
     const court = await makeCourt();
     const player = await Player.create({
@@ -137,6 +170,65 @@ describe('player, item, and tab routes', () => {
     expect(res.body.error).toMatch(/already has an open tab/i);
   });
 
+  test('POST /api/tabs rejects a player from another court', async () => {
+    const court = await makeCourt();
+    const otherCourt = await makeCourt();
+    const player = await Player.create({
+      courtId: otherCourt._id,
+      name: 'Foreign Player',
+      level: 'C',
+      gender: 'Female',
+      age: 22,
+    });
+
+    const response = await request(app)
+      .post('/api/tabs')
+      .set('x-court-id', String(court._id))
+      .send({ player: String(player._id) });
+
+    expect(response.status).toBe(400);
+    expect(JSON.stringify(response.body)).not.toContain('Foreign Player');
+    await expect(Tab.countDocuments({ courtId: court._id })).resolves.toBe(0);
+  });
+
+  test('tab reads and item writes do not expose a foreign linked player', async () => {
+    const court = await makeCourt();
+    const otherCourt = await makeCourt();
+    const foreignPlayer = await Player.create({
+      courtId: otherCourt._id,
+      name: 'Foreign linked player',
+      level: 'C',
+      gender: 'Female',
+      age: 22,
+    });
+    const [openTab, paidTab] = await Tab.create([
+      { courtId: court._id, player: foreignPlayer._id, items: [], total: 0, status: 'open' },
+      { courtId: court._id, player: foreignPlayer._id, items: [], total: 0, status: 'paid' },
+    ]);
+
+    const open = await request(app)
+      .get('/api/tabs/open')
+      .set('x-court-id', String(court._id));
+    expect(open.status).toBe(200);
+    expect(open.body).toEqual([]);
+
+    const history = await request(app)
+      .get('/api/tabs/history')
+      .set('x-court-id', String(court._id));
+    expect(history.status).toBe(200);
+    expect(history.body.tabs).toEqual([]);
+    expect(JSON.stringify([open.body, history.body])).not.toContain('Foreign linked player');
+
+    const item = await Item.create({ courtId: court._id, name: 'Local Drink', price: 20 });
+    const add = await request(app)
+      .post(`/api/tabs/${openTab._id}/items`)
+      .set('x-court-id', String(court._id))
+      .send({ itemId: String(item._id), quantity: 1 });
+    expect(add.status).toBe(400);
+    await expect(Tab.findById(openTab._id).lean()).resolves.toMatchObject({ total: 0, items: [] });
+    expect(String((await Tab.findById(paidTab._id).lean()).player)).toBe(String(foreignPlayer._id));
+  });
+
   test('tab add item increments total', async () => {
     const court = await makeCourt();
     const player = await Player.create({
@@ -146,16 +238,27 @@ describe('player, item, and tab routes', () => {
       gender: 'Male',
       age: 28,
     });
+    const item = await Item.create({ courtId: court._id, name: 'Server Drink', price: 50 });
     const tab = await Tab.create({ courtId: court._id, player: player._id, items: [], total: 0, status: 'open' });
 
     const res = await request(app)
       .post(`/api/tabs/${tab._id}/items`)
       .set('x-court-id', String(court._id))
-      .send({ name: 'Drink', price: 50, quantity: 2 });
+      .send({
+        itemId: String(item._id),
+        name: 'Tampered name',
+        price: 1,
+        quantity: 2,
+      });
 
     expect(res.status).toBe(200);
     expect(res.body.total).toBe(100);
     expect(res.body.items).toHaveLength(1);
+    expect(res.body.items[0]).toMatchObject({
+      item: String(item._id),
+      name: 'Server Drink',
+      price: 50,
+    });
   });
 
   test('tab add item replays an idempotency key without duplicating the line', async () => {
@@ -163,8 +266,13 @@ describe('player, item, and tab routes', () => {
     const player = await Player.create({
       courtId: court._id, name: 'Idempotent Player', level: 'A', gender: 'Male', age: 28,
     });
+    const item = await Item.create({ courtId: court._id, name: 'Drink', price: 50 });
     const tab = await Tab.create({ courtId: court._id, player: player._id, items: [], total: 0, status: 'open' });
-    const body = { name: 'Drink', price: 50, quantity: 1, idempotencyKey: 'tab-charge-once' };
+    const body = {
+      itemId: String(item._id),
+      quantity: 1,
+      idempotencyKey: 'tab-charge-once',
+    };
     const first = await request(app).post(`/api/tabs/${tab._id}/items`)
       .set('x-court-id', String(court._id)).send(body);
     const replay = await request(app).post(`/api/tabs/${tab._id}/items`)
@@ -174,5 +282,79 @@ describe('player, item, and tab routes', () => {
     expect(replay.status).toBe(200);
     expect(replay.body.total).toBe(50);
     expect(replay.body.items).toHaveLength(1);
+  });
+
+  test('tab item add rejects foreign item and tab IDs without writes', async () => {
+    const court = await makeCourt();
+    const otherCourt = await makeCourt();
+    const player = await Player.create({
+      courtId: court._id, name: 'Scoped Player', level: 'A', gender: 'Male', age: 28,
+    });
+    const otherPlayer = await Player.create({
+      courtId: otherCourt._id, name: 'Other Player', level: 'A', gender: 'Male', age: 28,
+    });
+    const localItem = await Item.create({ courtId: court._id, name: 'Local Drink', price: 50 });
+    const foreignItem = await Item.create({ courtId: otherCourt._id, name: 'Foreign Drink', price: 50 });
+    const localTab = await Tab.create({ courtId: court._id, player: player._id, items: [], total: 0 });
+    const foreignTab = await Tab.create({ courtId: otherCourt._id, player: otherPlayer._id, items: [], total: 0 });
+
+    const itemResponse = await request(app)
+      .post(`/api/tabs/${localTab._id}/items`)
+      .set('x-court-id', String(court._id))
+      .send({ itemId: String(foreignItem._id), quantity: 1 });
+    expect(itemResponse.status).toBe(400);
+    expect(JSON.stringify(itemResponse.body)).not.toContain('Foreign Drink');
+
+    const tabResponse = await request(app)
+      .post(`/api/tabs/${foreignTab._id}/items`)
+      .set('x-court-id', String(court._id))
+      .send({ itemId: String(localItem._id), quantity: 1 });
+    expect(tabResponse.status).toBe(404);
+    await expect(Tab.findById(localTab._id).lean()).resolves.toMatchObject({ total: 0, items: [] });
+    await expect(Tab.findById(foreignTab._id).lean()).resolves.toMatchObject({ total: 0, items: [] });
+  });
+
+  test.each([0, -1, 1.5, 101, null, {}, '2'])(
+    'tab item add rejects invalid quantity %o',
+    async quantity => {
+      const court = await makeCourt();
+      const player = await Player.create({
+        courtId: court._id, name: 'Quantity Player', level: 'A', gender: 'Male', age: 28,
+      });
+      const item = await Item.create({ courtId: court._id, name: 'Drink', price: 50 });
+      const tab = await Tab.create({ courtId: court._id, player: player._id, items: [], total: 0 });
+
+      const response = await request(app)
+        .post(`/api/tabs/${tab._id}/items`)
+        .set('x-court-id', String(court._id))
+        .send({ itemId: String(item._id), quantity });
+
+      expect(response.status).toBe(400);
+      await expect(Tab.findById(tab._id).lean()).resolves.toMatchObject({ total: 0, items: [] });
+    }
+  );
+
+  test('tab item add enforces total cap and rejects operator keys', async () => {
+    const court = await makeCourt();
+    const player = await Player.create({
+      courtId: court._id, name: 'Limit Player', level: 'A', gender: 'Male', age: 28,
+    });
+    const item = await Item.create({ courtId: court._id, name: 'Drink', price: 1 });
+    const tab = await Tab.create({
+      courtId: court._id, player: player._id, items: [], total: 100000,
+    });
+
+    const overLimit = await request(app)
+      .post(`/api/tabs/${tab._id}/items`)
+      .set('x-court-id', String(court._id))
+      .send({ itemId: String(item._id), quantity: 1 });
+    expect(overLimit.status).toBe(400);
+
+    const injected = await request(app)
+      .post(`/api/tabs/${tab._id}/items`)
+      .set('x-court-id', String(court._id))
+      .send({ itemId: String(item._id), quantity: 1, $set: { total: 0 } });
+    expect(injected.status).toBe(400);
+    await expect(Tab.findById(tab._id).lean()).resolves.toMatchObject({ total: 100000, items: [] });
   });
 });

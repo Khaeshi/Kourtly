@@ -2,7 +2,15 @@ import express from 'express';
 import mongoose from 'mongoose';
 import ReservationTab from '../models/ReservationTab.js';
 import Reservation    from '../models/Reservation.js';
+import Item from '../models/Item.js';
 import { emitCourtEvent } from '../lib/emitCourtEvent.js';
+import {
+  readAllowedBody,
+  readIdempotencyKey,
+  readItemPrice,
+  readLineQuantity,
+  readTabTotal,
+} from '../lib/billingValidation.js';
 import { assertReservationTransition } from '../lib/reservationStateMachine.js';
 import {
   emitBillingStockUpdates,
@@ -23,7 +31,10 @@ function todayStr() {
  * Creates one if missing, returns existing if already there.
  */
 async function ensureTab(reservation) {
-  const existing = await ReservationTab.findOne({ reservation: reservation._id });
+  const existing = await ReservationTab.findOne({
+    reservation: reservation._id,
+    courtId: reservation.courtId,
+  });
   if (existing) return existing;
 
   const hasOnlinePaymentData =
@@ -143,17 +154,43 @@ router.post('/:id/items', async (req, res) => {
   const stockChanges = [];
   let tab;
   try {
-    const { itemId, name, price, quantity = 1, idempotencyKey } = req.body;
+    const body = readAllowedBody(req.body, ['itemId', 'name', 'price', 'quantity', 'idempotencyKey']);
+    const { itemId } = body;
+    if (typeof itemId !== 'string' || !mongoose.Types.ObjectId.isValid(itemId)) {
+      return res.status(400).json({ error: 'itemId must be a valid item ID.' });
+    }
+    if (body.name !== undefined && typeof body.name !== 'string') {
+      return res.status(400).json({ error: 'name must be a string.' });
+    }
+    if (body.price !== undefined) readItemPrice(body.price);
+    const quantity = readLineQuantity(body.quantity === undefined ? 1 : body.quantity);
+    const idempotencyKey = readIdempotencyKey(body.idempotencyKey);
+    const item = await Item.findOne({ _id: itemId, courtId: req.courtId }).select('_id name price');
+    if (!item) return res.status(400).json({ error: 'Item not found in this court.' });
+    readItemPrice(item.price);
     if (idempotencyKey) {
       const replay = await ReservationTab.findOne({
         _id: req.params.id, courtId: req.courtId, 'items.idempotencyKey': idempotencyKey,
       });
       if (replay) return res.json(replay);
     }
-    const lineTotal = price * quantity;
-
     await session.withTransaction(async () => {
       stockChanges.length = 0;
+      const transactionItem = await Item.findOne({
+        _id: itemId, courtId: req.courtId,
+      }).select('_id name price').session(session);
+      if (!transactionItem) {
+        const error = new Error('Item not found in this court.');
+        error.status = 400;
+        throw error;
+      }
+      const price = readItemPrice(transactionItem.price);
+      const lineTotal = price * quantity;
+      if (!Number.isFinite(lineTotal)) {
+        const error = new Error('Item charge must be a finite amount.');
+        error.status = 400;
+        throw error;
+      }
       tab = await ReservationTab.findOne({
         _id: req.params.id, courtId: req.courtId,
       }).session(session);
@@ -163,12 +200,19 @@ router.post('/:id/items', async (req, res) => {
         throw error;
       }
 
-      tab.items.push({ item: itemId, name, price, quantity, idempotencyKey: idempotencyKey || null, addedAt: new Date() });
-      tab.total += lineTotal;
+      tab.total = readTabTotal(tab.total, lineTotal);
+      tab.items.push({
+        item: transactionItem._id,
+        name: transactionItem.name,
+        price,
+        quantity,
+        idempotencyKey,
+        addedAt: new Date(),
+      });
       const line = tab.items[tab.items.length - 1];
       await tab.save({ session });
       const change = await recordBillingStockMovement({
-        req, session, itemId, type: 'sale', quantity, unitPrice: price,
+        req, session, itemId: transactionItem._id, type: 'sale', quantity, unitPrice: price,
         note: 'Reservation tab charge', tabType: 'reservation',
         tabId: tab._id, tabLineId: line._id,
       });

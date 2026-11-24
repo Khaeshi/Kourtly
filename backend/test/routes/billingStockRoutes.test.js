@@ -84,15 +84,25 @@ describe('billing inventory movements', () => {
       trackStock: true, stockOnHand: 5,
     });
 
-    const split = await courtRequest('post', '/api/tabs/split', court._id).send({
+    const splitBody = {
       itemId: String(item._id),
-      name: item.name,
-      price: item.price,
+      name: 'Tampered name',
+      price: 1,
       playerIds: players.map(player => String(player._id)),
-    });
+      idempotencyKey: 'split-charge-once',
+    };
+    const split = await courtRequest('post', '/api/tabs/split', court._id).send(splitBody);
+    const replay = await courtRequest('post', '/api/tabs/split', court._id).send(splitBody);
     expect(split.status).toBe(200);
+    expect(replay.status).toBe(200);
     expect(split.body).toHaveLength(3);
+    expect(replay.body).toHaveLength(3);
+    expect(split.body[0].items[0]).toMatchObject({
+      name: 'Shuttlecock (split ÷3)',
+      price: 40,
+    });
     expect((await Item.findById(item._id)).stockOnHand).toBe(4);
+    expect(await StockMovement.countDocuments({ itemId: item._id, type: 'sale' })).toBe(1);
     const chargeGroupIds = split.body.map(tab => tab.items[0].chargeGroupId);
     expect(new Set(chargeGroupIds).size).toBe(1);
     const sale = await StockMovement.findOne({ itemId: item._id, type: 'sale' }).lean();
@@ -108,6 +118,33 @@ describe('billing inventory movements', () => {
     expect((await Tab.find({ courtId: court._id })).every(tab => tab.items.length === 0)).toBe(true);
     expect((await Item.findById(item._id)).stockOnHand).toBe(5);
     expect(await StockMovement.countDocuments({ itemId: item._id, type: 'void' })).toBe(1);
+  });
+
+  test('split rejects foreign players and items before creating tabs', async () => {
+    const court = await makeCourt();
+    const otherCourt = await makeCourt();
+    const players = await Promise.all([
+      makePlayer(court._id, 'Local A'),
+      makePlayer(court._id, 'Local B'),
+      makePlayer(otherCourt._id, 'Foreign Player'),
+    ]);
+    const localItem = await Item.create({ courtId: court._id, name: 'Local item', price: 30 });
+    const foreignItem = await Item.create({ courtId: otherCourt._id, name: 'Foreign item', price: 30 });
+
+    const foreignPlayer = await courtRequest('post', '/api/tabs/split', court._id).send({
+      itemId: String(localItem._id),
+      playerIds: [String(players[0]._id), String(players[2]._id)],
+    });
+    expect(foreignPlayer.status).toBe(400);
+    expect(JSON.stringify(foreignPlayer.body)).not.toContain('Foreign Player');
+
+    const foreignItemResponse = await courtRequest('post', '/api/tabs/split', court._id).send({
+      itemId: String(foreignItem._id),
+      playerIds: [String(players[0]._id), String(players[1]._id)],
+    });
+    expect(foreignItemResponse.status).toBe(400);
+    expect(JSON.stringify(foreignItemResponse.body)).not.toContain('Foreign item');
+    await expect(Tab.countDocuments({ courtId: court._id })).resolves.toBe(0);
   });
 
   test('queue shuttlecock auto-split decrements one item and emits a billing update', async () => {
@@ -139,6 +176,10 @@ describe('billing inventory movements', () => {
       expect(response.status).toBe(201);
       expect(await Match.countDocuments({ courtId: court._id })).toBe(1);
       expect(await Tab.countDocuments({ courtId: court._id })).toBe(4);
+      const shuttleTabs = await Tab.find({ courtId: court._id }).lean();
+      expect(shuttleTabs.every(tab =>
+        tab.items[0].name === 'Match shuttle (÷4)' && tab.items[0].price === 25
+      )).toBe(true);
       expect((await Item.findById(item._id)).stockOnHand).toBe(2);
       expect(await StockMovement.countDocuments({ itemId: item._id, type: 'sale' })).toBe(1);
       expect(emitted.some(event =>
@@ -154,6 +195,35 @@ describe('billing inventory movements', () => {
     } finally {
       app.set('io', null);
     }
+  });
+
+  test('queue rejects a foreign shuttlecock item before creating the match', async () => {
+    const court = await makeCourt();
+    const otherCourt = await makeCourt();
+    const players = await Promise.all([
+      makePlayer(court._id, 'A'), makePlayer(court._id, 'B'),
+      makePlayer(court._id, 'C'), makePlayer(court._id, 'D'),
+    ]);
+    const item = await Item.create({
+      courtId: otherCourt._id, name: 'Foreign shuttle', price: 100,
+      isSplittable: true, trackStock: true, stockOnHand: 3,
+    });
+
+    const response = await courtRequest('post', '/api/queue', court._id).send({
+      team1: players.slice(0, 2).map(player => String(player._id)),
+      team2: players.slice(2).map(player => String(player._id)),
+      matchType: 'MD',
+      court: 1,
+      shuttlecockId: String(item._id),
+    });
+
+    expect(response.status).toBe(400);
+    expect(JSON.stringify(response.body)).not.toContain('Foreign shuttle');
+    await expect(Match.countDocuments({ courtId: court._id })).resolves.toBe(0);
+    await expect(Tab.countDocuments({ courtId: court._id })).resolves.toBe(0);
+    const updatedPlayers = await Player.find({ _id: { $in: players.map(player => player._id) } }).lean();
+    expect(updatedPlayers.every(player => player.matchCount === 0)).toBe(true);
+    expect((await Item.findById(item._id)).stockOnHand).toBe(3);
   });
 
   test('reservation tab add, remove, and clear paths update tracked stock', async () => {
