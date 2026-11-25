@@ -445,7 +445,11 @@ export async function buildAnalyticsSummary(courtId, period, options = {}) {
       {
         $group: {
           _id: '$itemId',
-          sold: { $sum: { $multiply: ['$quantityDelta', -1] } },
+          sold: {
+            $sum: {
+              $multiply: [{ $ifNull: ['$soldQuantityDelta', '$quantityDelta'] }, -1],
+            },
+          },
         },
       },
     ]),

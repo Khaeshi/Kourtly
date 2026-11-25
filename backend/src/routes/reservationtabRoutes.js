@@ -14,7 +14,9 @@ import {
 import { assertReservationTransition } from '../lib/reservationStateMachine.js';
 import {
   emitBillingStockUpdates,
+  getBillingStockWarning,
   recordBillingStockMovement,
+  withBillingStockWarning,
 } from '../services/billingStock.js';
 
 const router = express.Router();
@@ -172,7 +174,19 @@ router.post('/:id/items', async (req, res) => {
       const replay = await ReservationTab.findOne({
         _id: req.params.id, courtId: req.courtId, 'items.idempotencyKey': idempotencyKey,
       });
-      if (replay) return res.json(replay);
+      if (replay) {
+        const replayLine = replay.items.find(line => line.idempotencyKey === idempotencyKey);
+        const warning = replayLine && await getBillingStockWarning({
+          courtId: req.courtId,
+          tabType: 'reservation',
+          tabLineId: replayLine._id,
+          chargeGroupId: replayLine.chargeGroupId,
+        });
+        return res.json(withBillingStockWarning(
+          replay,
+          warning ? [{ stockWarning: warning }] : []
+        ));
+      }
     }
     await session.withTransaction(async () => {
       stockChanges.length = 0;
@@ -222,7 +236,7 @@ router.post('/:id/items', async (req, res) => {
     tab = await ReservationTab.findOne({ _id: req.params.id, courtId: req.courtId });
     emitCourtEvent(req, 'billing:tab_updated', { action: 'reservation_item_added', tabId: tab._id });
     await emitBillingStockUpdates(req, stockChanges);
-    res.json(tab);
+    res.json(withBillingStockWarning(tab, stockChanges));
   } catch (err) {
     res.status(err.status ?? 400).json({ error: err.message });
   } finally {

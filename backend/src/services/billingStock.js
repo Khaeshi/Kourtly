@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import Item from '../models/Item.js';
 import StockMovement from '../models/StockMovement.js';
 import { emitCourtEvent } from '../lib/emitCourtEvent.js';
+import { MAX_STOCK_QUANTITY } from '../lib/stockLimits.js';
 
 function hashRequest(value) {
   return crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -32,6 +33,7 @@ export async function recordBillingStockMovement({
   let lineKey = asId(tabLineId);
   let tabKey = asId(tabId);
   let originalSaleAt = null;
+  let soldQuantityDelta;
   if (type === 'sale' &&
       (!Number.isInteger(quantity) || quantity <= 0 ||
        !Number.isFinite(unitPrice) || unitPrice < 0)) {
@@ -54,6 +56,7 @@ export async function recordBillingStockMovement({
     if (!sale) return null;
     itemKey = sale.itemId;
     quantity = Math.abs(sale.quantityDelta);
+    soldQuantityDelta = Math.abs(sale.soldQuantityDelta ?? sale.quantityDelta);
     unitPrice = sale.unitPrice;
     originalSaleAt = sale.createdAt;
     groupKey = sale.chargeGroupId ?? null;
@@ -88,13 +91,67 @@ export async function recordBillingStockMovement({
     return null;
   }
 
-  const delta = type === 'sale' ? -quantity : quantity;
-  const item = await Item.findOneAndUpdate(
-    { _id: itemKey, courtId: req.courtId, trackStock: true },
-    { $inc: { stockOnHand: delta } },
-    { returnDocument: 'after', session },
-  ).lean();
-  if (!item) return null;
+  let delta;
+  let stockWarning;
+  let item;
+  if (type === 'sale') {
+    const currentItem = await Item.findOne({
+      _id: itemKey, courtId: req.courtId, trackStock: true,
+    }).session(session).lean();
+    if (!currentItem) return null;
+    const currentBalance = Number(currentItem.stockOnHand ?? 0);
+    if (!Number.isSafeInteger(currentBalance) || currentBalance > MAX_STOCK_QUANTITY) {
+      const error = new Error('Current stock balance is outside the supported range.');
+      error.status = 409;
+      throw error;
+    }
+    const available = Math.max(0, currentBalance);
+    const consumed = Math.min(quantity, available);
+    delta = -consumed;
+    soldQuantityDelta = -quantity;
+    if (quantity > available) {
+      stockWarning = {
+        itemId: String(itemKey),
+        shortfall: quantity - available,
+      };
+    }
+    item = await Item.findOneAndUpdate(
+      {
+        _id: itemKey,
+        courtId: req.courtId,
+        trackStock: true,
+        stockOnHand: currentItem.stockOnHand ?? 0,
+      },
+      { $set: { stockOnHand: available - consumed } },
+      { returnDocument: 'after', session },
+    ).lean();
+    if (!item) {
+      const error = new Error('Stock changed during billing. Please retry.');
+      error.status = 409;
+      throw error;
+    }
+  } else {
+    delta = quantity;
+    item = await Item.findOneAndUpdate(
+      {
+        _id: itemKey,
+        courtId: req.courtId,
+        trackStock: true,
+        stockOnHand: { $gte: 0, $lte: MAX_STOCK_QUANTITY - delta },
+      },
+      { $inc: { stockOnHand: delta } },
+      { returnDocument: 'after', session },
+    ).lean();
+    if (!item) {
+      const tracked = await Item.exists({
+        _id: itemKey, courtId: req.courtId, trackStock: true,
+      }).session(session);
+      if (!tracked) return null;
+      const error = new Error('Reversing this charge would exceed the supported stock balance.');
+      error.status = 409;
+      throw error;
+    }
+  }
 
   const actor = req.user?._id ?? req.user?.email;
   if (!actor) {
@@ -108,7 +165,14 @@ export async function recordBillingStockMovement({
     itemId: itemKey,
     type,
     quantityDelta: delta,
+    ...(soldQuantityDelta !== undefined ? { soldQuantityDelta } : {}),
     balanceAfter: item.stockOnHand,
+    ...(stockWarning ? {
+      stockWarning: {
+        itemId: itemKey,
+        shortfall: stockWarning.shortfall,
+      },
+    } : {}),
     unitPrice,
     note,
     tabType,
@@ -127,6 +191,7 @@ export async function recordBillingStockMovement({
     type,
     stockOnHand: item.stockOnHand,
     lowStockThreshold: item.lowStockThreshold,
+    ...(stockWarning ? { stockWarning } : {}),
   };
 }
 
@@ -170,6 +235,10 @@ export function emitBillingStockUpdates(req, changes) {
   for (const [itemId, itemChanges] of groupedChanges) {
     const latest = itemChanges[itemChanges.length - 1];
     const types = [...new Set(itemChanges.map(change => change.type))];
+    const shortfall = itemChanges.reduce(
+      (total, change) => total + (change.stockWarning?.shortfall ?? 0),
+      0
+    );
     emitCourtEvent(req, 'items:updated', {
       action: types.length === 1 ? `stock_${types[0]}` : 'stock_changed',
       itemId,
@@ -177,6 +246,37 @@ export function emitBillingStockUpdates(req, changes) {
       leftNow: latest.stockOnHand,
       isLowStock: latest.stockOnHand <= latest.lowStockThreshold,
       movementIds: itemChanges.map(change => String(change.movementId)),
+      ...(shortfall > 0 ? {
+        stockWarning: { itemId, shortfall },
+      } : {}),
     });
   }
+}
+
+export function withBillingStockWarning(value, changes) {
+  const warning = changes.find(change => change.stockWarning)?.stockWarning;
+  if (!warning) return value;
+  const toObject = row => row?.toObject ? row.toObject() : row;
+  return Array.isArray(value)
+    ? value.map(row => ({ ...toObject(row), stockWarning: warning }))
+    : { ...toObject(value), stockWarning: warning };
+}
+
+export async function getBillingStockWarning({
+  courtId,
+  tabType,
+  tabLineId,
+  chargeGroupId,
+}) {
+  const idempotencyKey = chargeGroupId
+    ? `billing:sale:${tabType}:group:${chargeGroupId}`
+    : `billing:sale:${tabType}:line:${tabLineId}`;
+  const movement = await StockMovement.findOne({ courtId, idempotencyKey })
+    .select('stockWarning')
+    .lean();
+  if (!movement?.stockWarning) return null;
+  return {
+    itemId: String(movement.stockWarning.itemId),
+    shortfall: movement.stockWarning.shortfall,
+  };
 }

@@ -3,6 +3,7 @@ import Item from '../models/Item.js';
 import { emitCourtEvent } from '../lib/emitCourtEvent.js';
 import { enrichItemsWithStock } from '../services/itemStock.js';
 import { readAllowedBody, readItemPrice } from '../lib/billingValidation.js';
+import { MAX_STOCK_QUANTITY } from '../lib/stockLimits.js';
 
 const router = express.Router();
 const ITEM_FIELDS = ['name', 'price', 'category', 'isActive', 'isSplittable', 'lowStockThreshold', 'note'];
@@ -19,8 +20,9 @@ function readItemFields(body) {
       if (typeof value !== 'boolean') throw new Error(`${field} must be a boolean.`);
       fields[field] = value;
     } else if (field === 'lowStockThreshold') {
-      if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
-        throw new Error('lowStockThreshold must be a non-negative integer.');
+      if (typeof value !== 'number' || !Number.isSafeInteger(value) ||
+          value < 0 || value > MAX_STOCK_QUANTITY) {
+        throw new Error(`lowStockThreshold must be a non-negative integer no greater than ${MAX_STOCK_QUANTITY}.`);
       }
       fields[field] = value;
     } else {

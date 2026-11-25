@@ -85,6 +85,214 @@ describe('stock routes', () => {
 
     const wrongTenant = await courtRequest('get', `/api/items/${otherItem._id}/stock/movements`, court._id);
     expect(wrongTenant.status).toBe(404);
+    const foreignAdjustment = await courtRequest(
+      'post', `/api/items/${otherItem._id}/stock/adjust`, court._id
+    ).send({
+      quantityDelta: 1,
+      note: 'Foreign item',
+      idempotencyKey: 'foreign-stock-adjust',
+    });
+    expect(foreignAdjustment.status).toBe(404);
+  });
+
+  test('bounds stock quantities and thresholds and rejects negative or over-limit balances', async () => {
+    const court = await makeCourt();
+    const [openingItem, openingOverItem, thresholdOverItem, restockItem, countItem, thresholdItem] =
+      await Promise.all([
+        Item.create({ courtId: court._id, name: 'Opening limit', price: 1 }),
+        Item.create({ courtId: court._id, name: 'Opening over', price: 1 }),
+        Item.create({ courtId: court._id, name: 'Threshold over', price: 1 }),
+        Item.create({ courtId: court._id, name: 'Restock limit', price: 1, trackStock: true }),
+        Item.create({ courtId: court._id, name: 'Count limit', price: 1, trackStock: true }),
+        Item.create({ courtId: court._id, name: 'Threshold limit', price: 1 }),
+      ]);
+
+    const openingAtLimit = await courtRequest(
+      'post', `/api/items/${openingItem._id}/stock/start`, court._id
+    ).send({
+      openingQuantity: 10000,
+      lowStockThreshold: 10000,
+      note: 'At the stock limit',
+      idempotencyKey: 'stock-limit-opening',
+    });
+    expect(openingAtLimit.status).toBe(200);
+    expect(openingAtLimit.body.item).toMatchObject({
+      stockOnHand: 10000,
+      lowStockThreshold: 10000,
+    });
+
+    const openingOverLimit = await courtRequest(
+      'post', `/api/items/${openingOverItem._id}/stock/start`, court._id
+    ).send({
+      openingQuantity: 10001,
+      lowStockThreshold: 0,
+      note: 'Over the stock limit',
+      idempotencyKey: 'stock-over-opening',
+    });
+    expect(openingOverLimit.status).toBe(400);
+
+    const thresholdOverLimit = await courtRequest(
+      'post', `/api/items/${thresholdOverItem._id}/stock/start`, court._id
+    ).send({
+      openingQuantity: 0,
+      lowStockThreshold: 10001,
+      note: 'Over the threshold limit',
+      idempotencyKey: 'stock-over-threshold',
+    });
+    expect(thresholdOverLimit.status).toBe(400);
+
+    const restockAtLimit = await courtRequest(
+      'post', `/api/items/${restockItem._id}/stock/restock`, court._id
+    ).send({
+      quantity: 10000,
+      note: 'At the stock limit',
+      idempotencyKey: 'stock-limit-restock',
+    });
+    expect(restockAtLimit.status).toBe(200);
+    expect(restockAtLimit.body.item.stockOnHand).toBe(10000);
+    const restockReplay = await courtRequest(
+      'post', `/api/items/${restockItem._id}/stock/restock`, court._id
+    ).send({
+      quantity: 10000,
+      note: 'At the stock limit',
+      idempotencyKey: 'stock-limit-restock',
+    });
+    expect(restockReplay.status).toBe(200);
+    expect(restockReplay.body.item.stockOnHand).toBe(10000);
+
+    const restockOverBalance = await courtRequest(
+      'post', `/api/items/${restockItem._id}/stock/restock`, court._id
+    ).send({
+      quantity: 1,
+      note: 'Over the balance limit',
+      idempotencyKey: 'stock-over-balance-restock',
+    });
+    expect(restockOverBalance.status).toBe(409);
+
+    const restockOverQuantity = await courtRequest(
+      'post', `/api/items/${restockItem._id}/stock/restock`, court._id
+    ).send({
+      quantity: 10001,
+      note: 'Over the quantity limit',
+      idempotencyKey: 'stock-over-quantity-restock',
+    });
+    expect(restockOverQuantity.status).toBe(400);
+
+    const decrementToZero = await courtRequest(
+      'post', `/api/items/${restockItem._id}/stock/adjust`, court._id
+    ).send({
+      quantityDelta: -10000,
+      note: 'Decrement to zero',
+      idempotencyKey: 'stock-adjust-to-zero',
+    });
+    expect(decrementToZero.status).toBe(200);
+    expect(decrementToZero.body.item.stockOnHand).toBe(0);
+
+    const adjustToLimit = await courtRequest(
+      'post', `/api/items/${restockItem._id}/stock/adjust`, court._id
+    ).send({
+      quantityDelta: 10000,
+      note: 'Increase to limit',
+      idempotencyKey: 'stock-adjust-to-limit',
+    });
+    expect(adjustToLimit.status).toBe(200);
+    expect(adjustToLimit.body.item.stockOnHand).toBe(10000);
+
+    const adjustOverBalance = await courtRequest(
+      'post', `/api/items/${restockItem._id}/stock/adjust`, court._id
+    ).send({
+      quantityDelta: 1,
+      note: 'Attempt to exceed limit',
+      idempotencyKey: 'stock-adjust-over-balance',
+    });
+    expect(adjustOverBalance.status).toBe(409);
+
+    const adjustDownAgain = await courtRequest(
+      'post', `/api/items/${restockItem._id}/stock/adjust`, court._id
+    ).send({
+      quantityDelta: -10000,
+      note: 'Return to zero',
+      idempotencyKey: 'stock-adjust-down-again',
+    });
+    expect(adjustDownAgain.status).toBe(200);
+    expect(adjustDownAgain.body.item.stockOnHand).toBe(0);
+
+    const adjustBelowZero = await courtRequest(
+      'post', `/api/items/${restockItem._id}/stock/adjust`, court._id
+    ).send({
+      quantityDelta: -1,
+      note: 'Attempt to go below zero',
+      idempotencyKey: 'stock-adjust-below-zero',
+    });
+    expect(adjustBelowZero.status).toBe(409);
+
+    const adjustOverQuantity = await courtRequest(
+      'post', `/api/items/${restockItem._id}/stock/adjust`, court._id
+    ).send({
+      quantityDelta: 10001,
+      note: 'Over the adjustment limit',
+      idempotencyKey: 'stock-adjust-over-limit',
+    });
+    expect(adjustOverQuantity.status).toBe(400);
+
+    const countAtLimit = await courtRequest('post', '/api/items/stock/counts', court._id).send({
+      idempotencyKey: 'stock-count-at-limit',
+      items: [{ itemId: String(countItem._id), countedQuantity: 10000 }],
+    });
+    expect(countAtLimit.status).toBe(201);
+    expect((await Item.findById(countItem._id)).stockOnHand).toBe(10000);
+
+    const countNegative = await courtRequest('post', '/api/items/stock/counts', court._id).send({
+      idempotencyKey: 'stock-count-negative',
+      items: [{ itemId: String(countItem._id), countedQuantity: -1 }],
+    });
+    expect(countNegative.status).toBe(400);
+
+    const countOverLimit = await courtRequest('post', '/api/items/stock/counts', court._id).send({
+      idempotencyKey: 'stock-count-over-limit',
+      items: [{ itemId: String(countItem._id), countedQuantity: 10001 }],
+    });
+    expect(countOverLimit.status).toBe(400);
+
+    const thresholdAtLimit = await courtRequest('post', '/api/items', court._id).send({
+      name: 'Threshold at limit',
+      price: 1,
+      lowStockThreshold: 10000,
+    });
+    expect(thresholdAtLimit.status).toBe(201);
+
+    const thresholdUpdateOverLimit = await courtRequest(
+      'put', `/api/items/${thresholdItem._id}`, court._id
+    ).send({ lowStockThreshold: 10001 });
+    expect(thresholdUpdateOverLimit.status).toBe(400);
+  });
+
+  test('accepts 200 count items and rejects a 201-item request', async () => {
+    const court = await makeCourt();
+    const items = await Item.insertMany(Array.from({ length: 200 }, (_, index) => ({
+      courtId: court._id,
+      name: `Count item ${index}`,
+      price: 1,
+      trackStock: true,
+      stockOnHand: 0,
+    })));
+
+    const atLimit = await courtRequest('post', '/api/items/stock/counts', court._id).send({
+      idempotencyKey: 'stock-count-array-at-limit',
+      items: items.map(item => ({ itemId: String(item._id), countedQuantity: 0 })),
+    });
+    expect(atLimit.status).toBe(201);
+    expect(atLimit.body.itemsMatched).toBe(200);
+    expect(atLimit.body.items).toHaveLength(200);
+
+    const overLimit = await courtRequest('post', '/api/items/stock/counts', court._id).send({
+      idempotencyKey: 'stock-count-array-over-limit',
+      items: Array.from({ length: 201 }, (_, index) => ({
+        itemId: `not-looked-up-${index}`,
+        countedQuantity: 0,
+      })),
+    });
+    expect(overLimit.status).toBe(400);
   });
 
   test('counts stock, includes the court-day sales summary, and exposes the latest count', async () => {
@@ -137,6 +345,8 @@ describe('stock routes', () => {
     const replay = await courtRequest('post', '/api/items/stock/counts', court._id).send(body);
     expect(replay.status).toBe(201);
     expect(await StockCount.countDocuments({ courtId: court._id })).toBe(1);
+    expect(await StockMovement.countDocuments({ itemId: item._id, type: 'count' })).toBe(1);
+    expect((await Item.findById(item._id)).stockOnHand).toBe(8);
     const changedReplay = await courtRequest('post', '/api/items/stock/counts', court._id)
       .send({ ...body, items: [{ ...body.items[0], countedQuantity: 9 }] });
     expect(changedReplay.status).toBe(409);
@@ -164,6 +374,13 @@ describe('stock routes', () => {
     expect(listed.status).toBe(200);
     expect(listed.body[0]).toMatchObject({
       trackStock: true, stockOnHand: 5, soldToday: 2, leftNow: 5, isLowStock: false,
+    });
+    const billingItems = await courtRequest('get', '/api/items', court._id);
+    expect(billingItems.body[0]).toMatchObject({
+      trackStock: true,
+      stockOnHand: 5,
+      lowStockThreshold: 2,
+      isLowStock: false,
     });
 
     const trackedItemStock = { trackStock: true, stockOnHand: 5, lowStockThreshold: 2 };
@@ -274,5 +491,18 @@ describe('stock routes', () => {
       .send({ openingQuantity: 4, note: 'Recount', idempotencyKey: 'restart-water' });
     expect(restarted.status).toBe(200);
     expect(restarted.body.item).toMatchObject({ trackStock: true, leftNow: 4 });
+  });
+
+  test('court fees and services remain untracked by default', async () => {
+    const court = await makeCourt();
+    for (const category of ['court fee', 'services']) {
+      const created = await courtRequest('post', '/api/items', court._id).send({
+        name: `${category} item`,
+        category,
+        price: 100,
+      });
+      expect(created.status).toBe(201);
+      expect(created.body.trackStock).toBe(false);
+    }
   });
 });

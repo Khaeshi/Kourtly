@@ -13,8 +13,10 @@ import {
 } from '../lib/billingValidation.js';
 import {
   emitBillingStockUpdates,
+  getBillingStockWarning,
   recordBillingStockMovement,
   removeChargeGroup,
+  withBillingStockWarning,
 } from '../services/billingStock.js';
 
 const router = express.Router();
@@ -133,7 +135,17 @@ router.post('/:id/items', async (req, res) => {
         .populate({ path: 'player', select: 'name level', match: { courtId: req.courtId } });
       if (replay) {
         if (!replay.player) return res.status(409).json({ error: 'Player is missing or outside court scope.' });
-        return res.json(replay);
+        const replayLine = replay.items.find(line => line.idempotencyKey === idempotencyKey);
+        const warning = replayLine && await getBillingStockWarning({
+          courtId: req.courtId,
+          tabType: 'queue',
+          tabLineId: replayLine._id,
+          chargeGroupId: replayLine.chargeGroupId,
+        });
+        return res.json(withBillingStockWarning(
+          replay,
+          warning ? [{ stockWarning: warning }] : []
+        ));
       }
     }
 
@@ -193,7 +205,7 @@ router.post('/:id/items', async (req, res) => {
     if (!tab?.player) return res.status(409).json({ error: 'Player is missing or outside court scope.' });
     emitCourtEvent(req, 'billing:tab_updated', { action: 'item_added', tabId: tab._id });
     await emitBillingStockUpdates(req, stockChanges);
-    res.json(tab);
+    res.json(withBillingStockWarning(tab, stockChanges));
   } catch (err) {
     res.status(err.status ?? 400).json({ error: err.message });
   } finally {
@@ -245,7 +257,19 @@ router.post('/split', async (req, res) => {
         if (replayLines.some(tab => !tab.player)) {
           return res.status(409).json({ error: 'A player is missing or outside court scope.' });
         }
-        return res.json(replayLines);
+        const replayLine = replayLines
+          .flatMap(tab => tab.items)
+          .find(line => line.idempotencyKey === idempotencyKey);
+        const warning = replayLine && await getBillingStockWarning({
+          courtId: req.courtId,
+          tabType: 'queue',
+          tabLineId: replayLine._id,
+          chargeGroupId: replayLine.chargeGroupId,
+        });
+        return res.json(withBillingStockWarning(
+          replayLines,
+          warning ? [{ stockWarning: warning }] : []
+        ));
       }
     }
 
@@ -336,7 +360,7 @@ router.post('/split', async (req, res) => {
     results = resultTabIds.map(id => tabsById.get(id)).filter(Boolean);
     emitCourtEvent(req, 'billing:tab_updated', { action: 'split_item_added', tabIds: results.map(t => t?._id).filter(Boolean) });
     await emitBillingStockUpdates(req, stockChanges);
-    res.json(results);
+    res.json(withBillingStockWarning(results, stockChanges));
   } catch (err) {
     res.status(err.status ?? 400).json({ error: err.message });
   } finally {

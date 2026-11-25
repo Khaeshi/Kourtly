@@ -1,5 +1,10 @@
 import mongoose from 'mongoose';
 
+const StockWarningSchema = new mongoose.Schema({
+  itemId: { type: mongoose.Schema.Types.ObjectId, ref: 'Item', required: true },
+  shortfall: { type: Number, required: true, min: 1 },
+}, { _id: false });
+
 const StockMovementSchema = new mongoose.Schema({
   courtId: { type: mongoose.Schema.Types.ObjectId, ref: 'Court', required: true },
   itemId: { type: mongoose.Schema.Types.ObjectId, ref: 'Item', required: true },
@@ -9,7 +14,9 @@ const StockMovementSchema = new mongoose.Schema({
     required: true,
   },
   quantityDelta: { type: Number, required: true },
+  soldQuantityDelta: { type: Number },
   balanceAfter: { type: Number, required: true },
+  stockWarning: { type: StockWarningSchema, default: undefined },
   unitPrice: { type: Number, default: 0, min: 0 },
   note: { type: String, required: true },
   tabType: { type: String, enum: ['queue', 'reservation', null], default: null },

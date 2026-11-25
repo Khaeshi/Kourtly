@@ -8,6 +8,8 @@ import Reservation from '../../src/models/Reservation.js';
 import ReservationTab from '../../src/models/ReservationTab.js';
 import StockMovement from '../../src/models/StockMovement.js';
 import Tab from '../../src/models/Tab.js';
+import mongoose from 'mongoose';
+import { recordBillingStockMovement } from '../../src/services/billingStock.js';
 
 async function makeCourt() {
   return Court.create({
@@ -36,6 +38,388 @@ function courtRequest(method, path, courtId) {
 }
 
 describe('billing inventory movements', () => {
+  test('allows insufficient-stock sales with a shortfall warning without a negative balance', async () => {
+    const court = await makeCourt();
+    const player = await makePlayer(court._id, 'Shortfall Player');
+    const item = await Item.create({
+      courtId: court._id,
+      name: 'Last drink',
+      price: 20,
+      trackStock: true,
+      stockOnHand: 1,
+      lowStockThreshold: 1,
+    });
+    const tab = await Tab.create({
+      courtId: court._id,
+      player: player._id,
+      items: [],
+      total: 0,
+    });
+    const emitted = [];
+    app.set('io', {
+      sockets: { adapter: { rooms: new Map([[`court:${court._id}`, new Set(['socket'])]]) } },
+      to: room => ({
+        emit: (event, payload) => emitted.push({ room, event, payload }),
+      }),
+    });
+
+    try {
+      const body = {
+        itemId: String(item._id),
+        quantity: 3,
+        idempotencyKey: 'shortfall-sale',
+      };
+      const added = await courtRequest('post', `/api/tabs/${tab._id}/items`, court._id).send(body);
+      expect(added.status).toBe(200);
+      expect(added.body.stockWarning).toEqual({
+        itemId: String(item._id),
+        shortfall: 2,
+      });
+      expect((await Item.findById(item._id)).stockOnHand).toBe(0);
+
+      const replay = await courtRequest('post', `/api/tabs/${tab._id}/items`, court._id).send(body);
+      expect(replay.status).toBe(200);
+      expect(replay.body.stockWarning).toEqual(added.body.stockWarning);
+      expect((await Item.findById(item._id)).stockOnHand).toBe(0);
+      expect(await StockMovement.countDocuments({ itemId: item._id, type: 'sale' })).toBe(1);
+
+      const sale = await StockMovement.findOne({ itemId: item._id, type: 'sale' }).lean();
+      expect(sale).toMatchObject({
+        quantityDelta: -1,
+        soldQuantityDelta: -3,
+        stockWarning: { itemId: item._id, shortfall: 2 },
+      });
+      expect(emitted.some(event =>
+        event.event === 'items:updated' &&
+        event.payload.stockWarning?.itemId === String(item._id) &&
+        event.payload.stockWarning.shortfall === 2
+      )).toBe(true);
+
+      const count = await courtRequest('post', '/api/items/stock/counts', court._id).send({
+        idempotencyKey: 'shortfall-sale-count',
+        items: [{ itemId: String(item._id), countedQuantity: 0 }],
+      });
+      expect(count.status).toBe(201);
+      expect(count.body).toMatchObject({
+        salesToday: 60,
+        unitsSoldToday: 3,
+        itemsMatched: 1,
+        itemsShort: 0,
+        itemsOver: 0,
+      });
+
+      const movementPage = await courtRequest(
+        'get', `/api/items/${item._id}/stock/movements`, court._id
+      );
+      expect(movementPage.body.movements[0].stockWarning).toEqual({
+        itemId: String(item._id),
+        shortfall: 2,
+      });
+
+      const removed = await courtRequest(
+        'delete', `/api/tabs/${tab._id}/items/0`, court._id
+      );
+      expect(removed.status).toBe(200);
+      expect((await Item.findById(item._id)).stockOnHand).toBe(1);
+      expect(await StockMovement.countDocuments({ itemId: item._id, type: 'void' })).toBe(1);
+
+      const afterVoid = await courtRequest('post', '/api/items/stock/counts', court._id).send({
+        idempotencyKey: 'shortfall-sale-count-after-void',
+        items: [{ itemId: String(item._id), countedQuantity: 1 }],
+      });
+      expect(afterVoid.status).toBe(201);
+      expect(afterVoid.body).toMatchObject({
+        salesToday: 0,
+        unitsSoldToday: 0,
+        itemsMatched: 1,
+      });
+
+    } finally {
+      app.set('io', null);
+    }
+  });
+
+  test('multiple consecutive retries of the same sale key produce one movement and one warning', async () => {
+    const court = await makeCourt();
+    const player = await makePlayer(court._id, 'Sale Replay Player');
+    const item = await Item.create({
+      courtId: court._id,
+      name: 'Sale replay drink',
+      price: 20,
+      trackStock: true,
+      stockOnHand: 1,
+    });
+    const tab = await Tab.create({
+      courtId: court._id,
+      player: player._id,
+      items: [],
+      total: 0,
+    });
+    const body = {
+      itemId: String(item._id),
+      quantity: 3,
+      idempotencyKey: 'multiple-sale-retries',
+    };
+
+    const first = await courtRequest('post', `/api/tabs/${tab._id}/items`, court._id).send(body);
+    expect(first.status).toBe(200);
+    expect(first.body.stockWarning).toEqual({
+      itemId: String(item._id),
+      shortfall: 2,
+    });
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const replay = await courtRequest('post', `/api/tabs/${tab._id}/items`, court._id).send(body);
+      expect(replay.status).toBe(200);
+      expect(replay.body.stockWarning).toEqual(first.body.stockWarning);
+      expect((await Item.findById(item._id)).stockOnHand).toBe(0);
+    }
+
+    expect(await StockMovement.countDocuments({
+      courtId: court._id,
+      itemId: item._id,
+      type: 'sale',
+    })).toBe(1);
+  });
+
+  test('retried void reversal returns the original result and returns stock exactly once', async () => {
+    const court = await makeCourt();
+    const player = await makePlayer(court._id, 'Void Replay Player');
+    const item = await Item.create({
+      courtId: court._id,
+      name: 'Replay drink',
+      price: 20,
+      trackStock: true,
+      stockOnHand: 2,
+    });
+    const tab = await Tab.create({
+      courtId: court._id,
+      player: player._id,
+      items: [],
+      total: 0,
+    });
+
+    const added = await courtRequest('post', `/api/tabs/${tab._id}/items`, court._id).send({
+      itemId: String(item._id),
+      quantity: 1,
+      idempotencyKey: 'void-replay-sale',
+    });
+    expect(added.status).toBe(200);
+    expect((await Item.findById(item._id)).stockOnHand).toBe(1);
+
+    const sale = await StockMovement.findOne({
+      courtId: court._id,
+      itemId: item._id,
+      type: 'sale',
+    }).lean();
+    const line = (await Tab.findById(tab._id)).items[0];
+    const req = {
+      courtId: court._id,
+      user: { _id: 'void-replay-staff' },
+    };
+    const session = await mongoose.startSession();
+    let firstVoid;
+    let replayVoid;
+    try {
+      await session.withTransaction(async () => {
+        firstVoid = await recordBillingStockMovement({
+          req,
+          session,
+          itemId: item._id,
+          type: 'void',
+          quantity: 1,
+          unitPrice: 20,
+          note: 'Void replay',
+          tabType: 'queue',
+          tabId: tab._id,
+          tabLineId: line._id,
+        });
+        replayVoid = await recordBillingStockMovement({
+          req,
+          session,
+          itemId: item._id,
+          type: 'void',
+          quantity: 1,
+          unitPrice: 20,
+          note: 'Void replay',
+          tabType: 'queue',
+          tabId: tab._id,
+          tabLineId: line._id,
+        });
+      });
+    } finally {
+      await session.endSession();
+    }
+
+    expect(firstVoid).toMatchObject({
+      itemId: item._id,
+      type: 'void',
+      stockOnHand: 2,
+    });
+    expect(replayVoid).toBeNull();
+    expect((await Item.findById(item._id)).stockOnHand).toBe(2);
+    expect(await StockMovement.countDocuments({
+      courtId: court._id,
+      itemId: item._id,
+      type: 'void',
+    })).toBe(1);
+    const voidMovement = await StockMovement.findOne({
+      courtId: court._id,
+      itemId: item._id,
+      type: 'void',
+    }).lean();
+    expect(voidMovement).toMatchObject({
+      quantityDelta: 1,
+      balanceAfter: 2,
+    });
+    expect(String(voidMovement.originalSaleAt)).toBe(String(sale.createdAt));
+  });
+
+  test('oversold sale then restock then void pins resulting balance and movement fields', async () => {
+    const court = await makeCourt();
+    const player = await makePlayer(court._id, 'Oversold Restock Void Player');
+    const item = await Item.create({
+      courtId: court._id,
+      name: 'Oversold restock drink',
+      price: 20,
+      trackStock: true,
+      stockOnHand: 1,
+    });
+    const tab = await Tab.create({
+      courtId: court._id,
+      player: player._id,
+      items: [],
+      total: 0,
+    });
+
+    const sold = await courtRequest('post', `/api/tabs/${tab._id}/items`, court._id).send({
+      itemId: String(item._id),
+      quantity: 3,
+      idempotencyKey: 'oversold-restock-void-sale',
+    });
+    expect(sold.status).toBe(200);
+    expect(sold.body.stockWarning).toEqual({
+      itemId: String(item._id),
+      shortfall: 2,
+    });
+    expect((await Item.findById(item._id)).stockOnHand).toBe(0);
+
+    const restocked = await courtRequest(
+      'post', `/api/items/${item._id}/stock/restock`, court._id
+    ).send({
+      quantity: 4,
+      note: 'Restock before reversal',
+      idempotencyKey: 'oversold-restock-before-void',
+    });
+    expect(restocked.status).toBe(200);
+    expect(restocked.body.item.stockOnHand).toBe(4);
+
+    const removed = await courtRequest(
+      'delete', `/api/tabs/${tab._id}/items/0`, court._id
+    );
+    expect(removed.status).toBe(200);
+    expect((await Item.findById(item._id)).stockOnHand).toBe(5);
+
+    const sale = await StockMovement.findOne({
+      courtId: court._id,
+      itemId: item._id,
+      type: 'sale',
+    }).lean();
+    expect(sale).toMatchObject({
+      quantityDelta: -1,
+      soldQuantityDelta: -3,
+      balanceAfter: 0,
+      stockWarning: { itemId: item._id, shortfall: 2 },
+    });
+
+    const reversal = await StockMovement.findOne({
+      courtId: court._id,
+      itemId: item._id,
+      type: 'void',
+    }).lean();
+    expect(reversal).toMatchObject({
+      quantityDelta: 1,
+      soldQuantityDelta: 3,
+      balanceAfter: 5,
+    });
+    expect(await StockMovement.countDocuments({
+      courtId: court._id,
+      itemId: item._id,
+      type: 'void',
+    })).toBe(1);
+  });
+
+  test('void at the 10000 balance limit leaves stock at the limit and creates no void', async () => {
+    const court = await makeCourt();
+    const player = await makePlayer(court._id, 'Void Limit Player');
+    const item = await Item.create({
+      courtId: court._id,
+      name: 'Void limit drink',
+      price: 20,
+      trackStock: true,
+      stockOnHand: 10000,
+    });
+    const tab = await Tab.create({
+      courtId: court._id,
+      player: player._id,
+      items: [],
+      total: 0,
+    });
+
+    const sold = await courtRequest('post', `/api/tabs/${tab._id}/items`, court._id).send({
+      itemId: String(item._id),
+      quantity: 1,
+      idempotencyKey: 'void-at-limit-sale',
+    });
+    expect(sold.status).toBe(200);
+    expect((await Item.findById(item._id)).stockOnHand).toBe(9999);
+
+    const restocked = await courtRequest(
+      'post', `/api/items/${item._id}/stock/restock`, court._id
+    ).send({
+      quantity: 1,
+      note: 'Reach balance limit',
+      idempotencyKey: 'reach-balance-limit',
+    });
+    expect(restocked.status).toBe(200);
+    expect(restocked.body.item.stockOnHand).toBe(10000);
+
+    const removed = await courtRequest(
+      'delete', `/api/tabs/${tab._id}/items/0`, court._id
+    );
+    expect(removed.status).toBe(409);
+    expect(removed.body.error).toBe(
+      'Reversing this charge would exceed the supported stock balance.'
+    );
+    expect((await Item.findById(item._id)).stockOnHand).toBe(10000);
+    expect(await StockMovement.countDocuments({
+      courtId: court._id,
+      itemId: item._id,
+      type: 'void',
+    })).toBe(0);
+    expect((await Tab.findById(tab._id)).items).toHaveLength(1);
+  });
+
+  test('retains the existing billing line quantity limit of 100', async () => {
+    const court = await makeCourt();
+    const player = await makePlayer(court._id, 'Quantity Limit Player');
+    const item = await Item.create({ courtId: court._id, name: 'Water', price: 1 });
+    const tab = await Tab.create({
+      courtId: court._id, player: player._id, items: [], total: 0,
+    });
+
+    const atLimit = await courtRequest('post', `/api/tabs/${tab._id}/items`, court._id).send({
+      itemId: String(item._id), quantity: 100,
+    });
+    expect(atLimit.status).toBe(200);
+
+    const overLimit = await courtRequest('post', `/api/tabs/${tab._id}/items`, court._id).send({
+      itemId: String(item._id), quantity: 101,
+    });
+    expect(overLimit.status).toBe(400);
+    expect((await Tab.findById(tab._id)).items).toHaveLength(1);
+  });
+
   test('tab sales and removals create atomic sale and void movements; payment does not change stock', async () => {
     const court = await makeCourt();
     const player = await makePlayer(court._id, 'Tab Player');
@@ -267,7 +651,7 @@ describe('billing inventory movements', () => {
     expect((await ReservationTab.findById(tab._id)).items).toHaveLength(0);
   });
 
-  test('concurrent tab charges remain atomic and may drive stock below zero', async () => {
+  test('concurrent tab charges remain atomic and never drive stock below zero', async () => {
     const court = await makeCourt();
     const [playerA, playerB] = await Promise.all([
       makePlayer(court._id, 'Staff A Customer'),
@@ -291,10 +675,12 @@ describe('billing inventory movements', () => {
       }),
     ]);
     expect([responseA.status, responseB.status]).toEqual([200, 200]);
-    expect((await Item.findById(item._id)).stockOnHand).toBe(-1);
+    expect((await Item.findById(item._id)).stockOnHand).toBe(0);
     expect(await StockMovement.countDocuments({ itemId: item._id, type: 'sale' })).toBe(2);
+    const warnings = [responseA.body.stockWarning, responseB.body.stockWarning].filter(Boolean);
+    expect(warnings).toEqual([{ itemId: String(item._id), shortfall: 1 }]);
     const listed = await courtRequest('get', '/api/items', court._id);
-    expect(listed.body[0]).toMatchObject({ stockOnHand: -1, isLowStock: true });
+    expect(listed.body[0]).toMatchObject({ stockOnHand: 0, isLowStock: true });
   });
 
   test('deleting a tracked tab voids its remaining item lines', async () => {

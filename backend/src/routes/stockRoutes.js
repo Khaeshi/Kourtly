@@ -5,6 +5,7 @@ import Item from '../models/Item.js';
 import StockCount from '../models/StockCount.js';
 import StockMovement from '../models/StockMovement.js';
 import { emitCourtEvent } from '../lib/emitCourtEvent.js';
+import { MAX_STOCK_COUNT_ITEMS, MAX_STOCK_QUANTITY } from '../lib/stockLimits.js';
 import {
   enrichItemsWithStock,
   getCourtDayRange,
@@ -48,8 +49,11 @@ function parseNote(value, required = true) {
 
 function parseNonNegativeInteger(value, fieldName) {
   const number = Number(value);
-  if (!Number.isInteger(number) || number < 0) {
-    throw new StockRouteError(400, `${fieldName} must be a non-negative integer.`);
+  if (!Number.isSafeInteger(number) || number < 0 || number > MAX_STOCK_QUANTITY) {
+    throw new StockRouteError(
+      400,
+      `${fieldName} must be a non-negative integer no greater than ${MAX_STOCK_QUANTITY}.`
+    );
   }
   return number;
 }
@@ -80,6 +84,12 @@ function movementResponse(movement) {
     actorId: row.actorId,
     idempotencyKey: row.idempotencyKey,
     originalSaleAt: row.originalSaleAt ?? null,
+    ...(row.stockWarning ? {
+      stockWarning: {
+        itemId: String(row.stockWarning.itemId),
+        shortfall: row.stockWarning.shortfall,
+      },
+    } : {}),
     createdAt: row.createdAt,
   };
 }
@@ -147,10 +157,17 @@ async function runStockMovement(req, options) {
       }
 
       const isOpening = options.type === 'opening';
+      const filter = isOpening
+        ? { _id: options.itemId, courtId, trackStock: { $ne: true } }
+        : { _id: options.itemId, courtId, trackStock: true };
+      if (!isOpening) {
+        filter.stockOnHand = {
+          $gte: Math.max(0, -options.quantityDelta),
+          $lte: MAX_STOCK_QUANTITY - options.quantityDelta,
+        };
+      }
       const item = await Item.findOneAndUpdate(
-        isOpening
-          ? { _id: options.itemId, courtId, trackStock: { $ne: true } }
-          : { _id: options.itemId, courtId, trackStock: true },
+        filter,
         isOpening
           ? {
               $set: {
@@ -164,11 +181,21 @@ async function runStockMovement(req, options) {
       ).lean();
 
       if (!item) {
-        const exists = await Item.exists({ _id: options.itemId, courtId }).session(session);
-        if (!exists) throw new StockRouteError(404, 'Item not found.');
-        throw new StockRouteError(409, isOpening
-          ? 'Stock tracking is already enabled for this item.'
-          : 'Stock tracking must be enabled before changing stock.');
+        const existingItem = await Item.findOne({ _id: options.itemId, courtId })
+          .select('trackStock')
+          .session(session)
+          .lean();
+        if (!existingItem) throw new StockRouteError(404, 'Item not found.');
+        if (isOpening && existingItem.trackStock) {
+          throw new StockRouteError(409, 'Stock tracking is already enabled for this item.');
+        }
+        if (!isOpening && !existingItem.trackStock) {
+          throw new StockRouteError(409, 'Stock tracking must be enabled before changing stock.');
+        }
+        throw new StockRouteError(
+          409,
+          `The resulting stock balance must stay between 0 and ${MAX_STOCK_QUANTITY}.`
+        );
       }
 
       const [movement] = await StockMovement.create([{
@@ -317,8 +344,12 @@ router.post('/:id/stock/stop', async (req, res) => {
 router.post('/:id/stock/adjust', async (req, res) => {
   try {
     const quantityDelta = Number(req.body?.quantityDelta);
-    if (!Number.isInteger(quantityDelta) || quantityDelta === 0) {
-      throw new StockRouteError(400, 'quantityDelta must be a non-zero integer.');
+    if (!Number.isSafeInteger(quantityDelta) || quantityDelta === 0 ||
+        Math.abs(quantityDelta) > MAX_STOCK_QUANTITY) {
+      throw new StockRouteError(
+        400,
+        `quantityDelta must be a non-zero integer between -${MAX_STOCK_QUANTITY} and ${MAX_STOCK_QUANTITY}.`
+      );
     }
     const result = await runStockMovement(req, {
       itemId: req.params.id,
@@ -380,6 +411,12 @@ router.post('/stock/counts', async (req, res) => {
     if (!Array.isArray(req.body?.items) || req.body.items.length === 0) {
       throw new StockRouteError(400, 'At least one counted item is required.');
     }
+    if (req.body.items.length > MAX_STOCK_COUNT_ITEMS) {
+      throw new StockRouteError(
+        400,
+        `A stock count cannot contain more than ${MAX_STOCK_COUNT_ITEMS} items.`
+      );
+    }
     const items = req.body.items.map(entry => ({
       itemId: String(entry?.itemId ?? ''),
       countedQuantity: parseNonNegativeInteger(entry?.countedQuantity, 'countedQuantity'),
@@ -435,7 +472,7 @@ router.post('/stock/counts', async (req, res) => {
 
           const updatedItem = await Item.findOneAndUpdate(
             { _id: item._id, courtId: req.courtId, trackStock: true, stockOnHand: expectedQuantity },
-            { $inc: { stockOnHand: difference } },
+            { $set: { stockOnHand: entry.countedQuantity } },
             { new: true, session },
           ).lean();
           if (!updatedItem) throw new StockRouteError(409, 'Stock changed during the count. Please retry.');
@@ -490,15 +527,20 @@ router.post('/stock/counts', async (req, res) => {
 
     const response = stockCountResponse(count);
     if (!replayed) {
+      const currentItems = await Item.find({
+        _id: { $in: response.items.map(item => item.itemId) },
+        courtId: req.courtId,
+      }).lean();
+      const enrichedItems = await enrichItemsWithStock(
+        currentItems,
+        req.courtId,
+        new Date(),
+        timezone
+      );
+      const enrichedById = new Map(enrichedItems.map(item => [String(item._id), item]));
       for (const item of response.items) {
-        const currentItem = await Item.findOne({ _id: item.itemId, courtId: req.courtId }).lean();
-        if (!currentItem) continue;
-        const [enrichedItem] = await enrichItemsWithStock(
-          [currentItem],
-          req.courtId,
-          new Date(),
-          timezone
-        );
+        const enrichedItem = enrichedById.get(item.itemId);
+        if (!enrichedItem) continue;
         emitCourtEvent(req, 'items:updated', {
           action: 'stock_counted',
           itemId: String(item.itemId),

@@ -90,11 +90,20 @@ async function getMovementTotals(courtId, itemIds, start, end, session) {
     {
       $group: {
         _id: '$itemId',
-        soldToday: { $sum: { $multiply: ['$quantityDelta', -1] } },
+        soldToday: {
+          $sum: {
+            $multiply: [{ $ifNull: ['$soldQuantityDelta', '$quantityDelta'] }, -1],
+          },
+        },
         salesToday: {
           $sum: {
             $multiply: [
-              { $multiply: ['$quantityDelta', '$unitPrice'] },
+              {
+                $multiply: [
+                  { $ifNull: ['$soldQuantityDelta', '$quantityDelta'] },
+                  '$unitPrice',
+                ],
+              },
               -1,
             ],
           },
@@ -158,11 +167,20 @@ export async function getCourtSalesToday(courtId, start, end, session) {
     {
       $group: {
         _id: null,
-        unitsSoldToday: { $sum: { $multiply: ['$quantityDelta', -1] } },
+        unitsSoldToday: {
+          $sum: {
+            $multiply: [{ $ifNull: ['$soldQuantityDelta', '$quantityDelta'] }, -1],
+          },
+        },
         salesToday: {
           $sum: {
             $multiply: [
-              { $multiply: ['$quantityDelta', '$unitPrice'] },
+              {
+                $multiply: [
+                  { $ifNull: ['$soldQuantityDelta', '$quantityDelta'] },
+                  '$unitPrice',
+                ],
+              },
               -1,
             ],
           },
