@@ -24,22 +24,18 @@ export const TIER_DETAILS = {
   [TIERS.BASIC]: {
     label: 'Basic',
     description: 'Online reservations and court schedule blocking for getting started.',
-    price: 2000,
   },
   [TIERS.STANDARD]: {
     label: 'Standard',
     description: 'Everything in Basic, plus player registration and live queue management.',
-    price: 3500,
   },
   [TIERS.PREMIUM]: {
     label: 'Premium',
     description: 'Everything in Standard, plus item catalogs, tabs, and billing workflows.',
-    price: 5000,
   },
   [TIERS.ELITE]: {
     label: 'Elite',
     description: 'Everything in Premium, with priority support and future advanced capabilities.',
-    price: 7500,
   },
 };
 

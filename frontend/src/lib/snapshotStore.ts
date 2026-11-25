@@ -138,7 +138,7 @@ function projectCapabilities(value: unknown): unknown {
     ? project(value.modules, ['booking', 'queue', 'item_tabs'])
     : {};
   const tierDetails = isRecord(value.tierDetails)
-    ? project(value.tierDetails, ['label', 'description', 'price'])
+    ? project(value.tierDetails, ['label', 'description'])
     : undefined;
   return {
     ...project(value, [

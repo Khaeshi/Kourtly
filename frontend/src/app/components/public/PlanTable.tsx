@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { PLANS, PLAN_MATRIX, TRIAL_NOTE, REGISTER_HREF, includes } from '@/lib/plans';
-import CountUp from './CountUp';
+import { TierPrice } from './PublicPricingProvider';
 import Reveal from './Reveal';
 
 /** Owners pricing: one comparison table on desktop, stacked cards on phones. Both read from lib/plans.ts. */
@@ -16,7 +16,7 @@ export default function PlanTable() {
               <div key={p.id} className="text-center">
                 {i === 0 && <p className="font-mono-data text-[0.7rem] tracking-[0.08em] uppercase text-[var(--amber)] mb-1.5">{p.eyebrow}</p>}
                 <h3 className={`font-display text-[1.75rem] text-[var(--line)] ${i === 0 ? '' : 'mt-6'}`}>{p.name}</h3>
-                <p className="font-display text-[2.125rem] text-[var(--line)] my-1.5 mb-3.5"><CountUp value={p.price} /></p>
+                <p className="font-display text-[2.125rem] text-[var(--line)] my-1.5 mb-3.5"><TierPrice tier={p.id} /></p>
                 <Link href={REGISTER_HREF} className={`pub-cta ${i === 0 ? 'pub-cta-primary' : 'pub-cta-ghost'} text-[0.82rem] !px-4 !py-2.5`}>
                   {i === 0 ? 'Start free trial' : `Ask about ${p.name}`}
                 </Link>
@@ -47,7 +47,7 @@ export default function PlanTable() {
             <div className={`p-6 border ${i === 0 ? 'border-[var(--accent-border)] bg-[var(--surface-raised)]' : 'border-[var(--divider)] bg-[var(--surface)]'}`} style={{ borderRadius: 'var(--r-block)' }}>
               <p className="font-mono-data text-[0.7rem] tracking-[0.08em] uppercase text-[var(--amber)] mb-1.5">{p.eyebrow}</p>
               <h3 className="font-display text-[1.7rem] text-[var(--line)]">{p.name}</h3>
-              <p className="font-display text-[2rem] text-[var(--line)] my-1.5"><CountUp value={p.price} /><span className="font-sans normal-case text-[0.75rem] text-[var(--line-dim)] ml-1.5">/ month</span></p>
+              <p className="font-display text-[2rem] text-[var(--line)] my-1.5"><TierPrice tier={p.id} suffix="/ month" /></p>
               <ul className="list-none m-0 mt-4 mb-5 p-0 flex flex-col gap-2.5 border-t border-[var(--divider)] pt-4">
                 {p.highlights.map((h) => (
                   <li key={h} className="flex gap-2.5 text-[0.88rem] text-[var(--line-dim)]"><span className="text-[var(--success)]" aria-hidden="true">✓</span>{h}</li>

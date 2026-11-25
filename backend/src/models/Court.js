@@ -94,7 +94,8 @@ const CourtSchema = new mongoose.Schema({
       source:    { type: String, enum: ['tier', 'override'], default: 'override' },
       expiresAt: { type: Date, default: null },
     }],
-    amount:     { type: Number, default: 2000 },           // PHP
+    amount:     { type: Number, default: null },           // PHP
+    isCustomPrice: { type: Boolean, default: false },
     trialEnds:  { type: Date, default: () => {
       const d = new Date(); d.setDate(d.getDate() + 14);  // 14-day trial
       return d;

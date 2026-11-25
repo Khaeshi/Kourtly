@@ -4,6 +4,7 @@ import request from 'supertest';
 import app from '../../src/app.js';
 import Court from '../../src/models/Court.js';
 import SubscriptionPayment from '../../src/models/SubscriptionPayment.js';
+import TierPricing from '../../src/models/TierPricing.js';
 import Player from '../../src/models/Player.js';
 import Reservation from '../../src/models/Reservation.js';
 import ReservationTab from '../../src/models/ReservationTab.js';
@@ -401,9 +402,25 @@ describe('analytics and court routes', () => {
       .patch('/api/court/me')
       .set('x-court-id', String(court._id))
       .set('x-user-role', 'admin')
-      .send({ settings: { monthlyRevenueGoal: 75000 } });
+      .send({
+        settings: { monthlyRevenueGoal: 75000 },
+        futureProfileField: 'ignored',
+        subscription: {
+          plan: 'annual',
+          amount: 20000,
+          status: 'suspended',
+          nextBilling: '2030-01-01T00:00:00.000Z',
+          modules: { queue: false },
+        },
+      });
     expect(valid.status).toBe(200);
     expect(valid.body.settings.monthlyRevenueGoal).toBe(75000);
+    const unchangedSubscription = await Court.findById(court._id).select('subscription').lean();
+    expect(unchangedSubscription.subscription).toMatchObject({
+      plan: 'monthly',
+      amount: 2000,
+      status: 'active',
+    });
   });
 
   test('GET /api/court/me exposes registration status and rejection reason', async () => {
@@ -510,6 +527,106 @@ describe('analytics and court routes', () => {
     expect(slugRes.body.error).toMatch(/slug is already taken/i);
   });
 
+  test('subscription upgrade and downgrade require court admin', async () => {
+    const court = await Court.create({
+      name: 'Subscription Role Court',
+      slug: 'subscription-role-court',
+      adminEmail: 'subscription-role@example.com',
+      registrationStatus: 'approved',
+      subscription: { status: 'active', tier: 'premium', nextBilling: new Date('2030-01-01T00:00:00.000Z') },
+    });
+
+    const upgrade = await request(app)
+      .post('/api/court/me/subscription/upgrade')
+      .set('x-court-id', String(court._id))
+      .set('x-user-role', 'staff')
+      .send({ tier: 'elite' });
+    const downgrade = await request(app)
+      .post('/api/court/me/subscription/downgrade')
+      .set('x-court-id', String(court._id))
+      .set('x-user-role', 'staff')
+      .send({ tier: 'basic', confirmation: 'Basic' });
+
+    expect(upgrade.status).toBe(403);
+    expect(downgrade.status).toBe(403);
+    expect(await SubscriptionPayment.countDocuments({ courtId: court._id })).toBe(0);
+    const unchanged = await Court.findById(court._id).lean();
+    expect(unchanged.subscription.tier).toBe('premium');
+    expect(unchanged.subscription.pendingTier).toBeFalsy();
+  });
+
+  test('subscription upgrade and downgrade reject extra, protected, and operator fields', async () => {
+    const court = await Court.create({
+      name: 'Subscription Body Court',
+      slug: 'subscription-body-court',
+      adminEmail: 'subscription-body@example.com',
+      registrationStatus: 'approved',
+      subscription: { status: 'active', tier: 'premium', amount: 5000 },
+    });
+    const cases = [
+      ['/api/court/me/subscription/upgrade', { tier: 'elite' }],
+      ['/api/court/me/subscription/downgrade', { tier: 'basic', confirmation: 'Basic' }],
+    ];
+    const forbiddenFields = {
+      amount: 1,
+      status: 'suspended',
+      nextBilling: '2030-01-01T00:00:00.000Z',
+      plan: 'annual',
+      modules: { queue: false },
+      subscription: { amount: 1 },
+      'subscription.amount': 1,
+      $set: { 'subscription.amount': 1 },
+      unexpected: true,
+    };
+
+    for (const [path, body] of cases) {
+      for (const [field, value] of Object.entries(forbiddenFields)) {
+        const response = await request(app)
+          .post(path)
+          .set('x-court-id', String(court._id))
+          .set('x-user-role', 'admin')
+          .send({ ...body, [field]: value });
+        expect(response.status).toBe(400);
+      }
+    }
+
+    expect(await SubscriptionPayment.countDocuments({ courtId: court._id })).toBe(0);
+    const unchanged = await Court.findById(court._id).lean();
+    expect(unchanged.subscription).toMatchObject({
+      status: 'active',
+      tier: 'premium',
+      amount: 5000,
+    });
+    expect(unchanged.subscription.pendingTier).toBeFalsy();
+  });
+
+  test('admin can schedule a downgrade without mutating current tier or amount', async () => {
+    const nextBilling = new Date('2030-01-01T00:00:00.000Z');
+    const court = await Court.create({
+      name: 'Subscription Downgrade Court',
+      slug: 'subscription-downgrade-court',
+      adminEmail: 'subscription-downgrade@example.com',
+      registrationStatus: 'approved',
+      subscription: { status: 'active', tier: 'premium', amount: 5000, nextBilling },
+    });
+
+    const response = await request(app)
+      .post('/api/court/me/subscription/downgrade')
+      .set('x-court-id', String(court._id))
+      .set('x-user-role', 'admin')
+      .send({ tier: 'basic', confirmation: 'Basic' });
+
+    expect(response.status).toBe(200);
+    expect(response.body.pendingTier).toBe('basic');
+    expect(new Date(response.body.pendingTierEffectiveAt).toISOString()).toBe(nextBilling.toISOString());
+    const updated = await Court.findById(court._id).lean();
+    expect(updated.subscription).toMatchObject({
+      tier: 'premium',
+      amount: 5000,
+      pendingTier: 'basic',
+    });
+  });
+
   test('subscription upgrade stores the invoice attempt before returning its checkout URL', async () => {
     const previousEnv = {
       PAYMENT_PROVIDER: process.env.PAYMENT_PROVIDER,
@@ -532,6 +649,8 @@ describe('analytics and court routes', () => {
         registrationStatus: 'approved',
         subscription: { status: 'trial', tier: 'basic' },
       });
+      await TierPricing.create({ tier: 'standard', price: 4321 });
+      const subscriptionBefore = (await Court.findById(court._id).lean()).subscription;
       const response = await request(app)
         .post('/api/court/me/subscription/upgrade')
         .set('x-court-id', String(court._id))
@@ -545,9 +664,13 @@ describe('analytics and court routes', () => {
           externalId: expect.stringMatching(/^SUB-/),
           courtId: court._id,
           tier: 'standard',
-          expectedAmount: 3500,
+          expectedAmount: 4321,
           status: 'pending',
         });
+      const updatedCourt = await Court.findById(court._id).lean();
+      expect(updatedCourt.subscription.status).toBe(subscriptionBefore.status);
+      expect(updatedCourt.subscription.tier).toBe(subscriptionBefore.tier);
+      expect(updatedCourt.subscription.amount).toBe(subscriptionBefore.amount);
       expect(fetchSpy).toHaveBeenCalledTimes(1);
     } finally {
       jest.restoreAllMocks();

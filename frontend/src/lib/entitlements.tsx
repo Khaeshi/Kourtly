@@ -11,7 +11,7 @@ export interface Capabilities {
   tier: TierKey;
   currentTier: TierKey;
   modules: Record<ModuleKey, boolean>;
-  tierDetails?: { label: string; description: string; price: number | null };
+  tierDetails?: { label: string; description: string };
   pendingTier?: TierKey | null;
   pendingTierEffectiveAt?: string | null;
 }

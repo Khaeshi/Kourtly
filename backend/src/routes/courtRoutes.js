@@ -2,6 +2,7 @@ import express from 'express';
 import crypto from 'node:crypto';
 import Court from '../models/Court.js';
 import SubscriptionPayment from '../models/SubscriptionPayment.js';
+import TierPricing from '../models/TierPricing.js';
 import { createPaymentLink } from '../lib/payments/index.js';
 import { TIER_DETAILS, TIER_ORDER, TIERS, resolveCapabilities } from '../lib/moduleEntitlements.js';
 import {
@@ -495,12 +496,13 @@ router.post('/me/subscription/upgrade', async (req, res) => {
     }
 
     const target = TIER_DETAILS[tier];
-    if (!target.price) return res.status(400).json({ error: 'This tier requires a tailored quote. Please contact support.' });
+    const pricing = await TierPricing.findOne({ tier, active: true }).lean();
+    if (!pricing) return res.status(409).json({ error: 'This tier is not currently available for purchase.' });
 
     const expiryDate = new Date(Date.now() + 24 * 60 * 60 * 1000);
     const externalId = `SUB-${court._id}-${tier}-${Date.now()}`;
     const payment = await createPaymentLink({
-      amount: target.price,
+      amount: pricing.price,
       description: `${target.label} subscription for ${court.name}`,
       referenceId: externalId,
       payerEmail: court.adminEmail,
@@ -517,7 +519,7 @@ router.post('/me/subscription/upgrade', async (req, res) => {
       externalId,
       courtId: court._id,
       tier,
-      expectedAmount: target.price,
+      expectedAmount: pricing.price,
     });
 
     res.json({ tier, paymentUrl: payment.payment_url || payment.checkout_url || '', paymentId: invoiceId });

@@ -2,6 +2,7 @@ import express from 'express';
 import Court from '../models/Court.js';
 import User  from '../models/User.js';
 import PayoutTransfer from '../models/PayoutTransfer.js';
+import TierPricing from '../models/TierPricing.js';
 import { MODULES, MODULE_LABELS, resolveCapabilities, TIER_DETAILS, TIERS } from '../lib/moduleEntitlements.js';
 import { getAuthenticatedUser } from '../lib/internalAuth.js';
 import { superadminCourtResponse } from '../lib/courtResponse.js';
@@ -17,7 +18,94 @@ async function requireSuperAdmin(req, res, next) {
   next();
 }
 
+function hasOnlyBodyKeys(body, allowedKeys) {
+  return Boolean(
+    body
+    && typeof body === 'object'
+    && !Array.isArray(body)
+    && Object.keys(body).every(key => allowedKeys.includes(key))
+  );
+}
+
+function isValidAmount(amount) {
+  return typeof amount === 'number' && Number.isInteger(amount) && amount > 0 && amount <= 10000;
+}
+
+function parseNextBilling(value) {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const dateParts = /^(\d{4})-(\d{2})-(\d{2})(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2}))?$/.exec(value);
+  if (!dateParts) return null;
+  const [, year, month, day] = dateParts;
+  const calendarDate = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+  if (
+    calendarDate.getUTCFullYear() !== Number(year)
+    || calendarDate.getUTCMonth() !== Number(month) - 1
+    || calendarDate.getUTCDate() !== Number(day)
+  ) {
+    return null;
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date;
+}
+
 router.use(requireSuperAdmin);
+
+router.get('/tier-pricing', async (_req, res) => {
+  try {
+    const pricing = await TierPricing.find().sort({ tier: 1 }).lean();
+    res.json(pricing);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.put('/tier-pricing/:tier', async (req, res) => {
+  try {
+    if (!Object.values(TIERS).includes(req.params.tier)) {
+      return res.status(400).json({ error: 'Invalid subscription tier.' });
+    }
+    if (!hasOnlyBodyKeys(req.body, ['price', 'active'])) {
+      return res.status(400).json({ error: 'Only price and active may be provided.' });
+    }
+    const { price, active } = req.body;
+    if (typeof price !== 'number' || !Number.isInteger(price) || price < 1 || price > 10000) {
+      return res.status(400).json({ error: 'price must be a positive integer no greater than 10000.' });
+    }
+    if (active !== undefined && typeof active !== 'boolean') {
+      return res.status(400).json({ error: 'active must be a boolean.' });
+    }
+
+    const pricing = await TierPricing.findOne({ tier: req.params.tier });
+    const now = new Date();
+    const changedBy = req.user?._id ?? null;
+    const history = pricing?.history ?? [];
+    if (!pricing) {
+      const created = await TierPricing.create({
+        tier: req.params.tier,
+        price,
+        active: active ?? true,
+        updatedBy: changedBy,
+        updatedAt: now,
+        history: [{ price, changedBy, changedAt: now }],
+      });
+      return res.json(created);
+    }
+
+    if (pricing.price !== price) {
+      pricing.history = [...history, { price, changedBy, changedAt: now }].slice(-20);
+    }
+    pricing.price = price;
+    if (active !== undefined) pricing.active = active;
+    pricing.updatedBy = changedBy;
+    pricing.updatedAt = now;
+    await pricing.save();
+    res.json(pricing);
+  } catch (err) {
+    if (err.code === 11000) return res.status(409).json({ error: 'Tier pricing already exists.' });
+    res.status(400).json({ error: err.message });
+  }
+});
 
 router.get('/courts', async (req, res) => {
   try {
@@ -121,12 +209,28 @@ router.patch('/courts/:id/entitlements', async (req, res) => {
       return res.status(400).json({ error: 'Invalid module key.' });
     }
 
+    let updatedTierPricing = null;
+    if (tier) {
+      const currentCourt = await Court.findById(req.params.id).select('subscription.tier').lean();
+      if (!currentCourt) return res.status(404).json({ error: 'Court not found.' });
+      if (currentCourt.subscription.tier !== tier) {
+        updatedTierPricing = await TierPricing.findOne({ tier, active: true }).lean();
+        if (!updatedTierPricing) {
+          return res.status(409).json({ error: 'This tier is not currently available.' });
+        }
+      }
+    }
+
     const update = {
       'subscription.modules': validOverrides,
       'subscription.pendingTier': null,
       'subscription.pendingTierEffectiveAt': null,
     };
     if (tier) update['subscription.tier'] = tier;
+    if (updatedTierPricing) {
+      update['subscription.amount'] = updatedTierPricing.price;
+      update['subscription.isCustomPrice'] = false;
+    }
     const court = await Court.findByIdAndUpdate(
       req.params.id,
       { $set: update },
@@ -150,7 +254,7 @@ router.get('/stats', async (req, res) => {
     const expired   = courts.filter(c => c.subscription.status === 'expired');
     const suspended = courts.filter(c => c.subscription.status === 'suspended');
     const mrr = active.reduce((sum, c) => {
-      const amount = c.subscription.amount ?? 2000;
+      const amount = c.subscription.amount ?? 0;
       return sum + (c.subscription.plan === 'annual' ? Math.round(amount / 12) : amount);
     }, 0);
     res.json({
@@ -166,22 +270,70 @@ router.get('/stats', async (req, res) => {
 
 router.patch('/courts/:id/subscription', async (req, res) => {
   try {
-    const { status, plan, extendTrialDays, amount } = req.body;
+    const { status, plan, extendTrialDays, amount, nextBilling, isCustomPrice } = req.body;
+    if (plan !== undefined && plan !== 'monthly' && plan !== 'annual') {
+      return res.status(400).json({ error: 'Invalid subscription plan.' });
+    }
+    if (amount !== undefined && !isValidAmount(amount)) {
+      return res.status(400).json({ error: 'amount must be a positive integer no greater than 10000.' });
+    }
+    if (isCustomPrice !== undefined && typeof isCustomPrice !== 'boolean') {
+      return res.status(400).json({ error: 'isCustomPrice must be a boolean.' });
+    }
+    if (amount !== undefined && isCustomPrice === false) {
+      return res.status(400).json({ error: 'A manual amount must be marked as a custom price.' });
+    }
+    const parsedNextBilling = nextBilling === undefined ? undefined : parseNextBilling(nextBilling);
+    if (nextBilling !== undefined && !parsedNextBilling) {
+      return res.status(400).json({ error: 'nextBilling must be a valid date.' });
+    }
+
+    const existingCourt = await Court.findById(req.params.id).select('subscription').lean();
+    if (!existingCourt) return res.status(404).json({ error: 'Court not found.' });
+    const legacyAnnualReactivation = status === 'active'
+      && plan === 'annual'
+      && existingCourt.subscription.plan === 'annual';
+    if (plan === 'annual' && !legacyAnnualReactivation) {
+      return res.status(400).json({ error: 'Annual plans are no longer available for new subscriptions.' });
+    }
+
     const update = {};
     if (status) update['subscription.status'] = status;
-    if (plan)   update['subscription.plan']   = plan;
-    if (amount) update['subscription.amount'] = amount;
+    if (plan === 'monthly') update['subscription.plan'] = plan;
+    if (amount !== undefined) {
+      update['subscription.amount'] = amount;
+      update['subscription.isCustomPrice'] = true;
+    }
+    if (isCustomPrice === true) {
+      const currentAmount = amount ?? existingCourt.subscription.amount;
+      if (!isValidAmount(currentAmount)) {
+        return res.status(400).json({ error: 'A custom price requires a positive integer amount no greater than 10000.' });
+      }
+      update['subscription.isCustomPrice'] = true;
+    } else if (isCustomPrice === false) {
+      const pricing = await TierPricing.findOne({
+        tier: existingCourt.subscription.tier,
+        active: true,
+      }).lean();
+      if (!pricing) return res.status(409).json({ error: 'The current tier has no active price.' });
+      update['subscription.amount'] = pricing.price;
+      update['subscription.isCustomPrice'] = false;
+    }
+    if (parsedNextBilling) update['subscription.nextBilling'] = parsedNextBilling;
     if (status === 'active') {
-      update['subscription.startDate']   = new Date();
-      update['subscription.nextBilling'] = new Date(
-        Date.now() + (plan === 'annual' ? 365 : 30) * 24 * 60 * 60 * 1000
-      );
+      const now = new Date();
+      update['subscription.startDate'] = now;
+      if (!parsedNextBilling) {
+        const billingPlan = plan === 'monthly' ? 'monthly' : existingCourt.subscription.plan;
+        update['subscription.nextBilling'] = new Date(
+          now.getTime() + (billingPlan === 'annual' ? 365 : 30) * 24 * 60 * 60 * 1000
+        );
+      }
       update['isPublic'] = true;
     }
     if (extendTrialDays) {
-      const court = await Court.findById(req.params.id).lean();
-      const base  = new Date(court.subscription.trialEnds) > new Date()
-        ? new Date(court.subscription.trialEnds) : new Date();
+      const base  = new Date(existingCourt.subscription.trialEnds) > new Date()
+        ? new Date(existingCourt.subscription.trialEnds) : new Date();
       base.setDate(base.getDate() + Number(extendTrialDays));
       update['subscription.trialEnds'] = base;
     }

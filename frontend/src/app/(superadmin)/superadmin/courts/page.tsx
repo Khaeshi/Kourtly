@@ -11,7 +11,7 @@ interface Court {
   location: { address: string; city: string; province: string; country: string; };
   contact:  { phone: string; email: string; facebook: string; instagram: string; website: string; };
   subscription: {
-    status: string; plan: string; amount: number; tier?: string;
+    status: string; plan: string; amount: number | null; isCustomPrice?: boolean; tier?: string;
     modules?: { key: string; enabled: boolean; source: string; expiresAt?: string | null }[];
     trialEnds: string; startDate: string | null; nextBilling: string | null;
   };
@@ -48,6 +48,7 @@ export default function CourtsPage() {
   const [editingEmail, setEditingEmail] = useState<string | null>(null);
   const [newEmail,     setNewEmail]     = useState('');
   const [emailLoading, setEmailLoading] = useState(false);
+  const [billingInputs, setBillingInputs] = useState<Record<string, { amount: string; nextBilling: string }>>({});
 
 
   const handleEmailUpdate = async (courtId: string) => {
@@ -96,6 +97,32 @@ export default function CourtsPage() {
       await load();
     } catch { setNotice('Action failed'); }
     finally { setActing(null); }
+  };
+
+  const getBillingInputs = (court: Court) => billingInputs[court._id] ?? {
+    amount: court.subscription.amount == null ? '' : String(court.subscription.amount),
+    nextBilling: court.subscription.nextBilling
+      ? new Date(court.subscription.nextBilling).toISOString().slice(0, 10)
+      : '',
+  };
+
+  const saveBilling = async (court: Court) => {
+    const inputs = getBillingInputs(court);
+    const body: { amount?: number; nextBilling?: string } = {};
+    if (inputs.amount.trim()) {
+      const amount = Number(inputs.amount);
+      if (!Number.isInteger(amount) || amount < 1 || amount > 10000) {
+        setNotice('Amount must be a positive whole number no greater than 10000.');
+        return;
+      }
+      body.amount = amount;
+    }
+    if (inputs.nextBilling) body.nextBilling = inputs.nextBilling;
+    if (!Object.keys(body).length) {
+      setNotice('Enter an amount or next billing date.');
+      return;
+    }
+    await updateSubscription(court._id, body);
   };
 
   const updateTier = async (courtId: string, tier: string) => {
@@ -219,7 +246,12 @@ export default function CourtsPage() {
                       )}
                     </span>
                     <span className="ad-mono text-xs uppercase tracking-wide">{TIER_LABELS[tierKey] ?? 'Basic'}</span>
-                    <span className="ad-mono text-sm">₱{court.subscription.amount.toLocaleString()}/{court.subscription.plan === 'annual' ? 'yr' : 'mo'}</span>
+                    <span className="ad-mono text-sm">
+                      {court.subscription.amount == null
+                        ? 'not set'
+                        : `₱${court.subscription.amount.toLocaleString()}/${court.subscription.plan === 'annual' ? 'yr' : 'mo'}`}
+                      {court.subscription.isCustomPrice && <span className="ml-2 text-xs font-bold">Custom price</span>}
+                    </span>
                   </span>
                 </button>
 
@@ -259,7 +291,12 @@ export default function CourtsPage() {
                         <InfoRow label="Status"       value={court.subscription.status} />
                         <InfoRow label="Plan"         value={court.subscription.plan} />
                         <InfoRow label="Tier"         value={TIER_LABELS[tierKey] ?? 'Basic'} />
-                        <InfoRow label="Amount"       value={`₱${court.subscription.amount.toLocaleString()}`} />
+                        <InfoRow
+                          label="Amount"
+                          value={court.subscription.amount == null
+                            ? 'not set'
+                            : `₱${court.subscription.amount.toLocaleString()}${court.subscription.isCustomPrice ? ' · Custom price' : ''}`}
+                        />
                         <InfoRow label="Trial ends"   value={court.subscription.trialEnds ? new Date(court.subscription.trialEnds).toLocaleDateString() : null} />
                         <InfoRow label="Start date"   value={court.subscription.startDate ? new Date(court.subscription.startDate).toLocaleDateString() : null} />
                         <InfoRow label="Next billing" value={court.subscription.nextBilling ? new Date(court.subscription.nextBilling).toLocaleDateString() : null} />
@@ -300,6 +337,50 @@ export default function CourtsPage() {
                             </div>
                           )}
                         </div>
+                      </div>
+                    </div>
+
+                    <div className="pt-4 border-t border-[#C9C3B3]">
+                      <p className="ad-label">Manual subscription billing</p>
+                      <div className="grid gap-3 sm:grid-cols-2 max-w-2xl">
+                        <label className="ad-label">
+                          Amount (PHP)
+                          <input
+                            className="ad-input mt-1"
+                            type="number"
+                            min="1"
+                            max="10000"
+                            step="1"
+                            value={getBillingInputs(court).amount}
+                            onChange={event => setBillingInputs(current => ({
+                              ...current,
+                              [court._id]: { ...getBillingInputs(court), amount: event.target.value },
+                            }))}
+                          />
+                        </label>
+                        <label className="ad-label">
+                          Next billing date
+                          <input
+                            className="ad-input mt-1"
+                            type="date"
+                            value={getBillingInputs(court).nextBilling}
+                            onChange={event => setBillingInputs(current => ({
+                              ...current,
+                              [court._id]: { ...getBillingInputs(court), nextBilling: event.target.value },
+                            }))}
+                          />
+                        </label>
+                      </div>
+                      <div className="flex gap-2 flex-wrap mt-3">
+                        <Button v="primary" loading={acting === court._id} onClick={() => saveBilling(court)}>
+                          Save billing details
+                        </Button>
+                        {court.subscription.isCustomPrice && (
+                          <Button v="ghost" loading={acting === court._id}
+                            onClick={() => updateSubscription(court._id, { isCustomPrice: false })}>
+                            Use tier price
+                          </Button>
+                        )}
                       </div>
                     </div>
 
@@ -345,10 +426,6 @@ export default function CourtsPage() {
                           <>
                             <Button v="danger" loading={acting === court._id}
                               onClick={() => { if (confirm(`Suspend ${court.name}? They lose access immediately.`)) updateSubscription(court._id, { status: 'suspended' }); }}>Suspend…</Button>
-                            {court.subscription.plan === 'monthly' && (
-                              <Button v="ghost" loading={acting === court._id}
-                                onClick={() => { if (confirm(`Switch ${court.name} to annual plan?`)) updateSubscription(court._id, { plan: 'annual', amount: 20000 }); }}>Switch to annual plan…</Button>
-                            )}
                           </>
                         )}
                         {(court.subscription.status === 'suspended' || court.subscription.status === 'expired') && (

@@ -11,7 +11,6 @@ import {
   isXenditWebhookAuthorized,
 } from '../services/xenditService.js';
 import { transitionReservationPayment } from '../lib/reservationStateMachine.js';
-import { TIER_DETAILS } from '../lib/moduleEntitlements.js';
 
 const router = express.Router();
 
@@ -114,6 +113,9 @@ router.post('/xendit/webhook', async (req, res) => {
       Number(expectedAmount) <= 0 ||
       !validAmount(paidAmount, expectedAmount)
     ) {
+      if (isMasterAccount && (!Number.isFinite(Number(expectedAmount)) || Number(expectedAmount) <= 0)) {
+        console.error('[webhook] subscription payment has invalid expected amount');
+      }
       return res.status(409).json({ error: 'Paid amount does not match the stored payment attempt.' });
     }
     await reconfirmInvoice(id, externalId, status, expectedAmount, isMasterAccount ? undefined : userId);
@@ -149,8 +151,17 @@ router.post('/xendit/webhook', async (req, res) => {
           const nextBilling = new Date(now);
           nextBilling.setDate(nextBilling.getDate() + 30);
           court.subscription.status = 'active';
+          const tierChanged = court.subscription.tier !== attempt.tier;
           court.subscription.tier = attempt.tier;
-          court.subscription.amount = TIER_DETAILS[attempt.tier]?.price || attempt.expectedAmount;
+          if (typeof attempt.expectedAmount === 'number'
+            && Number.isFinite(attempt.expectedAmount)
+            && attempt.expectedAmount > 0) {
+            court.subscription.amount = attempt.expectedAmount;
+          } else {
+            console.error('[webhook] subscription payment has invalid expected amount');
+            throw webhookError(409, 'Stored subscription payment amount is invalid.');
+          }
+          if (tierChanged) court.subscription.isCustomPrice = false;
           court.subscription.pendingTier = null;
           court.subscription.pendingTierEffectiveAt = null;
           court.subscription.startDate = now;

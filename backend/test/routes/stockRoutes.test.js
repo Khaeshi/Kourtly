@@ -166,6 +166,20 @@ describe('stock routes', () => {
       trackStock: true, stockOnHand: 5, soldToday: 2, leftNow: 5, isLowStock: false,
     });
 
+    const trackedItemStock = { trackStock: true, stockOnHand: 5, lowStockThreshold: 2 };
+    const initialItemCount = await Item.countDocuments({ courtId: court._id });
+    for (const [field, value] of [['trackStock', true], ['stockOnHand', 99]]) {
+      const rejected = await courtRequest('post', '/api/items', court._id).send({
+        name: 'Rejected stock mutation', price: 200, [field]: value,
+      });
+
+      expect(rejected.status).toBe(400);
+      expect(rejected.body.error).toBe(`${field} is not an allowed field.`);
+      expect(await Item.countDocuments({ courtId: court._id })).toBe(initialItemCount);
+      await expect(Item.findById(item._id).select('trackStock stockOnHand lowStockThreshold').lean())
+        .resolves.toMatchObject(trackedItemStock);
+    }
+
     const created = await courtRequest('post', '/api/items', court._id).send({
       name: 'Untracked fee', price: 200,
     });

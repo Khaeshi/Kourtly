@@ -453,8 +453,11 @@ describe('snapshotStore', () => {
       tierDetails: {
         label: 'Premium',
         description: 'Plan catalog entry',
-        price: 5000,
       },
     });
+
+    expect(sanitizeSnapshot('/pricing/tiers', {
+      tiers: [{ tier: 'basic', label: 'Basic', price: 799 }],
+    })).toBeUndefined();
   });
 });
