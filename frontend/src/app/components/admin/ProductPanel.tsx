@@ -27,14 +27,22 @@ function ItemRow({ item, qty, onQty, onAdd, addingId, ready, offline, offlineTit
   ready: boolean; offline: boolean; offlineTitle?: string; allowSplit: boolean;
 }) {
   const isSplit = allowSplit && !!item.isSplittable;
+  const canShowStock = !offline && item.trackStock === true &&
+    !/\b(fee|fees|service|services)\b/i.test(item.category);
   return (
     <div className={`flex items-center gap-3 py-2 border-b border-[#E1DBCB] ${ready ? '' : 'opacity-50'}`}>
       <div className="flex-1 min-w-0">
         <p className="text-[15px] font-bold truncate">{item.name}</p>
         <p className="ad-mono ad-muted text-xs">{fmt(item.price * qty)}{isSplit ? ' · split' : ''}</p>
       </div>
+      {canShowStock && (
+        <div className="min-w-[4.5rem] text-right" aria-label={`In stock ${item.stockOnHand ?? 'unavailable'}`}>
+          <span className="block text-[0.6rem] font-semibold uppercase tracking-wide text-[#8A9A94]">In stock</span>
+          <span className="ad-mono text-xs font-semibold">{item.stockOnHand ?? '—'}</span>
+        </div>
+      )}
       {!isSplit && <Stepper value={qty} onChange={onQty} disabled={!ready} label={item.name} />}
-      <Button v={"ghost"} size="sm" disabled={!ready || offline} title={offlineTitle} onClick={onAdd}>
+      <Button v={"ghost"} size="sm" disabled={!ready || offline || addingId === item._id} title={offlineTitle} onClick={onAdd}>
         {addingId === item._id ? '...' : isSplit ? 'Charge' : 'Add'}
       </Button>
     </div>

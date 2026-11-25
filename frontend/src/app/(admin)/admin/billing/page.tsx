@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { sileo } from 'sileo';
 import {
   getPlayers, getItems, getOpenTabs,
@@ -10,7 +10,8 @@ import {
   getTabHistoryPaged, getReservationTabHistoryPaged,
   OfflineUnavailableError,
 } from '@/lib/api';
-import type { Player, CatalogItem, Tab, ReservationTab, PaginatedTabs, PaginatedResTabs } from '@/lib/api';
+import type { Player, CatalogItem, Tab, ReservationTab, PaginatedTabs, PaginatedResTabs, StockWarning } from '@/lib/api';
+import { createIdempotentAction, type IdempotentAction } from '@/lib/idempotency';
 import { useSocketEvent } from '@/hooks/useSocketEvent';
 import { useConnectivity } from '@/lib/connectivity';
 import { Button } from '@/app/components/ui/Button';
@@ -25,15 +26,30 @@ const CARD = 'rounded-xl bg-[#FBF9F3] border border-[#C9C3B3] shadow-[0_1px_0_rg
 const SELECTED = 'border-[#0E2420] shadow-[inset_3px_0_0_#E3A92B,0_2px_6px_rgba(14,36,32,.12)]';
 const NOTICE = 'mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900';
 
+interface BillingActionNotice {
+  id: number;
+  label: string;
+  message: string;
+  retry?: () => void;
+}
+
+interface PersistentStockWarning extends StockWarning {
+  id: number;
+  itemName: string;
+}
+
 // ── SplitModal ───────────────────────────────────────────────────────────────
 // primaryTab  = the currently active tab (always charged, shown pinned at top)
 // additionalIds = extra players added below the divider to split with
 function SplitModal({ item, openTabs, primaryTab, onClose, onDone }: {
   item: CatalogItem; openTabs: Tab[]; primaryTab: Tab | null;
-  onClose: () => void; onDone: () => void;
+  onClose: () => void; onDone: (tabs: Tab[]) => void | Promise<void>;
 }) {
   const [additionalIds, setAdditionalIds] = useState<string[]>([]);
   const [loading,       setLoading]       = useState(false);
+  const [error,         setError]         = useState('');
+  const [retryAvailable, setRetryAvailable] = useState(false);
+  const actionRef = useRef<IdempotentAction<Tab[]> | null>(null);
   const { status } = useConnectivity();
   const offline = status !== 'online';
   const offlineTitle = offline ? 'Reconnect to make changes' : undefined;
@@ -54,24 +70,47 @@ function SplitModal({ item, openTabs, primaryTab, onClose, onDone }: {
   // primary is always included so canCharge is true when primaryTab exists
   const canCharge      = totalPlayers >= 1;
 
-  const toggleAdditional = (id: string) =>
+  const toggleAdditional = (id: string) => {
+    actionRef.current = null;
+    setRetryAvailable(false);
+    setError('');
     setAdditionalIds(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id]);
+  };
 
-  const handle = async () => {
+  const handle = async (retry = false) => {
     if (!canCharge) return;
     setLoading(true);
     const successDesc = isSinglePlayer
       ? `${fmt(item.price)} fully charged to ${primaryTab?.player.name ?? 'player'}.`
       : `${fmt(item.price)} split ${totalPlayers} ways — ${fmt(perPlayer)} each.`;
-    await sileo.promise(
-      splitItem({ itemId: item._id, playerIds: allPlayerIds }),
-      {
-        loading: { title: isSinglePlayer ? 'Charging...' : 'Splitting charge...' },
-        success: { title: isSinglePlayer ? 'Charged!' : 'Split complete!', description: successDesc },
-        error:   { title: 'Failed' },
-      }
-    );
-    setLoading(false); onDone(); onClose();
+    const action = retry
+      ? actionRef.current
+      : createIdempotentAction(key => splitItem({
+        itemId: item._id,
+        playerIds: allPlayerIds,
+        idempotencyKey: key,
+      }));
+    if (!action) {
+      setLoading(false);
+      return;
+    }
+    actionRef.current = action;
+    setError('');
+    setRetryAvailable(false);
+    try {
+      const tabs = retry ? await action.retry() : await action.run();
+      sileo.success({
+        title: isSinglePlayer ? 'Charged!' : 'Split complete!',
+        description: successDesc,
+      });
+      await onDone(tabs);
+      onClose();
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : 'Could not complete the charge.');
+      setRetryAvailable(action.canRetry());
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -131,11 +170,15 @@ function SplitModal({ item, openTabs, primaryTab, onClose, onDone }: {
             ? `Full ${fmt(item.price)} charged to ${primaryTab?.player.name ?? '—'}.`
             : `${fmt(item.price)} ÷ ${totalPlayers} = ${fmt(perPlayer)} each.`}
         </p>
+        {error && <p role="alert" className="ad-error">{error}</p>}
       </div>
 
       <div className="px-5 py-4 border-t border-[#E1DBCB] flex gap-2 justify-end">
         <Button v="ghost" onClick={onClose}>Cancel</Button>
-        <Button v="primary" onClick={handle} loading={loading} disabled={!canCharge || offline} title={offlineTitle}>
+        {retryAvailable && (
+          <Button v="warning" onClick={() => handle(true)} loading={loading} disabled={offline}>Retry</Button>
+        )}
+        <Button v="primary" onClick={() => handle()} loading={loading} disabled={!canCharge || offline} title={offlineTitle}>
           {!canCharge ? 'No player selected' : isSinglePlayer ? `Charge ${fmt(item.price)}` : `Split ${fmt(item.price)}`}
         </Button>
       </div>
@@ -248,6 +291,10 @@ export default function BillingPage() {
   const [activeResTab,  setActiveResTab]  = useState<string | null>(null);
   const [addingResItem, setAddingResItem] = useState<string | null>(null);
   const [resQty,        setResQty]        = useState<Record<string, number>>({});
+  const [actionNotices, setActionNotices] = useState<BillingActionNotice[]>([]);
+  const [stockWarnings, setStockWarnings] = useState<PersistentStockWarning[]>([]);
+  const actionNoticeSequence = useRef(0);
+  const stockWarningSequence = useRef(0);
 
   const [resHistory,    setResHistory]    = useState<PaginatedResTabs | null>(null);
   const [historyPaged,  setHistoryPaged]  = useState<PaginatedTabs | null>(null);
@@ -316,6 +363,56 @@ export default function BillingPage() {
   const activeTabObj     = openTabs.find(t => t._id === activeTab) ?? null;
   const activeResObj     = resTabs.find(t => t._id === activeResTab) ?? null;
 
+  const runBillingAction = async <T,>(
+    label: string,
+    request: (idempotencyKey: string) => Promise<T>,
+    onSuccess: (result: T) => void | Promise<void>,
+  ) => {
+    const action = createIdempotentAction(request);
+    const noticeId = ++actionNoticeSequence.current;
+    const execute = async (retry: boolean) => {
+      let result: T;
+      try {
+        result = retry ? await action.retry() : await action.run();
+      } catch (requestError) {
+        setActionNotices(current => [
+          ...current.filter(notice => notice.id !== noticeId),
+          {
+            id: noticeId,
+            label,
+            message: requestError instanceof Error ? requestError.message : 'The request failed.',
+            ...(action.canRetry() ? { retry: () => { void execute(true); } } : {}),
+          },
+        ]);
+        return;
+      }
+      setActionNotices(current => current.filter(notice => notice.id !== noticeId));
+      await onSuccess(result);
+    };
+    await execute(false);
+  };
+
+  const recordStockWarnings = (item: CatalogItem, response: Tab | ReservationTab | Tab[]) => {
+    const tabs = Array.isArray(response) ? response : [response];
+    const seen = new Set<string>();
+    const warnings = tabs.flatMap(tab => {
+      const warning = tab.stockWarning;
+      if (!warning) return [];
+      const key = `${warning.itemId}:${warning.shortfall}`;
+      if (seen.has(key)) return [];
+      seen.add(key);
+      return [{ ...warning, itemName: item.name }];
+    });
+    if (warnings.length === 0) return;
+    setStockWarnings(current => [
+      ...current,
+      ...warnings.map(warning => ({
+        ...warning,
+        id: ++stockWarningSequence.current,
+      })),
+    ]);
+  };
+
   const getQty     = (id: string) => qty[id] ?? 1;
   const setItemQty = (id: string, val: number) => setQty(q => ({ ...q, [id]: Math.max(1, val) }));
 
@@ -336,9 +433,20 @@ export default function BillingPage() {
     if (item.isSplittable) { setSplitItem(item); return; }
     const quantity = getQty(item._id);
     setAddingItem(item._id);
-    await addItemToTab(activeTab, { itemId: item._id, quantity });
-    sileo.success({ title: 'Added', description: `${item.name} ×${quantity} → ${activeTabObj?.player.name}` });
-    setItemQty(item._id, 1); await loadAll(); setAddingItem(null);
+    try {
+      await runBillingAction(
+        `Add ${item.name}`,
+        idempotencyKey => addItemToTab(activeTab, { itemId: item._id, quantity, idempotencyKey }),
+        async tab => {
+          recordStockWarnings(item, tab);
+          sileo.success({ title: 'Added', description: `${item.name} ×${quantity} → ${activeTabObj?.player.name}` });
+          setItemQty(item._id, 1);
+          await loadAll();
+        },
+      );
+    } finally {
+      setAddingItem(null);
+    }
   };
 
   const handleResAdd = async (item: CatalogItem) => {
@@ -346,13 +454,22 @@ export default function BillingPage() {
     const q = resQty[item._id] ?? 1;
     setAddingResItem(item._id);
     const resTab = resTabs.find(t => t._id === activeResTab);
-    await addItemToReservationTab(activeResTab, {
-      itemId: item._id, quantity: q,
-    });
-    sileo.success({ title: 'Added', description: `${item.name} ×${q} → ${resTab?.guestName}` });
-    setResQty(q2 => ({ ...q2, [item._id]: 1 }));
-    await loadAll();
-    setAddingResItem(null);
+    try {
+      await runBillingAction(
+        `Add ${item.name} to reservation`,
+        idempotencyKey => addItemToReservationTab(activeResTab, {
+          itemId: item._id, quantity: q, idempotencyKey,
+        }),
+        async reservationTab => {
+          recordStockWarnings(item, reservationTab);
+          sileo.success({ title: 'Added', description: `${item.name} ×${q} → ${resTab?.guestName}` });
+          setResQty(q2 => ({ ...q2, [item._id]: 1 }));
+          await loadAll();
+        },
+      );
+    } finally {
+      setAddingResItem(null);
+    }
   };
 
   const viewBtn = (v: typeof view, label: string) => (
@@ -380,11 +497,41 @@ export default function BillingPage() {
 
   return (
     <div className="w-full">
+      {stockWarnings.map(warning => (
+        <div key={warning.id} role="alert" aria-live="assertive"
+          className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+          <p>
+            Insufficient stock: {warning.itemName} was short by {warning.shortfall} unit{warning.shortfall === 1 ? '' : 's'}.
+            The charge was completed.
+          </p>
+          <Button v="ghost" size="sm" aria-label={`Dismiss stock warning for ${warning.itemName}`}
+            onClick={() => setStockWarnings(current => current.filter(entry => entry.id !== warning.id))}>
+            Dismiss
+          </Button>
+        </div>
+      ))}
+      {actionNotices.map(notice => (
+        <div key={notice.id} role="alert"
+          className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">
+          <p>{notice.label} failed: {notice.message}</p>
+          <div className="flex items-center gap-2">
+            {notice.retry && <Button v="warning" size="sm" onClick={notice.retry}>Retry</Button>}
+            <Button v="ghost" size="sm" aria-label={`Dismiss ${notice.label} error`}
+              onClick={() => setActionNotices(current => current.filter(entry => entry.id !== notice.id))}>
+              Dismiss
+            </Button>
+          </div>
+        </div>
+      ))}
       {loadError && <p className={NOTICE}>{loadError}</p>}
       {view === 'history' && historyError && <p className={NOTICE}>{historyError}</p>}
       {splitItem_ && (
         <SplitModal item={splitItem_} openTabs={openTabs} primaryTab={activeTabObj}
-          onClose={() => setSplitItem(null)} onDone={loadAll} />
+          onClose={() => setSplitItem(null)}
+          onDone={async tabs => {
+            recordStockWarnings(splitItem_, tabs);
+            await loadAll();
+          }} />
       )}
 
       <AdminHeader title="Billing" right={

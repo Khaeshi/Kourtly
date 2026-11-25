@@ -40,6 +40,7 @@ const NAV = [
   { href: '/admin/queue', label: 'Queue', icon: ListOrdered, module: 'queue' as const },
   { href: '/admin/billing', label: 'Billing', icon: CreditCard, module: 'item_tabs' as const },
   { href: '/admin/items', label: 'Items', icon: Package, module: 'item_tabs' as const },
+  { href: '/admin/count-stock', label: 'Count Stock', icon: ClipboardCheck, module: 'item_tabs' as const },
   { href: '/admin/reservation', label: 'Reservation', icon: CalendarDays, module: 'booking' as const },
   { href: '/admin/schedule', label: 'Scheduling', icon: CalendarClock, module: 'booking' as const },
   { href: '/admin/settings', label: 'Settings', icon: Settings },
@@ -175,6 +176,7 @@ export default function AdminSidebar({
               <Link
                 key={item.href}
                 href={item.href}
+                prefetch={item.href === '/admin/count-stock' ? false : undefined}
                 onClick={handleNavigation(item.href)}
                 aria-current={active ? 'page' : undefined}
                 className={`ad-link${active ? ' active' : ''}`}
