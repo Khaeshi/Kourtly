@@ -13,6 +13,7 @@ describe('schedule routes', () => {
       slug: 'rules-court',
       adminEmail: 'rules@court.com',
       isActive: true,
+      registrationStatus: 'approved',
       subscription: { status: 'active' },
       courtCount: 4,
     });
@@ -32,6 +33,7 @@ describe('schedule routes', () => {
       slug: 'blocks-court',
       adminEmail: 'blocks@court.com',
       isActive: true,
+      registrationStatus: 'approved',
       subscription: { status: 'active' },
       courtCount: 4,
     });
@@ -51,6 +53,7 @@ describe('schedule routes', () => {
       slug: 'resolve-court',
       adminEmail: 'resolve@court.com',
       isActive: true,
+      registrationStatus: 'approved',
       subscription: { status: 'active' },
       courtCount: 4,
     });
@@ -71,6 +74,7 @@ describe('schedule routes', () => {
       slug: 'eight-court-venue',
       adminEmail: 'eight@court.com',
       isActive: true,
+      registrationStatus: 'approved',
       subscription: { status: 'active' },
       courtCount: 8,
     });
@@ -99,7 +103,7 @@ describe('schedule routes', () => {
   test('POST /api/schedule/blocks rejects overlap with an active reservation', async () => {
     const court = await Court.create({
       name: 'Conflict Court', slug: 'conflict-court', adminEmail: 'conflict@court.com',
-      isActive: true, subscription: { status: 'active' }, courtCount: 1,
+      isActive: true, registrationStatus: 'approved', subscription: { status: 'active' }, courtCount: 1,
     });
     await Reservation.create({
       courtId: court._id, court: 1, date: '2026-04-14', timeSlot: '13:00-15:00', duration: 2,

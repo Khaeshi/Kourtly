@@ -112,6 +112,7 @@ const CourtSchema = new mongoose.Schema({
     hourlyRate:   { type: Number, default: 210 },       
     reservationFee: { type: Number, default: 210 },      
     weeklySummary: { type: Boolean, default: true },
+    monthlyRevenueGoal: { type: Number, default: 0, min: 0 },
   },
 
   weeklySummary: {

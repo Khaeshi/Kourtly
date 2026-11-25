@@ -11,6 +11,7 @@ async function makeCourt() {
     slug: `ops-court-${Date.now()}`,
     adminEmail: 'ops@court.com',
     isActive: true,
+    registrationStatus: 'approved',
     subscription: { status: 'active', tier: 'premium' },
     courtCount: 4,
   });

@@ -15,6 +15,7 @@ async function makeCourt() {
     slug: `billing-stock-${Date.now()}-${Math.random().toString(36).slice(2)}`,
     adminEmail: 'billing-stock@court.com',
     isActive: true,
+    registrationStatus: 'approved',
     subscription: { status: 'active', tier: 'premium' },
     settings: { timezone: 'Asia/Manila' },
   });

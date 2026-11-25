@@ -14,6 +14,7 @@ import {
   CalendarDays,
   ShieldUser,
   Settings,
+  ClipboardCheck,
   Maximize2,
   Minimize2,
 } from 'lucide-react';
@@ -42,6 +43,7 @@ const NAV = [
   { href: '/admin/reservation', label: 'Reservation', icon: CalendarDays, module: 'booking' as const },
   { href: '/admin/schedule', label: 'Scheduling', icon: CalendarClock, module: 'booking' as const },
   { href: '/admin/settings', label: 'Settings', icon: Settings },
+  { href: '/admin/registration', label: 'Registration', icon: ClipboardCheck, statusOnly: true },
 ];
 /**
  * REcheck this part
@@ -70,6 +72,7 @@ export default function AdminSidebar({
   // Court name + logo (API is source of truth; session carries logo after update())
   const [courtName, setCourtName] = useState<string | null>(null);
   const [courtLogoUrl, setCourtLogoUrl] = useState<string | null>(null);
+  const [registrationStatus, setRegistrationStatus] = useState<string | null>(null);
 
   useEffect(() => {
     const courtId = session?.user?.courtId;
@@ -77,6 +80,7 @@ export default function AdminSidebar({
     if (!courtId) {
       setCourtName(null);
       setCourtLogoUrl(null);
+      setRegistrationStatus(null);
       return;
     }
 
@@ -90,9 +94,14 @@ export default function AdminSidebar({
 
     const loadCourt = async () => {
       try {
-        const data = await proxyFetch<{ name?: string; logoUrl?: string }>('/court/me');
+        const data = await proxyFetch<{
+          name?: string;
+          logoUrl?: string;
+          registrationStatus?: string;
+        }>('/court/me', undefined, { allowSnapshotFallback: false });
         if (data?.name) setCourtName(data.name);
         if (data?.logoUrl) setCourtLogoUrl(data.logoUrl);
+        setRegistrationStatus(data?.registrationStatus ?? null);
       } catch (error) {
         console.error('Could not load court branding.', error);
       }
@@ -122,7 +131,11 @@ export default function AdminSidebar({
     ? 'Admin Panel'
     : courtName ?? 'My Court';
 
-  const items = NAV.filter(item => !item.module || capabilities.modules[item.module]);
+  const items = registrationStatus === null
+    ? []
+    : registrationStatus === 'approved'
+      ? NAV.filter(item => !item.statusOnly && (!item.module || capabilities.modules[item.module]))
+      : NAV.filter(item => item.statusOnly);
   const isActive = (item: typeof NAV[number]) =>
     item.exact ? pathname === item.href : pathname.startsWith(item.href);
   const activeIndex = items.findIndex(isActive);

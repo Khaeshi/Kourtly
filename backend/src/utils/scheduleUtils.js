@@ -14,6 +14,36 @@ const ALL_SLOTS = [
   ];
   
   export { ALL_SLOTS };
+
+  export function getDateTimePartsInTimeZone(date, timeZone = 'Asia/Manila') {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    }).formatToParts(date);
+    return Object.fromEntries(parts
+      .filter(part => part.type !== 'literal')
+      .map(part => [part.type, part.value]));
+  }
+
+  export function isValidDateString(dateStr) {
+    if (typeof dateStr !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return false;
+    const parsed = new Date(`${dateStr}T00:00:00.000Z`);
+    return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === dateStr;
+  }
+
+  export function isWithinDateWindow(dateStr, timeZone, maxDaysAhead = 13, now = new Date()) {
+    if (!isValidDateString(dateStr)) return false;
+    const todayParts = getDateTimePartsInTimeZone(now, timeZone);
+    const today = Date.UTC(Number(todayParts.year), Number(todayParts.month) - 1, Number(todayParts.day));
+    const requested = Date.parse(`${dateStr}T00:00:00.000Z`);
+    const daysAhead = (requested - today) / 86_400_000;
+    return Number.isInteger(daysAhead) && daysAhead >= 0 && daysAhead <= maxDaysAhead;
+  }
   
   export function toMinutes(timeStr) {
     const [h, m] = timeStr.split(':').map(Number);

@@ -230,6 +230,63 @@ describe('snapshotStore', () => {
     }]);
   });
 
+  test('preserves new dashboard analytics fields without exposing unknown fields', () => {
+    expect(sanitizeSnapshot('/analytics/summary?period=week', {
+      period: 'week',
+      timezone: 'Asia/Manila',
+      dateRange: { start: '2026-11-08', end: '2026-11-14', secret: true },
+      comparison: {
+        dateRange: { start: '2026-11-01', end: '2026-11-07', secret: true },
+        revenue: 12500,
+        changePercent: 12.5,
+        secret: true,
+      },
+      tabs: {
+        open: { count: 2, total: 800, secret: true },
+        unpaid: { count: 1, total: 300 },
+      },
+      payments: { online: 500, counter: 900, courtFees: 1000, items: 400, secret: true },
+      bookingsByWeekdayHour: [{ weekday: 0, hour: 9, count: 3, secret: true }],
+      todayUtilization: { bookedHours: 2, openHours: 16, bookedShare: 0.125, secret: true },
+      lowStockItems: [{
+        itemId: 'item-1', name: 'Shuttlecock', stockOnHand: 2,
+        lowStockThreshold: 5, soldToday: 3, secret: true,
+      }],
+      monthlyRevenueGoal: 50000,
+      privateField: 'drop',
+    })).toEqual({
+      period: 'week',
+      timezone: 'Asia/Manila',
+      dateRange: { start: '2026-11-08', end: '2026-11-14' },
+      comparison: {
+        dateRange: { start: '2026-11-01', end: '2026-11-07' },
+        revenue: 12500,
+        changePercent: 12.5,
+      },
+      tabs: {
+        open: { count: 2, total: 800 },
+        unpaid: { count: 1, total: 300 },
+      },
+      payments: { online: 500, counter: 900, courtFees: 1000, items: 400 },
+      reservations: {},
+      billing: {},
+      players: {},
+      queue: {},
+      revenueByDay: [],
+      courtUtilization: [],
+      topItems: [],
+      peakHours: [],
+      statusBreakdown: [],
+      bookingsByWeekdayHour: [{ weekday: 0, hour: 9, count: 3 }],
+      todayUtilization: { bookedHours: 2, openHours: 16, bookedShare: 0.125 },
+      lowStockItems: [{
+        itemId: 'item-1', name: 'Shuttlecock', stockOnHand: 2,
+        lowStockThreshold: 5, soldToday: 3,
+      }],
+      monthlyRevenueGoal: 50000,
+    });
+  });
+
   test('preserves split group ids in billing tab snapshots', () => {
     expect(sanitizeSnapshot('/tabs/open', [{
       _id: 'tab-1',

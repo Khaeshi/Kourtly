@@ -8,6 +8,7 @@ import { getXenditInvoice } from '../services/xenditService.js';
 import { applyReservationPayment, validAmount } from '../lib/reservationPayment.js';
 import {
 ALL_SLOTS, toMinutes, getDayOfWeek,
+isWithinDateWindow,
   resolveSchedule, getBlockedSlots, getValidStartSlots,
 } from '../utils/scheduleUtils.js';
 import { transitionReservationPayment } from '../lib/reservationStateMachine.js';
@@ -191,6 +192,21 @@ router.post('/courts/:slug/reserve', async (req, res) => {
       return res.status(400).json({ error: 'courtNum, date, timeSlot, name, and phone are required.' });
     }
 
+    const timezone = court.settings?.timezone || 'Asia/Manila';
+    if (!isWithinDateWindow(date, timezone)) {
+      return res.status(400).json({ error: 'Booking date must be within the next 14 days.' });
+    }
+
+    const courtCount = Math.max(1, Number(court.courtCount) || 4);
+    const courtNumber = Number(courtNum);
+    if (!Number.isInteger(courtNumber) || courtNumber < 1 || courtNumber > courtCount) {
+      return res.status(400).json({ error: 'Invalid court number.' });
+    }
+    const playerCountNumber = Number(playerCount);
+    if (!Number.isInteger(playerCountNumber) || playerCountNumber < 1 || playerCountNumber > 10) {
+      return res.status(400).json({ error: 'playerCount must be an integer from 1 to 10.' });
+    }
+
     const courtId   = court._id;
     const durationHours = Number(duration);
     const startMins = toMinutes(timeSlot.split('-')[0]);
@@ -205,10 +221,6 @@ router.post('/courts/:slug/reserve', async (req, res) => {
       ScheduleBlock.find({ courtId, date }).lean(),
     ]);
 
-    const courtCount = Math.max(1, Number(court.courtCount) || 4);
-    if (!Number.isInteger(courtNum) || courtNum < 1 || courtNum > courtCount) {
-      return res.status(400).json({ error: `courtNum must be between 1 and ${courtCount}.` });
-    }
     const { isFullyClosed, baseSlots, perCourt } =
       resolveSchedule(rule, blocks, courtCount);
     if (isFullyClosed) return res.status(403).json({ error: 'The venue is closed on this date.' });
@@ -247,8 +259,8 @@ router.post('/courts/:slug/reserve', async (req, res) => {
     const endMin  = String(endMins % 60).padStart(2,'0');
     const reservation = await Reservation.create({
       courtId,
-      court:       Number(courtNum),
-      date, name, phone, email, playerCount, notes,
+      court:       courtNumber,
+      date, name, phone, email, playerCount: playerCountNumber, notes,
       timeSlot:    `${timeSlot.split('-')[0]}-${endHour}:${endMin}`,
       bookingSlots: Array.from({ length: durationHours }, (_, offset) => String(startMins + offset * 60).padStart(4, '0')),
       duration:    Number(duration),

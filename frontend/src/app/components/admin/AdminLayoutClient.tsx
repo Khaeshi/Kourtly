@@ -35,6 +35,7 @@ function pageTitle(pathname: string): string {
     billing: 'Billing',
     schedule: 'Scheduling',
     settings: 'Settings',
+    registration: 'Registration status',
   };
   return titles[route] ?? 'Admin';
 }

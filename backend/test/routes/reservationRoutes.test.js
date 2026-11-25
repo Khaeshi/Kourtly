@@ -49,6 +49,7 @@ async function makeGridCourt({ courtCount = 8, date = dateOffset(2) } = {}) {
     slug: `walk-in-grid-${Date.now()}-${Math.random().toString(36).slice(2)}`,
     adminEmail: 'walk-in-grid@court.com',
     isActive: true,
+    registrationStatus: 'approved',
     subscription: { status: 'active', tier: 'premium' },
     courtCount,
     settings: { timezone: 'Asia/Manila', hourlyRate: 210, reservationFee: 210 },
@@ -245,6 +246,7 @@ describe('reservation routes with tenant middleware', () => {
       slug: 'bounded-range-court',
       adminEmail: 'bounded-range@court.com',
       isActive: true,
+      registrationStatus: 'approved',
       subscription: { status: 'active' },
       courtCount: 4,
     });
@@ -294,6 +296,7 @@ describe('reservation routes with tenant middleware', () => {
       slug: 'large-range-court',
       adminEmail: 'large-range@court.com',
       isActive: true,
+      registrationStatus: 'approved',
       subscription: { status: 'active' },
       courtCount: 4,
     });
@@ -323,6 +326,7 @@ describe('reservation routes with tenant middleware', () => {
       slug: 'reservation-owner-court',
       adminEmail: 'owner@court.com',
       isActive: true,
+      registrationStatus: 'approved',
       subscription: { status: 'active' },
       courtCount: 4,
     });
@@ -331,6 +335,7 @@ describe('reservation routes with tenant middleware', () => {
       slug: 'requesting-court',
       adminEmail: 'requesting@court.com',
       isActive: true,
+      registrationStatus: 'approved',
       subscription: { status: 'active' },
       courtCount: 4,
     });
@@ -358,6 +363,7 @@ describe('reservation routes with tenant middleware', () => {
       slug: 'tenant-court',
       adminEmail: 'tenant@court.com',
       isActive: true,
+      registrationStatus: 'approved',
       subscription: { status: 'active' },
       courtCount: 4,
     });
@@ -401,6 +407,7 @@ describe('reservation routes with tenant middleware', () => {
         slug: 'admin-not-ready',
         adminEmail: 'admin-not-ready@example.com',
         isActive: true,
+        registrationStatus: 'approved',
         subscription: { status: 'active' },
       });
       const reservation = await Reservation.create({
@@ -443,6 +450,7 @@ describe('reservation routes with tenant middleware', () => {
           slug: 'admin-sub-account-invoice',
           adminEmail: 'admin-sub-account-invoice@example.com',
           isActive: true,
+          registrationStatus: 'approved',
           subscription: { status: 'active' },
           xendit: {
             subAccountId: 'admin-court-xendit-id',
