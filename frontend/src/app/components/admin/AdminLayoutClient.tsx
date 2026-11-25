@@ -33,6 +33,7 @@ function pageTitle(pathname: string): string {
     queue: 'Queue',
     reservation: 'Reservation',
     billing: 'Billing',
+    'count-stock': 'Count Stock',
     schedule: 'Scheduling',
     settings: 'Settings',
     registration: 'Registration status',

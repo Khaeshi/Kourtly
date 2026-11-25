@@ -91,7 +91,8 @@ export function CapabilityGate({ children }: { children: React.ReactNode }) {
   if (pathname === '/admin/registration') return <>{children}</>;
   const requiredModule = pathname.startsWith('/admin/queue') || pathname.startsWith('/admin/players')
     ? 'queue'
-    : pathname.startsWith('/admin/items') || pathname.startsWith('/admin/billing')
+    : pathname.startsWith('/admin/items') || pathname.startsWith('/admin/billing') ||
+      pathname.startsWith('/admin/count-stock')
       ? 'item_tabs'
       : pathname.startsWith('/admin/reservation') || pathname.startsWith('/admin/schedule')
         ? 'booking'

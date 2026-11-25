@@ -6,6 +6,8 @@ import type { CatalogItem } from '@/lib/api';
 import { Button } from '@/app/components/ui/Button';
 import { useSocketEvent } from '@/hooks/useSocketEvent';
 import { useConnectivity } from '@/lib/connectivity';
+import { StockActionModal, type StockActionKind } from '@/app/components/admin/StockActionModal';
+import { StockMovementLog } from '@/app/components/admin/StockMovementLog';
 
 // ── Constants (unchanged) ─────────────────────────────────────────────────────
 const CATEGORIES = ['general', 'drinks', 'equipment', 'food', 'court fee'];
@@ -58,6 +60,8 @@ export default function ItemsPage() {
   const [form,     setForm]     = useState<ItemForm>(emptyForm);
   const [showAdd,  setShowAdd]  = useState(false);
   const [filter,   setFilter]   = useState('all');
+  const [stockAction, setStockAction] = useState<{ item: CatalogItem; action: StockActionKind } | null>(null);
+  const [movementItem, setMovementItem] = useState<CatalogItem | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -103,6 +107,46 @@ export default function ItemsPage() {
     await deleteItem(item._id);
     sileo.success({ title: 'Deleted', description: item.name });
     await load();
+  };
+
+  const handleStockSuccess = (updatedItem: CatalogItem) => {
+    setItems(current => current.map(item => item._id === updatedItem._id ? updatedItem : item));
+  };
+
+  const renderStockControls = (item: CatalogItem) => {
+    if (/\b(fee|fees|service|services)\b/i.test(item.category)) return null;
+    if (offline) {
+      return <p role="status" className="text-xs font-medium text-amber-800">Not available offline</p>;
+    }
+
+    return (
+      <div className="space-y-2">
+        {item.trackStock ? (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+            <span className="font-medium text-gray-700">On hand: {item.stockOnHand ?? 0}</span>
+            <span className="text-gray-500">Low-stock threshold: {item.lowStockThreshold ?? 0}</span>
+            {item.isLowStock && (
+              <span className="rounded-full bg-amber-100 px-2 py-0.5 font-semibold text-amber-900">Low stock</span>
+            )}
+          </div>
+        ) : (
+          <p className="text-xs text-gray-500">Stock not tracked</p>
+        )}
+        <div className="flex flex-wrap gap-1">
+          {item.trackStock ? (
+            <>
+              <Button v="ghost" size="sm" onClick={() => setStockAction({ item, action: 'restock' })}>Restock</Button>
+              <Button v="ghost" size="sm" onClick={() => setStockAction({ item, action: 'adjust' })}>Adjust</Button>
+              <Button v="ghost" size="sm" onClick={() => setStockAction({ item, action: 'threshold' })}>Threshold</Button>
+              <Button v="ghost" size="sm" onClick={() => setStockAction({ item, action: 'stop' })}>Stop tracking</Button>
+              <Button v="ghost" size="sm" onClick={() => setMovementItem(item)}>Movement history</Button>
+            </>
+          ) : (
+            <Button v="ghost" size="sm" onClick={() => setStockAction({ item, action: 'start' })}>Start tracking</Button>
+          )}
+        </div>
+      </div>
+    );
   };
 
   const filtered = items.filter(i => filter === 'all' || i.category === filter);
@@ -198,8 +242,8 @@ export default function ItemsPage() {
 
               {/* Desktop table header */}
               <div className="hidden sm:grid px-5 py-2 border-b border-gray-50 bg-gray-50/40"
-                style={{ gridTemplateColumns: '1fr 90px 120px 80px 80px 160px' }}>
-                {['Name', 'Price', 'Category', 'Split', 'Status', ''].map(h => (
+                style={{ gridTemplateColumns: 'minmax(130px,1fr) 90px 120px 70px 80px minmax(210px,1.3fr) 160px' }}>
+                {['Name', 'Price', 'Category', 'Split', 'Status', 'Stock', ''].map(h => (
                   <span key={h} className="text-[0.62rem] font-bold tracking-widest uppercase text-gray-300">{h}</span>
                 ))}
               </div>
@@ -234,7 +278,7 @@ export default function ItemsPage() {
                     <>
                       {/* Desktop row */}
                       <div className="hidden sm:grid px-5 py-3 items-center"
-                        style={{ gridTemplateColumns: '1fr 90px 120px 80px 80px 160px' }}>
+                        style={{ gridTemplateColumns: 'minmax(130px,1fr) 90px 120px 70px 80px minmax(210px,1.3fr) 160px' }}>
                         <span className="text-sm font-medium text-gray-700 truncate pr-2">{item.name}</span>
                         <span className="font-mono text-sm text-gray-800">₱{item.price.toFixed(2)}</span>
                         <CategoryBadge category={item.category} />
@@ -244,6 +288,7 @@ export default function ItemsPage() {
                         <span className={`text-xs font-semibold ${item.isActive ? 'text-green-600' : 'text-gray-400'}`}>
                           {item.isActive ? 'Active' : 'Hidden'}
                         </span>
+                        <div className="py-1">{renderStockControls(item)}</div>
                         <div className="flex gap-1.5 justify-end">
                           <Button v="ghost" size="sm" onClick={() => { setEditId(item._id); setEditForm({ name: item.name, price: String(item.price), category: item.category, isSplittable: item.isSplittable ?? false }); }} disabled={offline} title={offlineTitle}>Edit</Button>
                           <Button v="ghost" size="sm" onClick={() => handleToggleActive(item)} disabled={offline} title={offlineTitle}>{item.isActive ? 'Hide' : 'Show'}</Button>
@@ -269,6 +314,7 @@ export default function ItemsPage() {
                             {item.isActive ? 'Active' : 'Hidden'}
                           </span>
                         </div>
+                        {renderStockControls(item)}
                         <div className="flex gap-1.5 pt-1">
                           <Button v="ghost" size="sm" onClick={() => { setEditId(item._id); setEditForm({ name: item.name, price: String(item.price), category: item.category, isSplittable: item.isSplittable ?? false }); }} disabled={offline} title={offlineTitle}>Edit</Button>
                           <Button v="ghost" size="sm" onClick={() => handleToggleActive(item)} disabled={offline} title={offlineTitle}>{item.isActive ? 'Hide' : 'Show'}</Button>
@@ -282,6 +328,22 @@ export default function ItemsPage() {
             </div>
           ))}
         </div>
+      )}
+      {stockAction && (
+        <StockActionModal
+          item={stockAction.item}
+          action={stockAction.action}
+          offline={offline}
+          onClose={() => setStockAction(null)}
+          onSuccess={handleStockSuccess}
+        />
+      )}
+      {movementItem && (
+        <StockMovementLog
+          item={movementItem}
+          offline={offline}
+          onClose={() => setMovementItem(null)}
+        />
       )}
     </div>
   );

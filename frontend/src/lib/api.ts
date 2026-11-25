@@ -108,6 +108,7 @@ export interface StockMovement {
   itemId: string;
   type: StockMovementType;
   quantityDelta: number;
+  soldQuantityDelta?: number;
   balanceAfter: number;
   unitPrice: number;
   note: string;
@@ -116,8 +117,14 @@ export interface StockMovement {
   tabLineId?: string | null;
   actorId: string;
   idempotencyKey: string;
+  stockWarning?: StockWarning | null;
   originalSaleAt?: string | null;
   createdAt: string;
+}
+
+export interface StockWarning {
+  itemId: string;
+  shortfall: number;
 }
 
 export interface StockMovementPage {
@@ -158,6 +165,7 @@ export interface Tab {
   _id: string;
   player: { _id: string; name: string; level: string };
   items: TabItem[]; total: number;
+  stockWarning?: StockWarning | null;
   status: 'open' | 'paid' | 'unpaid'; sessionDate: string;
   createdAt: string; updatedAt: string;
 }
@@ -719,6 +727,7 @@ export interface ReservationTab {
   duration:    number;
   items:       TabItem[];
   total:       number;
+  stockWarning?: StockWarning | null;
   status:      'open' | 'paid' | 'unpaid';
   paymentSummary?: {
     reservationFee: number;
