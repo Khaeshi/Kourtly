@@ -64,7 +64,7 @@ function SplitModal({ item, openTabs, primaryTab, onClose, onDone }: {
       ? `${fmt(item.price)} fully charged to ${primaryTab?.player.name ?? 'player'}.`
       : `${fmt(item.price)} split ${totalPlayers} ways — ${fmt(perPlayer)} each.`;
     await sileo.promise(
-      splitItem({ itemId: item._id, name: item.name, price: item.price, playerIds: allPlayerIds }),
+      splitItem({ itemId: item._id, playerIds: allPlayerIds }),
       {
         loading: { title: isSinglePlayer ? 'Charging...' : 'Splitting charge...' },
         success: { title: isSinglePlayer ? 'Charged!' : 'Split complete!', description: successDesc },
@@ -336,7 +336,7 @@ export default function BillingPage() {
     if (item.isSplittable) { setSplitItem(item); return; }
     const quantity = getQty(item._id);
     setAddingItem(item._id);
-    await addItemToTab(activeTab, { itemId: item._id, name: item.name, price: item.price, quantity });
+    await addItemToTab(activeTab, { itemId: item._id, quantity });
     sileo.success({ title: 'Added', description: `${item.name} ×${quantity} → ${activeTabObj?.player.name}` });
     setItemQty(item._id, 1); await loadAll(); setAddingItem(null);
   };
@@ -347,7 +347,7 @@ export default function BillingPage() {
     setAddingResItem(item._id);
     const resTab = resTabs.find(t => t._id === activeResTab);
     await addItemToReservationTab(activeResTab, {
-      itemId: item._id, name: item.name, price: item.price, quantity: q,
+      itemId: item._id, quantity: q,
     });
     sileo.success({ title: 'Added', description: `${item.name} ×${q} → ${resTab?.guestName}` });
     setResQty(q2 => ({ ...q2, [item._id]: 1 }));

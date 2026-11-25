@@ -23,6 +23,38 @@ import { transitionReservationPayment } from '../lib/reservationStateMachine.js'
 import { canAcceptOnlinePayments } from '../lib/xenditReadiness.js';
 
 const router = express.Router();
+const RESERVATION_CREATE_FIELD_TYPES = {
+  name: 'string',
+  phone: 'string',
+  email: 'string',
+  court: 'number',
+  date: 'string',
+  timeSlot: 'string',
+  duration: 'number',
+  playerCount: 'number',
+  notes: 'string',
+};
+
+function readReservationCreateFields(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    throw new Error('Request body must be an object.');
+  }
+  if (Object.keys(body).some(key => key.startsWith('$') || key.includes('.'))) {
+    throw new Error('Operator and dotted-path keys are not allowed.');
+  }
+
+  const fields = {};
+  for (const [field, expectedType] of Object.entries(RESERVATION_CREATE_FIELD_TYPES)) {
+    if (!Object.prototype.hasOwnProperty.call(body, field)) continue;
+    const value = body[field];
+    if (typeof value !== expectedType ||
+        (expectedType === 'number' && !Number.isFinite(value))) {
+      throw new Error(`${field} has an invalid type.`);
+    }
+    fields[field] = value;
+  }
+  return fields;
+}
 const PAYMENT_HOLD_MINUTES = Math.max(1, Number(process.env.PAYMENT_HOLD_MINUTES || 10));
 const ACTIVE_RESERVATION_STATUSES = [
   'pending',
@@ -511,13 +543,14 @@ router.get('/availability', async (req, res) => {
  */
 router.post('/', async (req, res) => {
   try {
-    const { court, date, timeSlot, duration = 1, name, phone } = req.body;
+    const fields = readReservationCreateFields(req.body);
+    const { court, date, timeSlot, name, phone } = fields;
     if (!court || !date || !timeSlot || !name || !phone) {
       return res.status(400).json({ error: 'court, date, timeSlot, name, and phone are required.' });
     }
 
     const startMins = toMinutes(timeSlot.split('-')[0]);
-    const durationHours = Number(duration);
+    const durationHours = fields.duration ?? 1;
     const endMins   = startMins + durationHours * 60;
     if (!Number.isInteger(durationHours) || durationHours < 1 || durationHours > 24 || !Number.isInteger(startMins) || startMins % 60 !== 0) {
       return res.status(400).json({ error: 'Invalid booking time or duration.' });
@@ -575,10 +608,11 @@ router.post('/', async (req, res) => {
     const canonicalSlot = `${timeSlot.split('-')[0]}-${endHour}:${endMin}`;
 
     const reservation = await Reservation.create({
-      ...req.body,
+      ...fields,
+      courtId: req.courtId,
       timeSlot: canonicalSlot,
       bookingSlots: Array.from({ length: durationHours }, (_, offset) => String(startMins + offset * 60).padStart(4, '0')),
-      duration: Number(duration),
+      duration: durationHours,
     });
 
     emitCourtEvent(req, 'reservation:updated', { action: 'created', reservationId: reservation._id, status: reservation.status });

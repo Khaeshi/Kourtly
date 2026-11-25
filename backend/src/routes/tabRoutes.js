@@ -1,7 +1,16 @@
 import express from 'express';
 import mongoose from 'mongoose';
 import Tab from '../models/Tab.js';
+import Player from '../models/Player.js';
+import Item from '../models/Item.js';
 import { emitCourtEvent } from '../lib/emitCourtEvent.js';
+import {
+  readAllowedBody,
+  readIdempotencyKey,
+  readItemPrice,
+  readLineQuantity,
+  readTabTotal,
+} from '../lib/billingValidation.js';
 import {
   emitBillingStockUpdates,
   recordBillingStockMovement,
@@ -14,7 +23,7 @@ const router = express.Router();
 router.get('/open', async (req, res) => {
   try {
     const tabs = await Tab.find({ courtId: req.courtId, status: 'open' })
-      .populate('player', 'name level')
+      .populate({ path: 'player', select: 'name level', match: { courtId: req.courtId } })
       .sort({ createdAt: -1 });
     res.json(tabs.filter(t => t.player != null));
   } catch (err) {
@@ -47,7 +56,7 @@ router.get('/history', async (req, res) => {
 
     const [tabs, total] = await Promise.all([
       Tab.find(query)
-        .populate('player', 'name level')
+        .populate({ path: 'player', select: 'name level', match: { courtId: req.courtId } })
         .sort({ updatedAt: -1 })
         .skip(skip)
         .limit(limitNum),
@@ -55,7 +64,7 @@ router.get('/history', async (req, res) => {
     ]);
 
     res.json({
-      tabs,
+      tabs: tabs.filter(tab => tab.player != null),
       pagination: {
         page:       pageNum,
         limit:      limitNum,
@@ -77,14 +86,21 @@ router.get('/history', async (req, res) => {
 // POST open a new tab for a player
 router.post('/', async (req, res) => {
   try {
+    const body = readAllowedBody(req.body, ['player']);
+    if (typeof body.player !== 'string' || !mongoose.Types.ObjectId.isValid(body.player)) {
+      return res.status(400).json({ error: 'player must be a valid player ID.' });
+    }
+    const player = await Player.findOne({ _id: body.player, courtId: req.courtId }).select('_id');
+    if (!player) return res.status(400).json({ error: 'Player not found in this court.' });
     const existing = await Tab.findOne({
       courtId: req.courtId,
-      player: req.body.player,
+      player: body.player,
        status: 'open' 
       });
     if (existing) return res.status(400).json({ error: 'Player already has an open tab' });
-    const tab = await Tab.create({ courtId: req.courtId, player: req.body.player, items: [], total: 0 });
-    await tab.populate('player', 'name level');
+    const tab = await Tab.create({ courtId: req.courtId, player: body.player, items: [], total: 0 });
+    await tab.populate({ path: 'player', select: 'name level', match: { courtId: req.courtId } });
+    if (!tab.player) return res.status(409).json({ error: 'Player is missing or outside court scope.' });
     emitCourtEvent(req, 'billing:tab_updated', { action: 'opened', tabId: tab._id });
     res.status(201).json(tab);
   } catch (err) {
@@ -98,37 +114,83 @@ router.post('/:id/items', async (req, res) => {
   const stockChanges = [];
   let tab;
   try {
-    const { itemId, name, price, quantity = 1, idempotencyKey } = req.body;
+    const body = readAllowedBody(req.body, ['itemId', 'name', 'price', 'quantity', 'idempotencyKey']);
+    const { itemId } = body;
+    if (typeof itemId !== 'string' || !mongoose.Types.ObjectId.isValid(itemId)) {
+      return res.status(400).json({ error: 'itemId must be a valid item ID.' });
+    }
+    if (body.name !== undefined && typeof body.name !== 'string') {
+      return res.status(400).json({ error: 'name must be a string.' });
+    }
+    if (body.price !== undefined) readItemPrice(body.price);
+    const quantity = readLineQuantity(body.quantity === undefined ? 1 : body.quantity);
+    const idempotencyKey = readIdempotencyKey(body.idempotencyKey);
+    const item = await Item.findOne({ _id: itemId, courtId: req.courtId }).select('_id name price');
+    if (!item) return res.status(400).json({ error: 'Item not found in this court.' });
+    readItemPrice(item.price);
     if (idempotencyKey) {
       const replay = await Tab.findOne({ _id: req.params.id, courtId: req.courtId, 'items.idempotencyKey': idempotencyKey })
-        .populate('player', 'name level');
-      if (replay) return res.json(replay);
+        .populate({ path: 'player', select: 'name level', match: { courtId: req.courtId } });
+      if (replay) {
+        if (!replay.player) return res.status(409).json({ error: 'Player is missing or outside court scope.' });
+        return res.json(replay);
+      }
     }
-    const lineTotal = price * quantity;
 
     await session.withTransaction(async () => {
       stockChanges.length = 0;
+      const transactionItem = await Item.findOne({
+        _id: itemId, courtId: req.courtId,
+      }).select('_id name price').session(session);
+      if (!transactionItem) {
+        const error = new Error('Item not found in this court.');
+        error.status = 400;
+        throw error;
+      }
+      const price = readItemPrice(transactionItem.price);
+      const lineTotal = price * quantity;
+      if (!Number.isFinite(lineTotal)) {
+        const error = new Error('Item charge must be a finite amount.');
+        error.status = 400;
+        throw error;
+      }
       tab = await Tab.findOne({ _id: req.params.id, courtId: req.courtId }).session(session);
       if (!tab) {
         const error = new Error('Tab not found');
         error.status = 404;
         throw error;
       }
+      const tabPlayer = await Player.findOne({
+        _id: tab.player, courtId: req.courtId,
+      }).select('_id').session(session);
+      if (!tabPlayer) {
+        const error = new Error('Player is missing or outside court scope.');
+        error.status = 400;
+        throw error;
+      }
 
-      tab.items.push({ item: itemId, name, price, quantity, idempotencyKey: idempotencyKey || null, addedAt: new Date() });
-      tab.total += lineTotal;
+      tab.total = readTabTotal(tab.total, lineTotal);
+      tab.items.push({
+        item: transactionItem._id,
+        name: transactionItem.name,
+        price,
+        quantity,
+        idempotencyKey,
+        addedAt: new Date(),
+      });
       const line = tab.items[tab.items.length - 1];
       await tab.save({ session });
 
       const change = await recordBillingStockMovement({
-        req, session, itemId, type: 'sale', quantity, unitPrice: price,
+        req, session, itemId: transactionItem._id, type: 'sale', quantity, unitPrice: price,
         note: 'Tab charge', tabType: 'queue', tabId: tab._id, tabLineId: line._id,
       });
       if (change) stockChanges.push(change);
     });
 
     tab = await Tab.findOne({ _id: req.params.id, courtId: req.courtId })
-      .populate('player', 'name level');
+      .populate({ path: 'player', select: 'name level', match: { courtId: req.courtId } });
+    if (!tab?.player) return res.status(409).json({ error: 'Player is missing or outside court scope.' });
     emitCourtEvent(req, 'billing:tab_updated', { action: 'item_added', tabId: tab._id });
     await emitBillingStockUpdates(req, stockChanges);
     res.json(tab);
@@ -148,25 +210,48 @@ router.post('/split', async (req, res) => {
   const stockChanges = [];
   let results = [];
   try {
-    const { itemId, name, price, playerIds, idempotencyKey } = req.body;
-    if (!playerIds || playerIds.length < 1) {
+    const body = readAllowedBody(req.body, ['itemId', 'name', 'price', 'playerIds', 'idempotencyKey']);
+    const { itemId, playerIds } = body;
+    if (typeof itemId !== 'string' || !mongoose.Types.ObjectId.isValid(itemId)) {
+      return res.status(400).json({ error: 'itemId must be a valid item ID.' });
+    }
+    if (body.name !== undefined && typeof body.name !== 'string') {
+      return res.status(400).json({ error: 'name must be a string.' });
+    }
+    if (body.price !== undefined) readItemPrice(body.price);
+    if (!Array.isArray(playerIds) || playerIds.length < 1 ||
+        playerIds.some(playerId => typeof playerId !== 'string' || !mongoose.Types.ObjectId.isValid(playerId))) {
       return res.status(400).json({ error: 'At least 1 player is required.' });
     }
+    if (new Set(playerIds).size !== playerIds.length) {
+      return res.status(400).json({ error: 'A player may only be charged once.' });
+    }
+    const idempotencyKey = readIdempotencyKey(body.idempotencyKey);
+    const [item, players] = await Promise.all([
+      Item.findOne({ _id: itemId, courtId: req.courtId }).select('_id name price'),
+      Player.find({ _id: { $in: playerIds }, courtId: req.courtId }).select('_id'),
+    ]);
+    if (!item) return res.status(400).json({ error: 'Item not found in this court.' });
+    if (players.length !== playerIds.length) {
+      return res.status(400).json({ error: 'Some players are missing or outside court scope.' });
+    }
+    readItemPrice(item.price);
     if (idempotencyKey) {
       const replayLines = await Tab.find({
         courtId: req.courtId,
         'items.idempotencyKey': idempotencyKey,
-      }).populate('player', 'name level');
-      if (replayLines.length) return res.json(replayLines);
+      }).populate({ path: 'player', select: 'name level', match: { courtId: req.courtId } });
+      if (replayLines.length) {
+        if (replayLines.some(tab => !tab.player)) {
+          return res.status(409).json({ error: 'A player is missing or outside court scope.' });
+        }
+        return res.json(replayLines);
+      }
     }
 
-    const isSplit    = playerIds.length > 1;
-    const chargeAmt  = isSplit
-      ? Math.round((price / playerIds.length) * 100) / 100
-      : price;
-    const itemLabel  = isSplit
-      ? `${name} (split ÷${playerIds.length})`
-      : name; // full charge — keep original name
+    const isSplit = playerIds.length > 1;
+    let chargeAmt;
+    let itemLabel;
 
     const chargeGroupId = playerIds.length > 1 ? new mongoose.Types.ObjectId() : null;
     await session.withTransaction(async () => {
@@ -174,6 +259,26 @@ router.post('/split', async (req, res) => {
       results = [];
       let firstLine;
       let firstTab;
+      const transactionPlayers = await Player.find({
+        _id: { $in: playerIds },
+        courtId: req.courtId,
+      }).select('_id').session(session);
+      const transactionItem = await Item.findOne({
+        _id: itemId,
+        courtId: req.courtId,
+      }).select('_id name price').session(session);
+      if (transactionPlayers.length !== playerIds.length || !transactionItem) {
+        const error = new Error('Item or players are missing or outside court scope.');
+        error.status = 400;
+        throw error;
+      }
+      const transactionPrice = readItemPrice(transactionItem.price);
+      chargeAmt = isSplit
+        ? Math.round((transactionPrice / playerIds.length) * 100) / 100
+        : transactionPrice;
+      itemLabel = isSplit
+        ? `${transactionItem.name} (split ÷${playerIds.length})`
+        : transactionItem.name;
 
       for (const playerId of playerIds) {
         let tab = await Tab.findOne({ courtId: req.courtId, player: playerId, status: 'open' })
@@ -185,7 +290,7 @@ router.post('/split', async (req, res) => {
         }
 
         tab.items.push({
-          item: itemId || undefined,
+          item: transactionItem._id,
           name: itemLabel,
           price: chargeAmt,
           quantity: 1,
@@ -193,7 +298,7 @@ router.post('/split', async (req, res) => {
           idempotencyKey: idempotencyKey || null,
           addedAt: new Date(),
         });
-        tab.total += chargeAmt;
+        tab.total = readTabTotal(tab.total, chargeAmt);
         const line = tab.items[tab.items.length - 1];
         await tab.save({ session });
         firstLine ??= line;
@@ -203,7 +308,7 @@ router.post('/split', async (req, res) => {
 
       if (chargeGroupId && firstLine && firstTab) {
         const change = await recordBillingStockMovement({
-          req, session, itemId, type: 'sale', quantity: 1,
+          req, session, itemId: transactionItem._id, type: 'sale', quantity: 1,
           unitPrice: chargeAmt * playerIds.length,
           note: 'Split tab charge', tabType: 'queue', tabId: firstTab._id,
           tabLineId: firstLine._id, chargeGroupId,
@@ -211,7 +316,7 @@ router.post('/split', async (req, res) => {
         if (change) stockChanges.push(change);
       } else if (firstLine && firstTab) {
         const change = await recordBillingStockMovement({
-          req, session, itemId, type: 'sale', quantity: 1, unitPrice: chargeAmt,
+          req, session, itemId: transactionItem._id, type: 'sale', quantity: 1, unitPrice: chargeAmt,
           note: 'Tab charge', tabType: 'queue', tabId: firstTab._id,
           tabLineId: firstLine._id,
         });
@@ -223,7 +328,10 @@ router.post('/split', async (req, res) => {
     const populatedTabs = await Tab.find({
       _id: { $in: resultTabIds },
       courtId: req.courtId,
-    }).populate('player', 'name level');
+    }).populate({ path: 'player', select: 'name level', match: { courtId: req.courtId } });
+    if (populatedTabs.some(tab => !tab.player)) {
+      return res.status(409).json({ error: 'A player is missing or outside court scope.' });
+    }
     const tabsById = new Map(populatedTabs.map(tab => [String(tab._id), tab]));
     results = resultTabIds.map(id => tabsById.get(id)).filter(Boolean);
     emitCourtEvent(req, 'billing:tab_updated', { action: 'split_item_added', tabIds: results.map(t => t?._id).filter(Boolean) });
@@ -250,6 +358,14 @@ router.delete('/:id/items/:itemIndex', async (req, res) => {
       if (!tab) {
         const error = new Error('Tab not found');
         error.status = 404;
+        throw error;
+      }
+      const tabPlayer = await Player.findOne({
+        _id: tab.player, courtId: req.courtId,
+      }).select('_id').session(session);
+      if (!tabPlayer) {
+        const error = new Error('Player is missing or outside court scope.');
+        error.status = 400;
         throw error;
       }
 
@@ -290,7 +406,8 @@ router.delete('/:id/items/:itemIndex', async (req, res) => {
     });
 
     updated = await Tab.findOne({ _id: req.params.id, courtId: req.courtId })
-      .populate('player', 'name level');
+      .populate({ path: 'player', select: 'name level', match: { courtId: req.courtId } });
+    if (!updated?.player) return res.status(409).json({ error: 'Player is missing or outside court scope.' });
     emitCourtEvent(req, 'billing:tab_updated', {
       action: 'item_removed', tabId: req.params.id, tabIds: affectedTabIds,
     });

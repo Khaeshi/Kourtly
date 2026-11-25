@@ -397,8 +397,11 @@ export const createMatch = (body: {
   shuttlecockId?: string; // optional — triggers auto-split
 }) => req<Match>('/queue', { method:'POST', body: JSON.stringify(body) });
 
-export const updateMatch = (id: string, body: Partial<Pick<Match,'status'|'court'>>) =>
+export const updateMatch = (id: string, body: Partial<Pick<Match,'court'>>) =>
   req<Match>(`/queue/${id}`, { method:'PATCH', body: JSON.stringify(body) });
+
+export const updateMatchStatus = (id: string, status: Extract<Match['status'], 'playing' | 'done'>) =>
+  req<Match>(`/queue/${id}/status`, { method:'POST', body: JSON.stringify({ status }) });
 
 export const deleteMatch = (id: string) =>
   req<{success:boolean}>(`/queue/${id}`, { method:'DELETE' });
@@ -474,10 +477,10 @@ export const getTabHistory = () => req<Tab[]>('/tabs/history');
 export const openTab = (playerId: string) =>
   req<Tab>('/tabs', { method:'POST', body: JSON.stringify({ player: playerId }) });
 
-export const addItemToTab = (tabId: string, item: { itemId: string; name: string; price: number; quantity: number; idempotencyKey?: string }) =>
+export const addItemToTab = (tabId: string, item: { itemId: string; quantity: number; idempotencyKey?: string }) =>
   req<Tab>(`/tabs/${tabId}/items`, { method:'POST', body: JSON.stringify(item) });
 
-export const splitItem = (body: { itemId: string; name: string; price: number; playerIds: string[]; idempotencyKey?: string }) =>
+export const splitItem = (body: { itemId: string; playerIds: string[]; idempotencyKey?: string }) =>
   req<Tab[]>('/tabs/split', { method:'POST', body: JSON.stringify(body) });
 
 export const removeItemFromTab = (tabId: string, itemIndex: number) =>
@@ -735,7 +738,7 @@ export const getReservationTabHistory = () =>
  
 export const addItemToReservationTab = (
   tabId: string,
-  item: { itemId: string; name: string; price: number; quantity: number }
+  item: { itemId: string; quantity: number }
   & { idempotencyKey?: string }
 ) => req<ReservationTab>(`/reservation-tabs/${tabId}/items`, {
   method: 'POST', body: JSON.stringify(item),

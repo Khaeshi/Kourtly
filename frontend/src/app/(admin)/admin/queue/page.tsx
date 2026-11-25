@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 import { sileo } from 'sileo';
-import { getPlayers, getQueue, getHistory, getSplittableItems, createMatch, updateMatch, deleteMatch, proofreadMatch } from '@/lib/api';
+import { getPlayers, getQueue, getHistory, getSplittableItems, createMatch, updateMatchStatus, deleteMatch, proofreadMatch } from '@/lib/api';
 import { OfflineUnavailableError } from '@/lib/api';
 import { useCapabilityState } from '@/lib/entitlements';
 import type { Player, Match, MatchType, Level, CatalogItem } from '@/lib/api';
@@ -189,9 +189,9 @@ function MatchCard({ match, index, showActions, onUpdate }: {
   const { status } = useConnectivity();
   const offline = status !== 'online';
   const offlineTitle = offline ? 'Reconnect to make changes' : undefined;
-  const updateStatus = async (nextStatus: Match['status']) => {
+  const updateStatus = async (nextStatus: Extract<Match['status'], 'playing' | 'done'>) => {
     try {
-      await updateMatch(match._id, { status: nextStatus });
+      await updateMatchStatus(match._id, nextStatus);
       await onUpdate();
     } catch (error) {
       sileo.error({ title: 'Could not update match', description: error instanceof Error ? error.message : 'Please try again.' });
