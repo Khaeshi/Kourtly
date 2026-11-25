@@ -486,8 +486,12 @@ export interface Reservation {
   amountPaidOnline?: number;
   remainingBalanceAmount?: number;
   paymentStatus?: 'none' | 'awaiting_payment' | 'paid' | 'expired' | 'failed' | 'cancelled';
+  paymentMethod?: string;
+  paymentChannel?: string;
   paymentExpiresAt?: string | null;
   paymentUrl?: string;
+  paidAt?: string | null;
+  paidAmount?: number | null;
   notes?: string;
   createdAt: string;
   updatedAt: string;
@@ -495,7 +499,64 @@ export interface Reservation {
 
 export type BookingPayload = Omit<Reservation, '_id' | 'status' | 'createdAt' | 'updatedAt'>;
 
+export interface ReservationGridBlock {
+  _id: string;
+  date: string;
+  courts: number[];
+  blockType: 'day' | 'range';
+  startTime: string;
+  endTime: string;
+  reason: string;
+}
+
+export interface ReservationGridCourt {
+  court: number;
+  openSlots: string[];
+  blockedSlots: string[];
+  reservations: Reservation[];
+}
+
+export interface ReservationGrid {
+  date: string;
+  courtCount: number;
+  timezone: string;
+  dayOfWeek: number;
+  dayName: string;
+  isFullyClosed: boolean;
+  openSlots: string[];
+  blocks: ReservationGridBlock[];
+  courts: ReservationGridCourt[];
+}
+
+export interface WalkInBookingPayload {
+  name: string;
+  phone: string;
+  email?: string;
+  court: number;
+  date: string;
+  startTime: string;
+  duration: number;
+  playerCount: number;
+  paymentMode: 'counter' | 'payment_link';
+}
+
+export interface WalkInBookingResponse {
+  reservation: Reservation;
+  paymentUrl: string | null;
+  paymentExpiresAt: string | null;
+  amountDue: number;
+}
+
 // ── Reservation API ────────────────────────────────────────────────────────────
+
+export const getReservationGrid = (date: string) =>
+  req<ReservationGrid>(`/reservations/grid?${new URLSearchParams({ date })}`);
+
+export const createWalkInBooking = (body: WalkInBookingPayload) =>
+  req<WalkInBookingResponse>('/reservations/walk-in', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
 
 export async function getReservations(params?: {
   date?: string;

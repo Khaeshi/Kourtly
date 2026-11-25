@@ -141,12 +141,12 @@ export function getValidStartSlots(baseSlots, durationHours, blockedSlots = []) 
    *   }
    * }
    */
-  export function resolveSchedule(rule, blocks) {
+  export function resolveSchedule(rule, blocks, courtCount = 4) {
     const baseSlots = getSlotsFromRule(rule);
     const isFullyClosed = baseSlots.length === 0;
   
     const perCourt = {};
-    [1, 2, 3, 4].forEach(c => {
+    Array.from({ length: Math.max(0, Number(courtCount) || 0) }, (_, index) => index + 1).forEach(c => {
       perCourt[c] = {
         adminBlockedSlots: isFullyClosed
           ? []

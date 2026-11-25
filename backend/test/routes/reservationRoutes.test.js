@@ -4,6 +4,9 @@ import app from '../../src/app.js';
 import Court from '../../src/models/Court.js';
 import Reservation from '../../src/models/Reservation.js';
 import ScheduleRule from '../../src/models/ScheduleRule.js';
+import ScheduleBlock from '../../src/models/ScheduleBlock.js';
+import { getCourtDayRange } from '../../src/services/itemStock.js';
+import { getDayOfWeek } from '../../src/utils/scheduleUtils.js';
 
 const previousTestAuthBypass = process.env.ALLOW_TEST_AUTH_BYPASS;
 
@@ -33,7 +36,199 @@ async function withXenditSettings(_routingEnabled, callback) {
   }
 }
 
+function dateOffset(days) {
+  const { date } = getCourtDayRange(new Date(), 'Asia/Manila');
+  const next = new Date(`${date}T00:00:00.000Z`);
+  next.setUTCDate(next.getUTCDate() + days);
+  return next.toISOString().slice(0, 10);
+}
+
+async function makeGridCourt({ courtCount = 8, date = dateOffset(2) } = {}) {
+  const court = await Court.create({
+    name: 'Walk-in Grid Court',
+    slug: `walk-in-grid-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    adminEmail: 'walk-in-grid@court.com',
+    isActive: true,
+    subscription: { status: 'active', tier: 'premium' },
+    courtCount,
+    settings: { timezone: 'Asia/Manila', hourlyRate: 210, reservationFee: 210 },
+  });
+  await ScheduleRule.create({
+    courtId: court._id,
+    dayOfWeek: getDayOfWeek(date),
+    isClosed: false,
+    openTime: '09:00',
+    closeTime: '23:00',
+  });
+  return { court, date };
+}
+
+async function postWalkIn(court, date, body = {}) {
+  return request(app)
+    .post('/api/reservations/walk-in')
+    .set('x-court-id', String(court._id))
+    .send({
+      name: 'Walk-in Guest',
+      phone: '09171234567',
+      court: 8,
+      date,
+      startTime: '10:00',
+      duration: 1,
+      playerCount: 4,
+      paymentMode: 'counter',
+      ...body,
+    });
+}
+
 describe('reservation routes with tenant middleware', () => {
+  test('GET /api/reservations/grid returns resolved schedule and reservations for every physical court', async () => {
+    const { court, date } = await makeGridCourt();
+    await ScheduleBlock.create({
+      courtId: court._id,
+      date,
+      courts: [2],
+      blockType: 'range',
+      startTime: '10:00',
+      endTime: '12:00',
+      reason: 'Maintenance',
+    });
+    await Reservation.create({
+      courtId: court._id,
+      name: 'Court Eight Guest',
+      phone: '09170000000',
+      court: 8,
+      date,
+      timeSlot: '10:00-11:00',
+      duration: 1,
+      status: 'confirmed',
+      paymentStatus: 'paid',
+    });
+
+    const response = await request(app)
+      .get(`/api/reservations/grid?date=${date}`)
+      .set('x-court-id', String(court._id));
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      date,
+      courtCount: 8,
+      timezone: 'Asia/Manila',
+      isFullyClosed: false,
+    });
+    expect(response.body.courts).toHaveLength(8);
+    expect(response.body.courts[1].openSlots).not.toContain('10:00-11:00');
+    expect(response.body.courts[7].reservations).toHaveLength(1);
+    expect(response.body.courts[7].reservations[0].status).toBe('confirmed');
+  });
+
+  test('POST /api/reservations/walk-in creates a confirmed counter-paid booking without online fees', async () => {
+    const { court, date } = await makeGridCourt();
+    const response = await postWalkIn(court, date);
+
+    expect(response.status).toBe(201);
+    expect(response.body).toMatchObject({
+      paymentUrl: null,
+      paymentExpiresAt: null,
+      amountDue: 210,
+      reservation: {
+        court: 8,
+        date,
+        timeSlot: '10:00-11:00',
+        duration: 1,
+        playerCount: 4,
+        status: 'confirmed',
+        paymentStatus: 'paid',
+        paymentMethod: 'counter',
+        paymentChannel: 'counter',
+        paymentOption: 'full',
+        reservationFeeAmount: 210,
+        maintenanceFeeAmount: 0,
+        amountPaidOnline: 0,
+        remainingBalanceAmount: 0,
+      },
+    });
+    expect(response.body.reservation.bookingSlots).toEqual(['0600']);
+  });
+
+  test('POST /api/reservations/walk-in creates a downpayment link with the existing online fee and expiry', async () => {
+    const previousProvider = process.env.PAYMENT_PROVIDER;
+    const previousAppBaseUrl = process.env.APP_BASE_URL;
+    process.env.PAYMENT_PROVIDER = 'mock';
+    process.env.APP_BASE_URL = 'https://kourtly.example';
+    try {
+      const { court, date } = await makeGridCourt();
+      const response = await postWalkIn(court, date, { paymentMode: 'payment_link' });
+
+      expect(response.status).toBe(201);
+      expect(response.body.amountDue).toBe(107.1);
+      expect(response.body.paymentUrl).toContain('mockPayment=1');
+      expect(response.body.paymentExpiresAt).toBeTruthy();
+      expect(response.body.reservation).toMatchObject({
+        status: 'approved_waiting_payment',
+        paymentStatus: 'awaiting_payment',
+        paymentOption: 'downpayment',
+        reservationFeeAmount: 210,
+        downpaymentAmount: 105,
+        maintenanceFeeAmount: 2.1,
+        paymentExpectedAmount: 107.1,
+      });
+      expect(response.body.reservation.paymentUrl).toBe(response.body.paymentUrl);
+    } finally {
+      if (previousProvider === undefined) delete process.env.PAYMENT_PROVIDER;
+      else process.env.PAYMENT_PROVIDER = previousProvider;
+      if (previousAppBaseUrl === undefined) delete process.env.APP_BASE_URL;
+      else process.env.APP_BASE_URL = previousAppBaseUrl;
+    }
+  });
+
+  test('POST /api/reservations/walk-in rejects conflicts, blocks, and courts outside the dynamic court count', async () => {
+    const { court, date } = await makeGridCourt();
+    await Reservation.create({
+      courtId: court._id, name: 'Existing', phone: '09170000000',
+      court: 8, date, timeSlot: '10:00-11:00', duration: 1,
+      status: 'confirmed', bookingSlots: ['0600'],
+    });
+
+    const conflict = await postWalkIn(court, date);
+    expect(conflict.status).toBe(409);
+
+    const blockedDate = dateOffset(3);
+    await ScheduleRule.create({
+      courtId: court._id, dayOfWeek: getDayOfWeek(blockedDate),
+      isClosed: false, openTime: '09:00', closeTime: '23:00',
+    });
+    await ScheduleBlock.create({
+      courtId: court._id, date: blockedDate, courts: [8],
+      blockType: 'range', startTime: '10:00', endTime: '11:00',
+    });
+    const blocked = await postWalkIn(court, blockedDate);
+    expect(blocked.status).toBe(403);
+
+    const outsideCourtCount = await postWalkIn(court, blockedDate, {
+      court: 9, startTime: '12:00',
+    });
+    expect(outsideCourtCount.status).toBe(400);
+  });
+
+  test('walk-in requires a phone and enforces the player limit', async () => {
+    const { court, date } = await makeGridCourt();
+    const missingPhone = await postWalkIn(court, date, { phone: '' });
+    expect(missingPhone.status).toBe(400);
+    const tooManyPlayers = await postWalkIn(court, date, { playerCount: 11 });
+    expect(tooManyPlayers.status).toBe(400);
+  });
+
+  test('concurrent walk-ins cannot claim the same court slot', async () => {
+    const { court, date } = await makeGridCourt();
+    const [first, second] = await Promise.all([
+      postWalkIn(court, date),
+      postWalkIn(court, date),
+    ]);
+
+    expect([first.status, second.status].sort()).toEqual([201, 409]);
+    expect(await Reservation.countDocuments({ courtId: court._id, court: 8, date })).toBe(1);
+  });
+
   test('GET /api/reservations rejects missing x-court-id', async () => {
     const res = await request(app).get('/api/reservations');
     expect(res.status).toBe(401);

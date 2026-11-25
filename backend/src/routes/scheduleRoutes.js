@@ -3,6 +3,7 @@ import ScheduleRule  from '../models/ScheduleRule.js';
 import ScheduleBlock from '../models/ScheduleBlock.js';
 import Reservation from '../models/Reservation.js';
 import { getDayOfWeek, resolveSchedule, ALL_SLOTS, toMinutes } from '../utils/scheduleUtils.js';
+import { seedDefaultRules } from '../services/scheduleDefaults.js';
 import { emitCourtEvent } from '../lib/emitCourtEvent.js';
 import { redis } from '../lib/redisClient.js';
 
@@ -26,26 +27,6 @@ async function invalidateResolveCache(courtId, date) {
   }
 }
 
-// ── Default seed data ─────────────────────────────────────────────────────────
-// Called once to initialise rules if none exist yet.
-
-async function seedDefaultRules(courtId) {
-  const count = await ScheduleRule.countDocuments({ courtId }); 
-  if (count > 0) return;
-
-  const defaults = [
-    { courtId, dayOfWeek: 0, isClosed: false, openTime: '12:00', closeTime: '23:00' },
-    { courtId, dayOfWeek: 1, isClosed: true  },
-    { courtId, dayOfWeek: 2, isClosed: false, openTime: '12:00', closeTime: '23:00' },
-    { courtId, dayOfWeek: 3, isClosed: false, openTime: '12:00', closeTime: '23:00' },
-    { courtId, dayOfWeek: 4, isClosed: false, openTime: '12:00', closeTime: '23:00' },
-    { courtId, dayOfWeek: 5, isClosed: false, openTime: '06:00', closeTime: '16:00' },
-    { courtId, dayOfWeek: 6, isClosed: false, openTime: '09:00', closeTime: '23:00' },
-  ];
-
-  await ScheduleRule.insertMany(defaults);
-  console.log(`[schedule] Default rules seeded for court ${courtId}`);
-}
 // ── Schedule Rules ────────────────────────────────────────────────────────────
 
 /**
@@ -179,11 +160,15 @@ router.get('/resolve', async (req, res) => {
     const { date } = req.query;
     if (!date) return res.status(400).json({ error: 'date is required.' });
 
+    const courtCount = Math.max(1, Number(req.court?.courtCount) || 4);
     const cacheKey = resolveCacheKey(req.courtId, date);
 
     try {
       const cached = await redis.get(cacheKey);
-      if (cached) return res.json(JSON.parse(cached));
+      if (cached) {
+        const payload = JSON.parse(cached);
+        if (payload.courtCount === courtCount) return res.json(payload);
+      }
     } catch (err) {
       console.error('[schedule] cache read failed, falling back to DB:', err.message);
     }
@@ -196,10 +181,12 @@ router.get('/resolve', async (req, res) => {
       ScheduleBlock.find({ courtId: req.courtId, date }).lean(),
     ]);
 
-    const { isFullyClosed, baseSlots, perCourt } = resolveSchedule(rule, blocks);
+    const { isFullyClosed, baseSlots, perCourt } =
+      resolveSchedule(rule, blocks, courtCount);
 
     const payload = {
       date,
+      courtCount,
       dayOfWeek,
       dayName: DAY_NAMES[dayOfWeek],
       isFullyClosed,

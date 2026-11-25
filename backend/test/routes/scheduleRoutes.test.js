@@ -1,7 +1,10 @@
+import { jest } from '@jest/globals';
 import request from 'supertest';
 import app from '../../src/app.js';
 import Court from '../../src/models/Court.js';
 import Reservation from '../../src/models/Reservation.js';
+import ScheduleBlock from '../../src/models/ScheduleBlock.js';
+import { redis } from '../../src/lib/redisClient.js';
 
 describe('schedule routes', () => {
   test('GET /api/schedule/rules seeds defaults and returns 7 records', async () => {
@@ -58,6 +61,39 @@ describe('schedule routes', () => {
 
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/date is required/i);
+  });
+
+  test('GET /api/schedule/resolve applies court-specific blocks above court four', async () => {
+    const getSpy = jest.spyOn(redis, 'get').mockResolvedValue(null);
+    const setSpy = jest.spyOn(redis, 'set').mockResolvedValue('OK');
+    const court = await Court.create({
+      name: 'Eight Court Venue',
+      slug: 'eight-court-venue',
+      adminEmail: 'eight@court.com',
+      isActive: true,
+      subscription: { status: 'active' },
+      courtCount: 8,
+    });
+    await ScheduleBlock.create({
+      courtId: court._id,
+      date: '2026-04-14',
+      courts: [8],
+      blockType: 'day',
+    });
+
+    try {
+      const res = await request(app)
+        .get('/api/schedule/resolve?date=2026-04-14')
+        .set('x-court-id', String(court._id));
+
+      expect(res.status).toBe(200);
+      expect(res.body.courtCount).toBe(8);
+      expect(res.body.perCourt['8'].adminBlockedSlots).toHaveLength(11);
+      expect(res.body.perCourt['7'].adminBlockedSlots).toHaveLength(0);
+    } finally {
+      getSpy.mockRestore();
+      setSpy.mockRestore();
+    }
   });
 
   test('POST /api/schedule/blocks rejects overlap with an active reservation', async () => {
