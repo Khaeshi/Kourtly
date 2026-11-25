@@ -75,7 +75,16 @@ async function getMovementTotals(courtId, itemIds, start, end, session) {
         courtId: objectId(courtId),
         itemId: { $in: itemIds },
         type: { $in: ['sale', 'void'] },
-        createdAt: { $gte: start, $lt: end },
+          $or: [
+            { type: 'sale', createdAt: { $gte: start, $lt: end } },
+            {
+              type: 'void',
+              $or: [
+                { originalSaleAt: { $gte: start, $lt: end } },
+                { originalSaleAt: null, createdAt: { $gte: start, $lt: end } },
+              ],
+            },
+          ],
       },
     },
     {
@@ -134,7 +143,16 @@ export async function getCourtSalesToday(courtId, start, end, session) {
       $match: {
         courtId: objectId(courtId),
         type: { $in: ['sale', 'void'] },
-        createdAt: { $gte: start, $lt: end },
+        $or: [
+          { type: 'sale', createdAt: { $gte: start, $lt: end } },
+          {
+            type: 'void',
+            $or: [
+              { originalSaleAt: { $gte: start, $lt: end } },
+              { originalSaleAt: null, createdAt: { $gte: start, $lt: end } },
+            ],
+          },
+        ],
       },
     },
     {

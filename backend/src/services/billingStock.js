@@ -31,6 +31,7 @@ export async function recordBillingStockMovement({
   let groupKey = asId(chargeGroupId);
   let lineKey = asId(tabLineId);
   let tabKey = asId(tabId);
+  let originalSaleAt = null;
   if (type === 'sale' &&
       (!Number.isInteger(quantity) || quantity <= 0 ||
        !Number.isFinite(unitPrice) || unitPrice < 0)) {
@@ -54,6 +55,7 @@ export async function recordBillingStockMovement({
     itemKey = sale.itemId;
     quantity = Math.abs(sale.quantityDelta);
     unitPrice = sale.unitPrice;
+    originalSaleAt = sale.createdAt;
     groupKey = sale.chargeGroupId ?? null;
     lineKey = sale.tabLineId ?? lineKey;
     tabKey = sale.tabId ?? tabKey;
@@ -116,6 +118,7 @@ export async function recordBillingStockMovement({
     actorId: String(actor),
     idempotencyKey,
     requestHash,
+    originalSaleAt,
   }], { session });
 
   return {

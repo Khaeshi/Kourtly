@@ -143,7 +143,13 @@ router.post('/:id/items', async (req, res) => {
   const stockChanges = [];
   let tab;
   try {
-    const { itemId, name, price, quantity = 1 } = req.body;
+    const { itemId, name, price, quantity = 1, idempotencyKey } = req.body;
+    if (idempotencyKey) {
+      const replay = await ReservationTab.findOne({
+        _id: req.params.id, courtId: req.courtId, 'items.idempotencyKey': idempotencyKey,
+      });
+      if (replay) return res.json(replay);
+    }
     const lineTotal = price * quantity;
 
     await session.withTransaction(async () => {
@@ -157,7 +163,7 @@ router.post('/:id/items', async (req, res) => {
         throw error;
       }
 
-      tab.items.push({ item: itemId, name, price, quantity, addedAt: new Date() });
+      tab.items.push({ item: itemId, name, price, quantity, idempotencyKey: idempotencyKey || null, addedAt: new Date() });
       tab.total += lineTotal;
       const line = tab.items[tab.items.length - 1];
       await tab.save({ session });

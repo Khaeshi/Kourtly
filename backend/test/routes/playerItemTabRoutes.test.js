@@ -91,4 +91,22 @@ describe('player, item, and tab routes', () => {
     expect(res.body.total).toBe(100);
     expect(res.body.items).toHaveLength(1);
   });
+
+  test('tab add item replays an idempotency key without duplicating the line', async () => {
+    const court = await makeCourt();
+    const player = await Player.create({
+      courtId: court._id, name: 'Idempotent Player', level: 'A', gender: 'Male', age: 28,
+    });
+    const tab = await Tab.create({ courtId: court._id, player: player._id, items: [], total: 0, status: 'open' });
+    const body = { name: 'Drink', price: 50, quantity: 1, idempotencyKey: 'tab-charge-once' };
+    const first = await request(app).post(`/api/tabs/${tab._id}/items`)
+      .set('x-court-id', String(court._id)).send(body);
+    const replay = await request(app).post(`/api/tabs/${tab._id}/items`)
+      .set('x-court-id', String(court._id)).send(body);
+
+    expect(first.status).toBe(200);
+    expect(replay.status).toBe(200);
+    expect(replay.body.total).toBe(50);
+    expect(replay.body.items).toHaveLength(1);
+  });
 });

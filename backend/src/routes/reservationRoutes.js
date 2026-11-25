@@ -150,19 +150,20 @@ router.post('/walk-in', async (req, res) => {
       name,
       phone,
       email = '',
+      notes = '',
       court,
       date,
       startTime,
       duration = 1,
       playerCount = 1,
       paymentMode,
+      paymentOption = 'full',
     } = req.body ?? {};
     const courtCount = Math.max(1, Number(req.court?.courtCount) || 4);
     const timezone = req.court?.settings?.timezone || 'Asia/Manila';
 
-    if (typeof name !== 'string' || !name.trim() ||
-        typeof phone !== 'string' || !phone.trim()) {
-      return res.status(400).json({ error: 'name and phone are required.' });
+    if (typeof name !== 'string' || !name.trim()) {
+      return res.status(400).json({ error: 'name is required.' });
     }
     if (!validDate(date)) {
       return res.status(400).json({ error: 'date must be a valid YYYY-MM-DD date.' });
@@ -179,6 +180,9 @@ router.post('/walk-in', async (req, res) => {
     }
     if (!['counter', 'payment_link'].includes(paymentMode)) {
       return res.status(400).json({ error: 'paymentMode must be counter or payment_link.' });
+    }
+    if (!['full', 'downpayment'].includes(paymentOption)) {
+      return res.status(400).json({ error: 'paymentOption must be full or downpayment.' });
     }
 
     const now = new Date();
@@ -238,8 +242,11 @@ router.post('/walk-in', async (req, res) => {
     );
     const statusPath = `/book/${courtRecord.slug}/status/`;
     const publicRef = `RSV-${Date.now().toString(36)}-${crypto.randomBytes(4).toString('hex')}`.toUpperCase();
+    const selectedPaymentAmount = paymentOption === 'full'
+      ? reservationFeeAmount
+      : downpaymentAmount;
     const amountDue = paymentMode === 'payment_link'
-      ? Number((downpaymentAmount + maintenanceFeeAmount).toFixed(2))
+      ? Number((selectedPaymentAmount + maintenanceFeeAmount).toFixed(2))
       : reservationFeeAmount;
 
     session = await mongoose.startSession();
@@ -260,8 +267,9 @@ router.post('/walk-in', async (req, res) => {
       const [created] = await Reservation.create([{
         courtId: req.courtId,
         name: name.trim(),
-        phone: phone.trim(),
+        phone: typeof phone === 'string' ? phone.trim() : '',
         email: typeof email === 'string' ? email.trim() : '',
+        notes: typeof notes === 'string' ? notes.trim() : '',
         court,
         date,
         timeSlot: canonicalTimeSlot(startTime, endMinutes),
@@ -269,12 +277,14 @@ router.post('/walk-in', async (req, res) => {
         duration,
         playerCount,
         status: paymentMode === 'counter' ? 'confirmed' : 'approved_waiting_payment',
-        paymentOption: paymentMode === 'counter' ? 'full' : 'downpayment',
+        paymentOption: paymentMode === 'counter' ? 'full' : paymentOption,
         reservationFeeAmount,
         downpaymentAmount,
         maintenanceFeeAmount,
         amountPaidOnline: 0,
-        remainingBalanceAmount: paymentMode === 'counter' ? 0 : reservationFeeAmount,
+        remainingBalanceAmount: paymentMode === 'counter'
+          ? 0
+          : Math.max(0, reservationFeeAmount - selectedPaymentAmount),
         adminNetAmount: paymentMode === 'counter' ? reservationFeeAmount : 0,
         paymentStatus: paymentMode === 'counter' ? 'paid' : 'awaiting_payment',
         paymentMethod: paymentMode === 'counter' ? 'counter' : '',

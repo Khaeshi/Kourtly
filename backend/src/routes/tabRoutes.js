@@ -98,7 +98,12 @@ router.post('/:id/items', async (req, res) => {
   const stockChanges = [];
   let tab;
   try {
-    const { itemId, name, price, quantity = 1 } = req.body;
+    const { itemId, name, price, quantity = 1, idempotencyKey } = req.body;
+    if (idempotencyKey) {
+      const replay = await Tab.findOne({ _id: req.params.id, courtId: req.courtId, 'items.idempotencyKey': idempotencyKey })
+        .populate('player', 'name level');
+      if (replay) return res.json(replay);
+    }
     const lineTotal = price * quantity;
 
     await session.withTransaction(async () => {
@@ -110,7 +115,7 @@ router.post('/:id/items', async (req, res) => {
         throw error;
       }
 
-      tab.items.push({ item: itemId, name, price, quantity, addedAt: new Date() });
+      tab.items.push({ item: itemId, name, price, quantity, idempotencyKey: idempotencyKey || null, addedAt: new Date() });
       tab.total += lineTotal;
       const line = tab.items[tab.items.length - 1];
       await tab.save({ session });
@@ -143,9 +148,16 @@ router.post('/split', async (req, res) => {
   const stockChanges = [];
   let results = [];
   try {
-    const { itemId, name, price, playerIds } = req.body;
+    const { itemId, name, price, playerIds, idempotencyKey } = req.body;
     if (!playerIds || playerIds.length < 1) {
       return res.status(400).json({ error: 'At least 1 player is required.' });
+    }
+    if (idempotencyKey) {
+      const replayLines = await Tab.find({
+        courtId: req.courtId,
+        'items.idempotencyKey': idempotencyKey,
+      }).populate('player', 'name level');
+      if (replayLines.length) return res.json(replayLines);
     }
 
     const isSplit    = playerIds.length > 1;
@@ -178,6 +190,7 @@ router.post('/split', async (req, res) => {
           price: chargeAmt,
           quantity: 1,
           ...(chargeGroupId ? { chargeGroupId } : {}),
+          idempotencyKey: idempotencyKey || null,
           addedAt: new Date(),
         });
         tab.total += chargeAmt;

@@ -16,6 +16,7 @@ const StockMovementSchema = new mongoose.Schema({
   tabId: { type: mongoose.Schema.Types.ObjectId, default: null },
   tabLineId: { type: mongoose.Schema.Types.ObjectId, default: null },
   chargeGroupId: { type: mongoose.Schema.Types.ObjectId, default: null },
+  originalSaleAt: { type: Date, default: null },
   actorId: { type: String, required: true },
   idempotencyKey: { type: String, required: true },
   requestHash: { type: String, required: true },
