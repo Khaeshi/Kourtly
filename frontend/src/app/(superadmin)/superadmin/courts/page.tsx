@@ -1,5 +1,8 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
+import { Button } from '@/app/components/ui/Button';
+import { StatusDot, type StatusTone } from '@/app/components/ui/StatusDot';
+import { AdminHeader } from '@/app/components/ui/AdminHeader';
 
 interface Court {
   _id: string; name: string; slug: string; adminEmail: string;
@@ -15,17 +18,8 @@ interface Court {
   capabilities?: { tier: string; modules: Record<string, boolean> };
 }
 
-const STATUS_STYLES: Record<string, string> = {
-  active:    'text-green-700 bg-green-50 border-green-200',
-  trial:     'text-amber-700 bg-amber-50 border-amber-200',
-  expired:   'text-red-600 bg-red-50 border-red-200',
-  suspended: 'text-gray-500 bg-gray-100 border-gray-200',
-};
-
-const SPORT_COLORS: Record<string, string> = {
-  badminton:  'text-green-700 bg-green-50 border-green-200',
-  pickleball: 'text-yellow-700 bg-yellow-50 border-yellow-200',
-  tennis:     'text-blue-700 bg-blue-50 border-blue-200',
+const TONE: Record<string, StatusTone> = {
+  active: 'ok', trial: 'wait', expired: 'bad', suspended: 'off',
 };
 
 const TIER_LABELS: Record<string, string> = {
@@ -35,28 +29,10 @@ const TIER_LABELS: Record<string, string> = {
 function InfoRow({ label, value }: { label: string; value?: string | null }) {
   if (!value) return null;
   return (
-    <div className="flex flex-col gap-0.5">
-      <span className="text-[0.62rem] font-semibold tracking-[0.08em] uppercase text-gray-400">{label}</span>
-      <span className="text-[0.82rem] text-gray-700">{value}</span>
+    <div className="flex flex-col gap-0.5 min-w-0">
+      <span className="ad-eyebrow">{label}</span>
+      <span className="text-sm break-words">{value}</span>
     </div>
-  );
-}
-
-function ActionBtn({ label, color, loading, onClick }: {
-  label: string; color: 'green' | 'red' | 'amber' | 'gray';
-  loading: boolean; onClick: () => void;
-}) {
-  const styles = {
-    green: 'border-green-200 bg-green-50 text-green-700 hover:bg-green-100',
-    red:   'border-red-200 bg-red-50 text-red-600 hover:bg-red-100',
-    amber: 'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100',
-    gray:  'border-gray-200 bg-white text-gray-500 hover:bg-gray-50',
-  };
-  return (
-    <button onClick={onClick} disabled={loading}
-      className={`px-3 py-1.5 rounded-md text-[0.72rem] font-medium border cursor-pointer transition-all disabled:opacity-50 ${styles[color]}`}>
-      {loading ? '...' : label}
-    </button>
   );
 }
 
@@ -64,6 +40,7 @@ export default function CourtsPage() {
   const [courts,  setCourts]  = useState<Court[]>([]);
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState<string | null>(null);
+  const [notice,  setNotice]  = useState<string | null>(null);
   const [search,  setSearch]  = useState('');
   const [filter,  setFilter]  = useState('all');
   const [acting,  setActing]  = useState<string | null>(null);
@@ -87,7 +64,7 @@ export default function CourtsPage() {
       setNewEmail('');
       await load();
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to update email');
+      setNotice(err instanceof Error ? err.message : 'Failed to update email');
     } finally {
       setEmailLoading(false);
     }
@@ -117,7 +94,7 @@ export default function CourtsPage() {
       });
       if (!res.ok) throw new Error('Failed');
       await load();
-    } catch { alert('Action failed'); }
+    } catch { setNotice('Action failed'); }
     finally { setActing(null); }
   };
 
@@ -130,7 +107,7 @@ export default function CourtsPage() {
       });
       if (!res.ok) throw new Error('Failed');
       await load();
-    } catch { alert('Tier update failed'); }
+    } catch { setNotice('Tier update failed'); }
     finally { setActing(null); }
   };
 
@@ -146,163 +123,120 @@ export default function CourtsPage() {
   });
 
   return (
-    <div className="max-w-[1100px] font-sans space-y-6">
+    <div className="max-w-[1100px]">
 
-      {/* Header */}
-      <div className="flex items-end justify-between flex-wrap gap-4 pb-5 border-b border-gray-100">
-        <div>
-          <p className="text-[0.72rem] font-medium tracking-[0.05em] uppercase text-gray-400 mb-1">Platform</p>
-          <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Courts</h1>
-        </div>
+      <AdminHeader eyebrow="Platform" title="Courts" right={
         <div className="flex items-center gap-3">
-          <span className="text-[0.72rem] text-gray-400 font-mono">{courts.length} total</span>
-          <button onClick={load}
-            className="text-[0.72rem] text-gray-400 border border-gray-200 rounded-md px-3 py-1.5 hover:border-gray-300 hover:text-gray-600 transition-colors bg-white cursor-pointer">
-            ↻ Refresh
-          </button>
+          <span className="ad-mono ad-muted text-xs">{courts.length} total</span>
+          <Button v="ghost" onClick={load}>Refresh</Button>
         </div>
-      </div>
+      } />
 
       {/* Filters */}
-      <div className="flex gap-3 flex-wrap">
-        <input
-          className="bg-white border border-gray-200 rounded-md px-3 py-2 text-[0.82rem] text-gray-900 outline-none focus:border-green-400 transition-colors w-[240px]"
-          placeholder="Search by name, email, city..."
-          value={search} onChange={e => setSearch(e.target.value)}
-        />
-        <div className="flex gap-1.5">
+      <div className="flex gap-3 flex-wrap items-end mb-5">
+        <div className="w-full sm:w-72">
+          <label htmlFor="sc-search" className="ad-label">Search courts</label>
+          <input id="sc-search" className="ad-input" placeholder="Name, email, city"
+            value={search} onChange={e => setSearch(e.target.value)} />
+        </div>
+        <div className="flex gap-2 flex-wrap">
           {['all', 'active', 'trial', 'expired', 'suspended'].map(f => (
-            <button key={f} onClick={() => setFilter(f)}
-              className={`px-3 py-1.5 rounded-md text-[0.72rem] font-medium border transition-colors cursor-pointer capitalize ${
-                filter === f
-                  ? 'bg-gray-900 text-white border-gray-900'
-                  : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'
-              }`}>{f}</button>
+            <button key={f} type="button" aria-pressed={filter === f} onClick={() => setFilter(f)}
+              className={`filter-btn capitalize${filter === f ? ' active' : ''}`}>{f}</button>
           ))}
         </div>
       </div>
 
+      {notice && (
+        <p role="alert" className="mb-4 flex items-center justify-between gap-3 border-l-4 border-[#C4401F] bg-[#F3E3DC] px-4 py-3 text-sm">
+          <span>{notice}</span>
+          <Button v="ghost" size="sm" onClick={() => setNotice(null)}>Dismiss</Button>
+        </p>
+      )}
+
       {/* Error */}
       {error && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-sm text-red-700 flex justify-between">
-          <span>⚠ {error}</span>
-          <button onClick={load} className="text-red-600 underline text-xs cursor-pointer bg-transparent border-none">Retry</button>
+        <div role="alert" className="mb-4 flex items-center justify-between gap-3 border-l-4 border-[#C4401F] bg-[#F3E3DC] px-4 py-3 text-sm">
+          <span>{error}</span>
+          <Button v="ghost" size="sm" onClick={load}>Try again</Button>
         </div>
       )}
 
       {/* Courts list */}
       {loading ? (
-        <div className="py-16 text-center text-gray-400 text-sm">Loading courts...</div>
+        <div className="py-16 text-center ad-muted text-sm">Loading courts...</div>
       ) : filtered.length === 0 ? (
-        <div className="py-16 text-center text-gray-400 text-sm bg-white border border-gray-200 rounded-lg">
-          No courts found.
+        <div className="py-14 text-center">
+          <p className="font-bold">No courts found.</p>
+          <p className="ad-muted text-sm mt-1">Clear the search or pick All.</p>
         </div>
       ) : (
-        <div className="flex flex-col gap-3">
+        <div className="border-t-2 border-[#0E2420]">
           {filtered.map(court => {
             const isExpanded = expanded === court._id;
             const daysUntilTrialEnd = court.subscription.status === 'trial'
               ? Math.ceil((new Date(court.subscription.trialEnds).getTime() - Date.now()) / 86400000)
               : null;
+            const tierKey = court.capabilities?.tier ?? court.subscription.tier ?? 'basic';
 
             return (
-              <div key={court._id}
-                className="bg-white border border-gray-200 rounded-lg overflow-hidden transition-shadow hover:shadow-sm">
+              <div key={court._id} className="border-b border-[#E1DBCB]">
 
                 {/* Court row — always visible */}
-                <div className="overflow-x-auto">
-                  <div
-                    className="grid items-center gap-4 px-5 py-4 cursor-pointer min-w-[760px]"
-                    style={{ gridTemplateColumns: '1fr 160px 120px 120px 120px auto' }}
-                    onClick={() => setExpanded(isExpanded ? null : court._id)}
-                  >
+                <button type="button" aria-expanded={isExpanded}
+                  onClick={() => setExpanded(isExpanded ? null : court._id)}
+                  className="w-full text-left grid items-center gap-x-4 gap-y-2 px-1 py-4 cursor-pointer hover:bg-[#EDE8D8]/50 transition-colors grid-cols-[minmax(0,1fr)_auto] lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1.3fr)_150px_90px_120px_20px]">
 
                   {/* Name + slug */}
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-[0.9rem] font-semibold text-gray-900">{court.name}</span>
-                      {!court.isActive && (
-                        <span className="text-[0.6rem] bg-gray-100 text-gray-400 px-1.5 py-0.5 rounded border border-gray-200">inactive</span>
-                      )}
-                      {!court.isPublic && (
-                        <span className="text-[0.6rem] bg-gray-100 text-gray-400 px-1.5 py-0.5 rounded border border-gray-200">unlisted</span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <span className="text-[0.7rem] text-gray-400 font-mono">/{court.slug}</span>
-                      {court.location.city && (
-                        <>
-                          <span className="text-gray-200">·</span>
-                          <span className="text-[0.7rem] text-gray-400">{court.location.city}{court.location.province ? `, ${court.location.province}` : ''}</span>
-                        </>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Admin email */}
-                  <div className="text-[0.72rem] text-gray-500 truncate" title={court.adminEmail}>
-                    {court.adminEmail}
-                  </div>
-
-                  {/* Subscription status */}
-                  <div className="flex flex-col gap-1">
-                    <span className={`text-[0.62rem] font-semibold tracking-[0.06em] uppercase px-2 py-0.5 rounded-[3px] border w-fit ${STATUS_STYLES[court.subscription.status]}`}>
-                      {court.subscription.status}
+                  <span className="min-w-0">
+                    <span className="flex items-center gap-2 flex-wrap">
+                      <b className="text-[15px]">{court.name}</b>
+                      {!court.isActive && <span className="ad-mono ad-muted text-xs">inactive</span>}
+                      {!court.isPublic && <span className="ad-mono ad-muted text-xs">unlisted</span>}
                     </span>
-                    {daysUntilTrialEnd !== null && (
-                      <span className={`text-[0.65rem] font-mono ${daysUntilTrialEnd <= 2 ? 'text-red-500' : 'text-amber-600'}`}>
-                        {daysUntilTrialEnd}d remaining
-                      </span>
-                    )}
-                    {court.subscription.status === 'active' && court.subscription.nextBilling && (
-                      <span className="text-[0.65rem] text-gray-400 font-mono">
-                        renews {new Date(court.subscription.nextBilling).toLocaleDateString()}
-                      </span>
-                    )}
-                  </div>
+                    <span className="ad-mono ad-muted text-xs block mt-0.5">
+                      /{court.slug}{court.location.city ? ` · ${court.location.city}${court.location.province ? `, ${court.location.province}` : ''}` : ''}
+                    </span>
+                  </span>
 
-                  {/* Plan + amount */}
-                  <div className="text-[0.7rem] text-gray-600 uppercase tracking-wide">
-                    {TIER_LABELS[court.capabilities?.tier ?? court.subscription.tier ?? 'basic'] ?? 'Basic'}
-                  </div>
+                  {/* Chevron: right of the name on phones, last column on desktop */}
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"
+                    className="text-[#5B6B66] transition-transform duration-200 motion-reduce:transition-none lg:order-last"
+                    style={{ transform: isExpanded ? 'rotate(180deg)' : 'none' }}>
+                    <path d="M6 9l6 6 6-6" />
+                  </svg>
 
-                  {/* Plan + amount */}
-                  <div className="text-[0.75rem] text-gray-600 font-mono">
-                    ₱{court.subscription.amount.toLocaleString()}/{court.subscription.plan === 'annual' ? 'yr' : 'mo'}
-                  </div>
-
-                  {/* Expand toggle */}
-                  <div className="flex items-center">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"
-                      className="text-gray-400 transition-transform duration-200"
-                      style={{ transform: isExpanded ? 'rotate(180deg)' : 'none' }}>
-                      <path d="M6 9l6 6 6-6"/>
-                    </svg>
-                  </div>
-                </div>
-                </div>
+                  {/* Meta: second line on phones, columns on desktop */}
+                  <span className="col-span-2 lg:contents flex flex-wrap items-center gap-x-5 gap-y-1">
+                    <span className="text-sm ad-muted truncate max-w-full" title={court.adminEmail}>{court.adminEmail}</span>
+                    <span>
+                      <StatusDot tone={TONE[court.subscription.status] ?? 'off'}><span className="capitalize">{court.subscription.status}</span></StatusDot>
+                      {daysUntilTrialEnd !== null && (
+                        <span className={`ad-mono text-xs block ${daysUntilTrialEnd <= 2 ? 'text-[#B8431F] font-bold' : 'text-[#B8821A]'}`}>{daysUntilTrialEnd}d remaining</span>
+                      )}
+                      {court.subscription.status === 'active' && court.subscription.nextBilling && (
+                        <span className="ad-mono ad-muted text-xs block">renews {new Date(court.subscription.nextBilling).toLocaleDateString()}</span>
+                      )}
+                    </span>
+                    <span className="ad-mono text-xs uppercase tracking-wide">{TIER_LABELS[tierKey] ?? 'Basic'}</span>
+                    <span className="ad-mono text-sm">₱{court.subscription.amount.toLocaleString()}/{court.subscription.plan === 'annual' ? 'yr' : 'mo'}</span>
+                  </span>
+                </button>
 
                 {/* Expanded detail */}
                 {isExpanded && (
-                  <div className="border-t border-gray-100 px-5 py-5 bg-gray-50 flex flex-col gap-5">
+                  <div className="bg-[#EDE8D8]/50 px-4 py-5 flex flex-col gap-6">
 
-                    {/* Sports */}
-                    <div className="flex gap-2 flex-wrap">
-                      {court.sports.map(s => (
-                        <span key={s} className={`text-[0.65rem] font-semibold tracking-[0.06em] uppercase px-2.5 py-1 rounded-[3px] border ${SPORT_COLORS[s] ?? 'text-gray-500 bg-gray-100 border-gray-200'}`}>
-                          {s}
-                        </span>
-                      ))}
-                      <span className="text-[0.65rem] text-gray-500 bg-white border border-gray-200 px-2.5 py-1 rounded-[3px]">
-                        {court.courtCount} physical court{court.courtCount !== 1 ? 's' : ''}
-                      </span>
-                    </div>
+                    <p className="text-sm">
+                      <span className="capitalize">{court.sports.join(' · ')}</span>
+                      <span className="ad-muted"> · {court.courtCount} physical court{court.courtCount !== 1 ? 's' : ''}</span>
+                    </p>
 
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
 
                       {/* Location */}
-                      <div className="flex flex-col gap-2.5">
-                        <p className="text-[0.65rem] font-bold tracking-[0.1em] uppercase text-gray-400">Location</p>
+                      <div className="flex flex-col gap-3 min-w-0">
+                        <p className="font-bold text-sm">Location</p>
                         <InfoRow label="Address"  value={court.location.address} />
                         <InfoRow label="City"     value={court.location.city} />
                         <InfoRow label="Province" value={court.location.province} />
@@ -310,8 +244,8 @@ export default function CourtsPage() {
                       </div>
 
                       {/* Contact */}
-                      <div className="flex flex-col gap-2.5">
-                        <p className="text-[0.65rem] font-bold tracking-[0.1em] uppercase text-gray-400">Contact</p>
+                      <div className="flex flex-col gap-3 min-w-0">
+                        <p className="font-bold text-sm">Contact</p>
                         <InfoRow label="Phone"     value={court.contact.phone} />
                         <InfoRow label="Email"     value={court.contact.email} />
                         <InfoRow label="Facebook"  value={court.contact.facebook} />
@@ -320,30 +254,31 @@ export default function CourtsPage() {
                       </div>
 
                       {/* Subscription */}
-                      <div className="flex flex-col gap-2.5">
-                        <p className="text-[0.65rem] font-bold tracking-[0.1em] uppercase text-gray-400">Subscription</p>
-                        <InfoRow label="Status"      value={court.subscription.status} />
-                        <InfoRow label="Plan"        value={court.subscription.plan} />
-                        <InfoRow label="Tier"        value={TIER_LABELS[court.capabilities?.tier ?? court.subscription.tier ?? 'basic'] ?? 'Basic'} />
-                        <InfoRow label="Amount"      value={`₱${court.subscription.amount.toLocaleString()}`} />
-                        <InfoRow label="Trial ends"  value={court.subscription.trialEnds ? new Date(court.subscription.trialEnds).toLocaleDateString() : null} />
-                        <InfoRow label="Start date"  value={court.subscription.startDate ? new Date(court.subscription.startDate).toLocaleDateString() : null} />
+                      <div className="flex flex-col gap-3 min-w-0">
+                        <p className="font-bold text-sm">Subscription</p>
+                        <InfoRow label="Status"       value={court.subscription.status} />
+                        <InfoRow label="Plan"         value={court.subscription.plan} />
+                        <InfoRow label="Tier"         value={TIER_LABELS[tierKey] ?? 'Basic'} />
+                        <InfoRow label="Amount"       value={`₱${court.subscription.amount.toLocaleString()}`} />
+                        <InfoRow label="Trial ends"   value={court.subscription.trialEnds ? new Date(court.subscription.trialEnds).toLocaleDateString() : null} />
+                        <InfoRow label="Start date"   value={court.subscription.startDate ? new Date(court.subscription.startDate).toLocaleDateString() : null} />
                         <InfoRow label="Next billing" value={court.subscription.nextBilling ? new Date(court.subscription.nextBilling).toLocaleDateString() : null} />
                       </div>
 
                       {/* Meta */}
-                      <div className="flex flex-col gap-2.5">
-                        <p className="text-[0.65rem] font-bold tracking-[0.1em] uppercase text-gray-400">Meta</p>
+                      <div className="flex flex-col gap-3 min-w-0">
+                        <p className="font-bold text-sm">Meta</p>
                         <InfoRow label="Registered" value={new Date(court.createdAt).toLocaleDateString()} />
-                        <InfoRow label="Public"     value={court.isPublic ? 'Yes — listed on landing page' : 'No — unlisted'} />
-                        <InfoRow label="Active"     value={court.isActive ? 'Yes' : 'No — suspended'} />
+                        <InfoRow label="Public"     value={court.isPublic ? 'Yes, listed on the landing page' : 'No, unlisted'} />
+                        <InfoRow label="Active"     value={court.isActive ? 'Yes' : 'No, suspended'} />
                         {/* Admin email — editable */}
-                        <div className="flex flex-col gap-0.5">
-                          <span className="text-[0.62rem] font-semibold tracking-[0.08em] uppercase text-gray-400">Admin</span>
+                        <div className="flex flex-col gap-1 min-w-0">
+                          <span className="ad-eyebrow">Admin</span>
                           {editingEmail === court._id ? (
-                            <div className="flex gap-2 items-center mt-0.5">
+                            <div className="flex flex-col gap-2">
                               <input
                                 autoFocus
+                                aria-label="New admin email"
                                 value={newEmail}
                                 onChange={e => setNewEmail(e.target.value)}
                                 onKeyDown={e => {
@@ -351,32 +286,17 @@ export default function CourtsPage() {
                                   if (e.key === 'Escape') { setEditingEmail(null); setNewEmail(''); }
                                 }}
                                 placeholder={court.adminEmail}
-                                className="bg-white border border-gray-300 rounded px-2 py-1 text-[0.78rem] text-gray-900 outline-none focus:border-green-400 transition-colors w-[200px]"
+                                className="ad-input"
                               />
-                              <button
-                                onClick={() => handleEmailUpdate(court._id)}
-                                disabled={emailLoading}
-                                className="text-[0.68rem] px-2.5 py-1 bg-gray-900 text-white rounded cursor-pointer hover:bg-gray-700 disabled:opacity-50 transition-colors border-none">
-                                {emailLoading ? '...' : 'Save'}
-                              </button>
-                              <button
-                                onClick={() => { setEditingEmail(null); setNewEmail(''); }}
-                                className="text-[0.68rem] px-2 py-1 text-gray-400 cursor-pointer hover:text-gray-600 bg-transparent border-none">
-                                Cancel
-                              </button>
+                              <div className="flex gap-2">
+                                <Button v="primary" size="sm" onClick={() => handleEmailUpdate(court._id)} loading={emailLoading}>Save</Button>
+                                <Button v="ghost" size="sm" onClick={() => { setEditingEmail(null); setNewEmail(''); }}>Cancel</Button>
+                              </div>
                             </div>
                           ) : (
-                            <div className="flex items-center gap-2">
-                              <span className="text-[0.82rem] text-gray-700">{court.adminEmail}</span>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setEditingEmail(court._id);
-                                  setNewEmail(court.adminEmail);
-                                }}
-                                className="text-[0.65rem] text-gray-400 hover:text-gray-600 underline cursor-pointer bg-transparent border-none">
-                                edit
-                              </button>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-sm break-all">{court.adminEmail}</span>
+                              <Button v="ghost" size="sm" onClick={() => { setEditingEmail(court._id); setNewEmail(court.adminEmail); }}>Change email</Button>
                             </div>
                           )}
                         </div>
@@ -384,57 +304,58 @@ export default function CourtsPage() {
                     </div>
 
                     {/* Product tier */}
-                    <div className="pt-2 border-t border-gray-200">
-                      <p className="text-[0.65rem] font-semibold tracking-[0.08em] uppercase text-gray-400 mb-2">Product tier</p>
+                    <div className="pt-4 border-t border-[#C9C3B3]">
+                      <p className="ad-label">Product tier</p>
                       <div className="flex gap-2 flex-wrap">
                         {[
                           ['basic', 'Basic'],
                           ['standard', 'Standard'],
                           ['premium', 'Premium'],
                           ['elite', 'Elite'],
-                        ].map(([tier, label]) => (
-                          <ActionBtn
-                            key={tier}
-                            label={label}
-                            color={(court.capabilities?.tier ?? court.subscription.tier ?? 'booking') === tier ? 'green' : 'gray'}
-                            loading={acting === court._id}
-                            onClick={() => {
-                              if (tier !== (court.capabilities?.tier ?? court.subscription.tier ?? 'booking') && confirm(`Set ${court.name} to the ${label} tier?`)) {
-                                updateTier(court._id, tier);
-                              }
-                            }}
-                          />
-                        ))}
+                        ].map(([tier, label]) => {
+                          const current = (court.capabilities?.tier ?? court.subscription.tier ?? 'booking') === tier;
+                          return (
+                            <button key={tier} type="button" aria-pressed={current} disabled={acting === court._id}
+                              className={`filter-btn${current ? ' active' : ''}`}
+                              onClick={() => {
+                                if (!current && confirm(`Set ${court.name} to the ${label} tier?`)) {
+                                  updateTier(court._id, tier);
+                                }
+                              }}>
+                              {label}
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
 
                     {/* Actions */}
-                    <div className="flex gap-2 flex-wrap pt-2 border-t border-gray-200">
-                      <p className="text-[0.65rem] font-semibold tracking-[0.08em] uppercase text-gray-400 self-center mr-2">
-                        Subscription actions
-                      </p>
-                      {court.subscription.status === 'trial' && (
-                        <>
-                          <ActionBtn label="Activate" color="green" loading={acting === court._id}
-                            onClick={() => { if (confirm(`Activate ${court.name}?`)) updateSubscription(court._id, { status: 'active', plan: court.subscription.plan }); }} />
-                          <ActionBtn label="+7 days trial" color="amber" loading={acting === court._id}
-                            onClick={() => updateSubscription(court._id, { extendTrialDays: 7 })} />
-                        </>
-                      )}
-                      {court.subscription.status === 'active' && (
-                        <>
-                          <ActionBtn label="Suspend" color="red" loading={acting === court._id}
-                            onClick={() => { if (confirm(`Suspend ${court.name}? They lose access immediately.`)) updateSubscription(court._id, { status: 'suspended' }); }} />
-                          {court.subscription.plan === 'monthly' && (
-                            <ActionBtn label="Upgrade to Annual" color="gray" loading={acting === court._id}
-                              onClick={() => { if (confirm(`Switch ${court.name} to annual plan?`)) updateSubscription(court._id, { plan: 'annual', amount: 20000 }); }} />
-                          )}
-                        </>
-                      )}
-                      {(court.subscription.status === 'suspended' || court.subscription.status === 'expired') && (
-                        <ActionBtn label="Reactivate" color="green" loading={acting === court._id}
-                          onClick={() => { if (confirm(`Reactivate ${court.name}?`)) updateSubscription(court._id, { status: 'active', plan: court.subscription.plan }); }} />
-                      )}
+                    <div className="pt-4 border-t border-[#C9C3B3]">
+                      <p className="ad-label">Subscription actions</p>
+                      <div className="flex gap-2 flex-wrap">
+                        {court.subscription.status === 'trial' && (
+                          <>
+                            <Button v="primary" loading={acting === court._id}
+                              onClick={() => { if (confirm(`Activate ${court.name}?`)) updateSubscription(court._id, { status: 'active', plan: court.subscription.plan }); }}>Activate…</Button>
+                            <Button v="ghost" loading={acting === court._id}
+                              onClick={() => updateSubscription(court._id, { extendTrialDays: 7 })}>Extend trial 7 days</Button>
+                          </>
+                        )}
+                        {court.subscription.status === 'active' && (
+                          <>
+                            <Button v="danger" loading={acting === court._id}
+                              onClick={() => { if (confirm(`Suspend ${court.name}? They lose access immediately.`)) updateSubscription(court._id, { status: 'suspended' }); }}>Suspend…</Button>
+                            {court.subscription.plan === 'monthly' && (
+                              <Button v="ghost" loading={acting === court._id}
+                                onClick={() => { if (confirm(`Switch ${court.name} to annual plan?`)) updateSubscription(court._id, { plan: 'annual', amount: 20000 }); }}>Switch to annual plan…</Button>
+                            )}
+                          </>
+                        )}
+                        {(court.subscription.status === 'suspended' || court.subscription.status === 'expired') && (
+                          <Button v="primary" loading={acting === court._id}
+                            onClick={() => { if (confirm(`Reactivate ${court.name}?`)) updateSubscription(court._id, { status: 'active', plan: court.subscription.plan }); }}>Reactivate…</Button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 )}

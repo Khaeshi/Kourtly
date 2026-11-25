@@ -23,7 +23,7 @@ async function proxyRequest(req: NextRequest, params: Promise<{ path: string[] }
     ? await req.text()
     : undefined; 
 
-  console.log(`🔄 Proxy ${method} /${path}`);
+  // console.log(`🔄 Proxy ${method} /${path}`);
 
   let internalAssertion;
   try {

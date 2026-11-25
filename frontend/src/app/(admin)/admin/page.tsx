@@ -1,6 +1,5 @@
 'use client';
 import Link from 'next/link';
-import { Users, Swords, Building2, TrendingUp, Calendar, ShoppingBag } from 'lucide-react';
 import { useState, useEffect, useCallback } from 'react';
 import { format, parseISO } from 'date-fns';
 import {
@@ -17,6 +16,9 @@ import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
 } from 'recharts';
+import { Button, buttonClass } from '@/app/components/ui/Button';
+import { StatusDot } from '@/app/components/ui/StatusDot';
+import { AdminHeader } from '@/app/components/ui/AdminHeader';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -46,29 +48,20 @@ const PERIOD_LABELS: Record<Period, string> = {
 };
 
 const STATUS_COLOR: Record<string, string> = {
-  confirmed: '#16a34a',
-  pending:   '#d97706',
-  cancelled: '#ef4444',
-  completed: '#6b7280',
+  confirmed: '#1F8A7A',
+  pending:   '#B8821A',
+  cancelled: '#C4401F',
+  completed: '#8A9A94',
 };
-
-const COURT_COLORS = ['#16a34a', '#0891b2', '#7c3aed', '#d97706'];
 
 const fmt  = (n: number) => `₱${n.toLocaleString('en-PH', { minimumFractionDigits: 0 })}`;
 const fmtK = (n: number) => n >= 1000 ? `₱${(n / 1000).toFixed(1)}k` : `₱${n}`;
 
 const quickActions = [
-  { href: '/admin/players',     label: 'Add Player'     },
-  { href: '/admin/queue',       label: 'Queue'          },
-  { href: '/admin/queue',       label: 'Generate Match' },
-  { href: '/admin/billing',     label: 'Billing'        },
-];
-
-const navLinks = [
-  { href: '/admin/players',     label: 'Players',     desc: 'Manage registered players and skill levels'  },
-  { href: '/admin/queue',       label: 'Queue',       desc: 'Live court queue and match generator'        },
-  { href: '/admin/billing',     label: 'Billing',     desc: 'Per-player tabs for drinks and shuttlecocks' },
-  { href: '/admin/reservation', label: 'Reservations',desc: 'Manage court bookings and confirmations'     },
+  { href: '/admin/players',     label: 'Add player'     },
+  { href: '/admin/queue',       label: 'Open queue'     },
+  { href: '/admin/queue',       label: 'Generate match' },
+  { href: '/admin/billing',     label: 'Open billing'   },
 ];
 
 // ── Sub-components ────────────────────────────────────────────────────────────
@@ -76,10 +69,10 @@ const navLinks = [
 function ChartTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="bg-white border border-gray-200 rounded-lg px-3 py-2 shadow-lg text-xs">
-      <p className="font-semibold text-gray-700 mb-1">{label}</p>
+    <div className="bg-[#F4F0E6] border border-[#C9C3B3] rounded-lg px-3 py-2 shadow-[0_8px_20px_rgba(14,36,32,.18)] text-xs text-[#0E2420]">
+      <p className="font-bold mb-1">{label}</p>
       {payload.map((p: any) => (
-        <p key={p.name} style={{ color: p.color }}>
+        <p key={p.name} className="ad-mono" style={{ color: p.color }}>
           {p.name}: {p.name.toLowerCase().includes('revenue') || p.name.toLowerCase().includes('billing') || p.name.toLowerCase().includes('reservation')
             ? fmt(p.value) : p.value}
         </p>
@@ -88,9 +81,39 @@ function ChartTooltip({ active, payload, label }: any) {
   );
 }
 
-function SectionTitle({ children }: { children: React.ReactNode }) {
-  return <p className="text-[0.65rem] font-semibold tracking-widest uppercase text-gray-400 mb-3">{children}</p>;
+function Chunk({ eyebrow, title, children }: { eyebrow: string; title: string; children: React.ReactNode }) {
+  return (
+    <section className="mt-10">
+      <p className="ad-eyebrow">{eyebrow}</p>
+      <h2 className="font-display text-[1.75rem] mt-1 mb-4">{title}</h2>
+      {children}
+    </section>
+  );
 }
+
+function Block({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <h3 className="text-base font-bold mb-2">{title}</h3>
+      {children}
+    </div>
+  );
+}
+
+function Skeleton({ h }: { h: number }) {
+  return <div aria-hidden="true" style={{ height: h }} className="bg-[#E1DBCB] rounded-md animate-pulse motion-reduce:animate-none" />;
+}
+
+function Empty({ title, hint }: { title: string; hint: string }) {
+  return (
+    <div className="py-8">
+      <p className="font-bold">{title}</p>
+      <p className="ad-muted text-sm mt-0.5">{hint}</p>
+    </div>
+  );
+}
+
+const TICK = { fontSize: 11, fill: '#5B6B66', fontFamily: 'var(--font-jetbrains-mono), monospace' };
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 
@@ -178,34 +201,28 @@ export default function AdminDashboard() {
 
   // ── Derived stat cards (merges live + analytics) ───────────────────────────
   const statCards = [
-    {
-      label: 'Total Players', value: playerCount,
-      sub: 'Registered', color: '#7c3aed', icon: Users,
-    },
-    {
-      label: 'Active Matches', value: matchCount,
-      sub: 'On court now', color: '#0ea5e9', icon: Swords,
-    },
-    {
-      label: 'Courts', value: courtCount,
-      sub: 'Available', color: '#10b981', icon: Building2,
-    },
+    { label: 'Players',        value: playerCount, sub: 'Registered' },
+    { label: 'Active matches', value: matchCount,  sub: 'On court now', tone: 'text-[#1F8A7A]' },
+    { label: 'Courts',         value: courtCount,  sub: 'Available' },
     {
       label: 'Revenue',
       value: analytics ? fmtK(analytics.billing.combinedRevenue) : '—',
-      sub: PERIOD_LABELS[period].toLowerCase(), color: '#d97706', icon: TrendingUp,
+      sub: PERIOD_LABELS[period].toLowerCase(),
     },
     {
       label: 'Reservations',
       value: analytics ? String(analytics.reservations.total) : '—',
-      sub: `${analytics?.reservations.confirmed ?? 0} confirmed`, color: '#16a34a', icon: Calendar,
+      sub: `${analytics?.reservations.confirmed ?? 0} confirmed`,
     },
     {
-      label: 'Avg Tab',
+      label: 'Avg tab',
       value: analytics ? fmtK(analytics.billing.avgPerTab) : '—',
-      sub: `${analytics?.billing.paidTabs ?? 0} tabs paid`, color: '#0891b2', icon: ShoppingBag,
+      sub: `${analytics?.billing.paidTabs ?? 0} tabs paid`,
     },
   ];
+  // The counts can hold a "not cached" sentence; show it once as a note instead of inside a big number.
+  const countNote = [playerCount, matchCount, courtCount].find(v => typeof v === 'string' && v.length > 1) as string | undefined;
+  const bigValue = (v: number | string) => (typeof v === 'string' && v.length > 6 ? '—' : v);
 
   // ── Chart data ─────────────────────────────────────────────────────────────
   const revenueChart = (analytics?.revenueByDay ?? []).map(d => ({
@@ -234,11 +251,23 @@ export default function AdminDashboard() {
     .map(s => ({
       name:  s.status.charAt(0).toUpperCase() + s.status.slice(1),
       value: s.count,
-      color: STATUS_COLOR[s.status] ?? '#9ca3af',
+      color: STATUS_COLOR[s.status] ?? '#8A9A94',
     }));
 
+  const courts = analytics?.courtUtilization ?? [];
+  const maxHours = Math.max(1, ...courts.map(c => c.hours));
+  const peak = analytics?.peakHours ?? [];
+  const peakMax = Math.max(0, ...peak.map(h => h.count));
+  const busiest = peakMax > 0 ? peak.find(h => h.count === peakMax) : undefined;
+  const awaiting = analytics?.reservations.pending ?? 0;
+  const allowed = (href: string) => {
+    if (href.includes('queue') || href.includes('players')) return capabilities.modules.queue;
+    if (href.includes('billing')) return capabilities.modules.item_tabs;
+    return true;
+  };
+
   return (
-    <div className="w-full font-sans">
+    <div className="w-full">
       {analyticsError && (
         <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           {analyticsError}
@@ -246,310 +275,246 @@ export default function AdminDashboard() {
       )}
 
       {/* ── Header ── */}
-      <div className="mb-7 flex items-end justify-between flex-wrap gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Dashboard</h1>
-          <p className="text-sm text-gray-500 mt-1">Welcome back, Admin</p>
-        </div>
-        {/* Period selector */}
-        <div className="flex gap-1 flex-wrap">
+      <AdminHeader title="Dashboard" right={
+        <div className="flex gap-2 flex-wrap">
           {(Object.keys(PERIOD_LABELS) as Period[]).map(p => (
-            <button key={p} onClick={() => setPeriod(p)}
-              className={`px-3 py-1.5 rounded-md text-xs font-medium border transition-all ${
-                period === p
-                  ? 'bg-gray-900 border-gray-900 text-white'
-                  : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'
-              }`}>
+            <button key={p} type="button" aria-pressed={period === p} onClick={() => setPeriod(p)}
+              className={`filter-btn${period === p ? ' active' : ''}`}>
               {PERIOD_LABELS[p]}
             </button>
           ))}
         </div>
-      </div>
+      } />
+      <p className="ad-muted text-sm -mt-3 mb-6">Welcome back, Admin</p>
 
-      {/* ── Stat cards (6 cards — 3 live + 3 analytics) ── */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+      {/* ── Key figures ── */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-px bg-[#C9C3B3] border-y border-[#C9C3B3]">
         {statCards.map(s => (
-          <div key={s.label} className="stat-card">
-            <div className="flex items-start justify-between w-full">
-              <div>
-                <p className="text-[0.65rem] font-medium text-gray-500 mb-1.5">{s.label}</p>
-                <p className="text-xl font-bold text-gray-900 leading-none mb-1 font-mono">{s.value}</p>
-                <p className="text-[0.65rem] text-gray-400">{s.sub}</p>
-              </div>
-              <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
-                style={{ background: `${s.color}15` }}>
-                <s.icon size={14} color={s.color} strokeWidth={1.75} />
-              </div>
-            </div>
+          <div key={s.label} className="bg-[#F4F0E6] px-4 py-3">
+            <p className="ad-eyebrow mb-1">{s.label}</p>
+            <p className={`ad-mono text-[clamp(1.25rem,2.6vw,1.9rem)] font-bold leading-none ${s.tone ?? ''}`}>{bigValue(s.value)}</p>
+            <p className="ad-muted text-xs mt-1.5">{s.sub}</p>
           </div>
         ))}
       </div>
+      {countNote && <p className="ad-muted text-sm mt-3">{countNote}</p>}
 
-      {/* ── Revenue chart ── */}
-      <div className="bg-white border border-gray-200 rounded-xl px-5 py-5 mb-6">
-        <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-          <SectionTitle>Revenue — {PERIOD_LABELS[period]}</SectionTitle>
-          {analytics && (
-            <div className="flex gap-4">
-              {[
-                { label: 'Reservation', color: '#16a34a', value: analytics.billing.reservationRevenue },
-                { label: 'Billing',     color: '#0891b2', value: analytics.billing.totalRevenue },
-              ].map(l => (
-                <div key={l.label} className="text-right">
-                  <div className="flex items-center gap-1.5 justify-end mb-0.5">
-                    <div className="w-2.5 h-2.5 rounded-sm" style={{ background: l.color }} />
-                    <span className="text-[0.65rem] text-gray-400">{l.label}</span>
-                  </div>
-                  <span className="font-mono text-sm font-semibold text-gray-700">{fmt(l.value)}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+      {/* ── Needs attention ── */}
+      <Chunk eyebrow="Right now" title="Needs attention">
+        {analyticsLoading ? (
+          <Skeleton h={48} />
+        ) : !analytics ? (
+          <p className="ad-muted text-sm">This could not be checked right now.</p>
+        ) : awaiting > 0 ? (
+          <div className="flex items-center justify-between gap-3 flex-wrap border-y border-[#E1DBCB] py-3">
+            <StatusDot tone="wait">
+              <b>{awaiting} reservation{awaiting !== 1 ? 's' : ''} awaiting payment</b>
+              <span className="ad-muted"> · {PERIOD_LABELS[period].toLowerCase()}</span>
+            </StatusDot>
+            <Link href="/admin/reservation" className={buttonClass('ghost')}>Review</Link>
+          </div>
+        ) : (
+          <StatusDot tone="ok">All clear. Nothing is waiting on you.</StatusDot>
+        )}
+      </Chunk>
+
+      {/* ── Revenue ── */}
+      <Chunk eyebrow="Money" title={`Revenue · ${PERIOD_LABELS[period]}`}>
+        {analytics && (
+          <div className="flex gap-6 flex-wrap mb-3">
+            {[
+              { label: 'Reservation', color: '#0E2420', value: analytics.billing.reservationRevenue },
+              { label: 'Billing',     color: '#1F8A7A', value: analytics.billing.totalRevenue },
+            ].map(l => (
+              <div key={l.label}>
+                <p className="flex items-center gap-1.5 text-xs ad-muted">
+                  <span aria-hidden="true" className="w-2.5 h-2.5 rounded-sm" style={{ background: l.color }} />{l.label}
+                </p>
+                <p className="ad-mono text-lg font-bold">{fmt(l.value)}</p>
+              </div>
+            ))}
+          </div>
+        )}
 
         {analyticsLoading ? (
-          <div className="h-48 bg-gray-50 rounded-lg animate-pulse" />
+          <Skeleton h={200} />
         ) : analyticsError ? (
-          <div className="h-48 flex items-center justify-center text-gray-400 text-sm">{analyticsError}</div>
+          <Empty title="Revenue is unavailable." hint={analyticsError} />
         ) : chartData.every(d => d.total === 0) ? (
-          <div className="h-48 flex items-center justify-center text-gray-300 text-sm">No revenue data for this period</div>
+          <Empty title="No revenue yet." hint="Paid reservations and tabs for this period will show here." />
         ) : (
-          <>
-            <ResponsiveContainer width="100%" height={190}>
+          <div role="img" aria-label={`Revenue ${PERIOD_LABELS[period].toLowerCase()}: reservations ${fmt(analytics?.billing.reservationRevenue ?? 0)}, billing ${fmt(analytics?.billing.totalRevenue ?? 0)}`}>
+            <ResponsiveContainer width="100%" height={210}>
               <AreaChart data={chartData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="resGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%"  stopColor="#16a34a" stopOpacity={0.15} />
-                    <stop offset="95%" stopColor="#16a34a" stopOpacity={0}    />
-                  </linearGradient>
-                  <linearGradient id="bilGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%"  stopColor="#0891b2" stopOpacity={0.15} />
-                    <stop offset="95%" stopColor="#0891b2" stopOpacity={0}    />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
-                <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#9ca3af' }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 10, fill: '#9ca3af' }} axisLine={false} tickLine={false}
-                  tickFormatter={v => fmtK(v)} width={48} />
+                <CartesianGrid strokeDasharray="3 3" stroke="#E1DBCB" vertical={false} />
+                <XAxis dataKey="label" tick={TICK} axisLine={false} tickLine={false} />
+                <YAxis tick={TICK} axisLine={false} tickLine={false} tickFormatter={v => fmtK(v)} width={52} />
                 <Tooltip content={<ChartTooltip />} />
                 <Area type="monotone" dataKey="reservationRevenue" name="Reservation Revenue"
-                  stroke="#16a34a" strokeWidth={2} fill="url(#resGrad)" />
+                  stroke="#0E2420" strokeWidth={2} fill="#0E2420" fillOpacity={0.1} />
                 <Area type="monotone" dataKey="billingRevenue" name="Billing Revenue"
-                  stroke="#0891b2" strokeWidth={2} fill="url(#bilGrad)" />
+                  stroke="#1F8A7A" strokeWidth={2} fill="#1F8A7A" fillOpacity={0.12} />
               </AreaChart>
             </ResponsiveContainer>
-          </>
+          </div>
         )}
-      </div>
+      </Chunk>
 
-      {/* ── Court utilization + Status breakdown ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+      {/* ── Busy times ── */}
+      <Chunk eyebrow="Busy times" title="When people play">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+          <Block title="Peak booking hours">
+            {analyticsLoading ? (
+              <Skeleton h={170} />
+            ) : peakMax === 0 ? (
+              <Empty title="No bookings yet." hint="Booked hours for this period will show here." />
+            ) : (
+              <>
+                <div role="img" aria-label={`Bookings by hour. Busiest: ${busiest?.label}, ${peakMax} bookings.`}>
+                  <ResponsiveContainer width="100%" height={170}>
+                    <BarChart data={peak} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#E1DBCB" vertical={false} />
+                      <XAxis dataKey="label" tick={{ ...TICK, fontSize: 10 }} axisLine={false} tickLine={false} />
+                      <YAxis tick={TICK} axisLine={false} tickLine={false} allowDecimals={false} width={28} />
+                      <Tooltip content={<ChartTooltip />} />
+                      <Bar dataKey="count" name="Bookings" radius={[3, 3, 0, 0]}>
+                        {peak.map((h, i) => <Cell key={i} fill={h.count === peakMax ? '#0E2420' : '#1F8A7A'} />)}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+                {busiest && <p className="ad-muted text-sm mt-2">Busiest hour: <b className="text-[#0E2420]">{busiest.label}</b> with {peakMax} booking{peakMax !== 1 ? 's' : ''}.</p>}
+              </>
+            )}
+          </Block>
 
-        {/* Court utilization */}
-        <div className="bg-white border border-gray-200 rounded-xl px-5 py-5">
-          <SectionTitle>Court Utilization</SectionTitle>
-          {analyticsLoading ? (
-            <div className="h-40 bg-gray-50 rounded-lg animate-pulse" />
-          ) : (
-            <>
-              <ResponsiveContainer width="100%" height={160}>
-                <BarChart data={analytics?.courtUtilization ?? []} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" vertical={false} />
-                  <XAxis dataKey="court" tickFormatter={v => `Court ${v}`}
-                    tick={{ fontSize: 10, fill: '#9ca3af' }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontSize: 10, fill: '#9ca3af' }} axisLine={false} tickLine={false} allowDecimals={false} />
-                  <Tooltip content={<ChartTooltip />} />
-                  <Bar dataKey="bookings" name="Bookings" radius={[4, 4, 0, 0]}>
-                    {(analytics?.courtUtilization ?? []).map((_, i) => (
-                      <Cell key={i} fill={COURT_COLORS[i % COURT_COLORS.length]} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-              <div className="grid grid-cols-4 gap-2 mt-3 pt-3 border-t border-gray-50">
-                {(analytics?.courtUtilization ?? []).map((c, i) => (
-                  <div key={c.court} className="text-center">
-                    <p className="font-mono text-sm font-bold" style={{ color: COURT_COLORS[i] }}>{c.hours}h</p>
-                    <p className="text-[0.6rem] text-gray-400 tracking-widest uppercase">Court {c.court}</p>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
+          <Block title="Court hours">
+            {analyticsLoading ? (
+              <Skeleton h={170} />
+            ) : courts.length === 0 ? (
+              <Empty title="No court activity yet." hint="Hours booked per court will show here." />
+            ) : (
+              courts.map(c => (
+                <div key={c.court} className="flex items-center gap-3 py-2.5 border-b border-[#E1DBCB]">
+                  <span className="w-16 text-sm font-medium shrink-0">Court {c.court}</span>
+                  <span className="flex-1 h-2.5 bg-[#E1DBCB] rounded-sm overflow-hidden" aria-hidden="true">
+                    <i className="block h-full bg-[#0E2420]" style={{ width: `${(c.hours / maxHours) * 100}%` }} />
+                  </span>
+                  <span className="ad-mono text-sm font-bold w-10 text-right shrink-0">{c.hours}h</span>
+                  <span className="ad-muted text-xs w-20 text-right shrink-0">{c.bookings} booking{c.bookings !== 1 ? 's' : ''}</span>
+                </div>
+              ))
+            )}
+          </Block>
         </div>
+      </Chunk>
 
-        {/* Reservation status */}
-        <div className="bg-white border border-gray-200 rounded-xl px-5 py-5">
-          <SectionTitle>Reservation Status</SectionTitle>
-          {analyticsLoading ? (
-            <div className="h-40 bg-gray-50 rounded-lg animate-pulse" />
-          ) : pieData.length === 0 ? (
-            <div className="h-40 flex items-center justify-center text-gray-300 text-sm">No reservations this period</div>
-          ) : (
-            <div className="flex items-center gap-4">
-              <ResponsiveContainer width={140} height={140}>
-                <PieChart>
-                  <Pie data={pieData} cx="50%" cy="50%" innerRadius={40} outerRadius={65}
-                    dataKey="value" paddingAngle={3}>
-                    {pieData.map((entry, i) => (
-                      <Cell key={i} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip formatter={(value, name) => [value, name]} />
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="flex-1 space-y-2">
-                {pieData.map(d => (
-                  <div key={d.name} className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-sm shrink-0" style={{ background: d.color }} />
-                      <span className="text-xs text-gray-600">{d.name}</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-mono text-sm font-semibold text-gray-800">{d.value}</span>
-                      <span className="text-[0.65rem] text-gray-400">
-                        ({analytics && analytics.reservations.total > 0
+      {/* ── Reservations and items ── */}
+      <Chunk eyebrow="Reservations and items" title="How bookings end up">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+          <Block title="Reservation status">
+            {analyticsLoading ? (
+              <Skeleton h={150} />
+            ) : pieData.length === 0 ? (
+              <Empty title="No reservations yet." hint="Outcomes for this period will show here." />
+            ) : (
+              <div className="flex items-center gap-5 flex-wrap">
+                <div role="img" aria-label={`Reservation status: ${pieData.map(d => `${d.name} ${d.value}`).join(', ')}`}>
+                  <ResponsiveContainer width={140} height={140}>
+                    <PieChart>
+                      <Pie data={pieData} cx="50%" cy="50%" innerRadius={40} outerRadius={65}
+                        dataKey="value" paddingAngle={2} stroke="none">
+                        {pieData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
+                      </Pie>
+                      <Tooltip formatter={(value, name) => [value, name]} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="flex-1 min-w-[180px]">
+                  {pieData.map(d => (
+                    <div key={d.name} className="flex items-center justify-between py-2 border-b border-[#E1DBCB]">
+                      <span className="flex items-center gap-2 text-sm">
+                        <span aria-hidden="true" className="w-2 h-2 rounded-full shrink-0" style={{ background: d.color }} />{d.name}
+                      </span>
+                      <span className="ad-mono text-sm">
+                        <b>{d.value}</b>
+                        <span className="ad-muted text-xs"> ({analytics && analytics.reservations.total > 0
                           ? Math.round(d.value / analytics.reservations.total * 100)
-                          : 0}%)
+                          : 0}%)</span>
                       </span>
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
-        </div>
-      </div>
+            )}
+          </Block>
 
-      {/* ── Peak hours + Top items ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-
-        {/* Peak hours */}
-        <div className="bg-white border border-gray-200 rounded-xl px-5 py-5">
-          <SectionTitle>Peak Booking Hours</SectionTitle>
-          {analyticsLoading ? (
-            <div className="h-36 bg-gray-50 rounded-lg animate-pulse" />
-          ) : (analytics?.peakHours ?? []).every(h => h.count === 0) ? (
-            <div className="h-36 flex items-center justify-center text-gray-300 text-sm">No bookings this period</div>
-          ) : (
-            <ResponsiveContainer width="100%" height={160}>
-              <BarChart data={analytics?.peakHours ?? []} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" vertical={false} />
-                <XAxis dataKey="label" tick={{ fontSize: 9, fill: '#9ca3af' }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 10, fill: '#9ca3af' }} axisLine={false} tickLine={false} allowDecimals={false} />
-                <Tooltip content={<ChartTooltip />} />
-                <Bar dataKey="count" name="Bookings" fill="#16a34a" radius={[3, 3, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          )}
-        </div>
-
-        {/* Top billing items */}
-        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-          <div className="px-5 py-4 border-b border-gray-100">
-            <SectionTitle>Top Billing Items</SectionTitle>
-          </div>
-          {analyticsLoading ? (
-            <div className="p-5 space-y-3">
-              {[...Array(4)].map((_, i) => <div key={i} className="h-8 bg-gray-100 rounded animate-pulse" />)}
-            </div>
-          ) : (analytics?.topItems ?? []).length === 0 ? (
-            <div className="p-10 text-center text-gray-300 text-sm">No billing data this period</div>
-          ) : (
-            <div className="divide-y divide-gray-50">
-              {(analytics?.topItems ?? []).slice(0, 6).map((item, i) => {
+          <Block title="Top billing items">
+            {analyticsLoading ? (
+              <div className="space-y-2">{[...Array(4)].map((_, i) => <Skeleton key={i} h={34} />)}</div>
+            ) : (analytics?.topItems ?? []).length === 0 ? (
+              <Empty title="No billing sales yet." hint="Items charged to tabs rank here." />
+            ) : (
+              (analytics?.topItems ?? []).slice(0, 6).map((item, i) => {
                 const maxRevenue = analytics!.topItems[0].revenue;
                 const pct = maxRevenue > 0 ? (item.revenue / maxRevenue) * 100 : 0;
                 return (
-                  <div key={item.name} className="px-5 py-3 flex items-center gap-3">
-                    <span className="font-mono text-[0.65rem] text-gray-300 w-4 shrink-0">{i + 1}</span>
+                  <div key={item.name} className="flex items-center gap-3 py-2.5 border-b border-[#E1DBCB]">
+                    <span className="ad-mono ad-muted text-xs w-4 shrink-0">{i + 1}</span>
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium text-gray-700 truncate">{item.name}</p>
-                      <div className="mt-1 h-1 bg-gray-100 rounded-full overflow-hidden">
-                        <div className="h-full bg-green-400 rounded-full" style={{ width: `${pct}%` }} />
+                      <p className="text-sm font-medium truncate">{item.name}</p>
+                      <div className="mt-1 h-1.5 bg-[#E1DBCB] rounded-sm overflow-hidden" aria-hidden="true">
+                        <div className="h-full bg-[#1F8A7A]" style={{ width: `${pct}%` }} />
                       </div>
                     </div>
                     <div className="text-right shrink-0">
-                      <p className="font-mono text-xs font-semibold text-gray-800">{fmt(item.revenue)}</p>
-                      <p className="text-[0.6rem] text-gray-400">×{item.quantity}</p>
+                      <p className="ad-mono text-sm font-bold">{fmt(item.revenue)}</p>
+                      <p className="ad-muted text-xs">×{item.quantity}</p>
                     </div>
                   </div>
                 );
-              })}
-            </div>
-          )}
+              })
+            )}
+          </Block>
         </div>
-      </div>
+      </Chunk>
 
-      {/* ── Quick Actions (existing) ── */}
-      <div className="bg-white border border-gray-200 rounded-xl px-6 py-5 mb-6">
-        <p className="text-sm font-semibold text-gray-900 mb-3">Ask Analytics</p>
-        <div className="flex flex-col gap-2">
-          <div className="flex gap-2">
+      {/* ── Ask analytics + quick actions ── */}
+      <section className="mt-12 border-t border-[#C9C3B3] pt-6">
+        <h2 className="text-[17px] font-bold mb-3">Ask analytics</h2>
+        <div className="flex gap-2 items-end">
+          <div className="flex-1">
+            <label htmlFor="db-ask" className="ad-label">Ask about your court data</label>
             <input
+              id="db-ask"
               value={aiQuestion}
               onChange={(e) => setAiQuestion(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter' && !aiLoading && !offline) onAskAnalytics(); }}
-              placeholder="Ask anything about your court data..."
-              className="flex-1 border border-gray-200 rounded-md px-3 py-2 text-sm outline-none focus:border-gray-400"
+              placeholder="Which hour is busiest on Fridays?"
+              className="ad-input"
             />
-            <button
-              onClick={onAskAnalytics}
-              disabled={aiLoading || !aiQuestion.trim() || offline}
-              title={offlineTitle}
-              className="px-3 py-2 rounded-md bg-gray-900 text-white text-xs font-medium disabled:opacity-50"
-            >
-              {aiLoading ? 'Asking...' : 'Ask'}
-            </button>
           </div>
-          {aiError && <p className="text-xs text-red-600">{aiError}</p>}
+          <Button v="primary" onClick={onAskAnalytics} loading={aiLoading} disabled={!aiQuestion.trim() || offline} title={offlineTitle}>
+            {aiLoading ? 'Asking...' : 'Ask'}
+          </Button>
+        </div>
+        <div aria-live="polite">
+          {aiError && <p className="ad-error">{aiError}</p>}
           {aiAnswer && (
-            <div className="bg-gray-50 border border-gray-200 rounded-md p-3">
-              <p className="text-xs text-gray-400 mb-1">Powered by AI</p>
-              <p className="text-sm text-gray-700 leading-relaxed">{aiAnswer}</p>
+            <div className="mt-3 rounded-md bg-[#EDE8D8] p-4">
+              <p className="ad-eyebrow mb-1">Powered by AI</p>
+              <p className="text-sm leading-relaxed">{aiAnswer}</p>
             </div>
           )}
         </div>
-      </div>
 
-      <div className="bg-white border border-gray-200 rounded-xl px-6 py-5 mb-6">
-        <p className="text-sm font-semibold text-gray-900 mb-4">Quick Actions</p>
-        <div className="actions-grid grid grid-cols-4 gap-2.5">
-          {quickActions.filter(action => {
-            if (action.href.includes('queue') || action.href.includes('players')) return capabilities.modules.queue;
-            if (action.href.includes('billing')) return capabilities.modules.item_tabs;
-            return true;
-          }).map(a => (
-            <Link key={a.label} href={a.href} className="qa-card">
-              <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center">
-                <div className="w-3 h-3 rounded-sm bg-gray-300" />
-              </div>
-              <span className="text-xs font-semibold text-gray-700 leading-snug">{a.label}</span>
-            </Link>
+        <h2 className="text-[17px] font-bold mt-8 mb-3">Quick actions</h2>
+        <div className="flex gap-2 flex-wrap">
+          {quickActions.filter(a => allowed(a.href)).map(a => (
+            <Link key={a.label} href={a.href} className={buttonClass('ghost')}>{a.label}</Link>
           ))}
         </div>
-      </div>
-
-      {/* ── Sections nav (existing) ── */}
-      <div className="bg-white border border-gray-200 rounded-xl px-6 py-5">
-        <p className="text-sm font-semibold text-gray-900 mb-3">Sections</p>
-        <div>
-          {navLinks.filter(link => {
-            if (link.href.includes('queue') || link.href.includes('players')) return capabilities.modules.queue;
-            if (link.href.includes('billing')) return capabilities.modules.item_tabs;
-            return true;
-          }).map((n, i, visibleLinks) => (
-            <Link key={n.href} href={n.href} className="section-link"
-              style={{ borderBottom: i < visibleLinks.length - 1 ? '1px solid #f3f4f6' : 'none', borderRadius: 0 }}>
-              <div>
-                <p className="text-sm font-medium text-gray-700">{n.label}</p>
-                <p className="text-xs text-gray-400 mt-0.5">{n.desc}</p>
-              </div>
-              <span className="text-sm text-gray-300 shrink-0 ml-4">→</span>
-            </Link>
-          ))}
-        </div>
-      </div>
+      </section>
 
     </div>
   );

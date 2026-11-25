@@ -1,4 +1,7 @@
 import Link from 'next/link';
+import { getPlan, formatPlanPrice } from '@/lib/plans';
+
+const basicPlan = getPlan('basic');
 
 function ArrowIcon() {
   return (
@@ -94,8 +97,8 @@ export default function SplitHero() {
               <ArrowIcon />
             </Link>
             <p className="mt-1 flex flex-wrap items-baseline gap-x-2">
-              <span className="font-display text-[2.2rem] text-[var(--line)]">₱2,000</span>
-              <span className="text-[0.85rem] text-[var(--line-dim)]">per month, Basic plan</span>
+              <span className="font-display text-[2.2rem] text-[var(--line)]">{formatPlanPrice(basicPlan.price)}</span>
+              <span className="text-[0.85rem] text-[var(--line-dim)]">per month, {basicPlan.name} plan</span>
             </p>
           </div>
         </div>

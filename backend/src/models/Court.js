@@ -73,7 +73,7 @@ const CourtSchema = new mongoose.Schema({
 
   // ── Branding ─────────────────────────────────────────────────────────────────
   description: { type: String, default: '' },
-  photos:      { type: [String], default: [] }, // URLs (Cloudinary / S3)
+  photos:      { type: [String], default: [] },
   logoUrl:     { type: String, default: '' },
   amenities:   { type: [String], default: [] }, // ['parking','shower','locker']
 

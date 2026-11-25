@@ -16,7 +16,7 @@ const BOOKING_STEPS = [
   { title: 'Search', description: 'Browse courts near you and check real-time availability before you leave the house.' },
   {
     title: 'Queue',
-    description: 'Get placed by skill tier and play-count fairness, not a win-rate leaderboard.',
+    description: 'Get placed by skill tier and play-count fairness.',
     chips: [
       { letter: 'A', label: 'Advanced' },
       { letter: 'B', label: 'Intermediate' },

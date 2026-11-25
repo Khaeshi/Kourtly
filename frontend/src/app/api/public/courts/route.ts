@@ -5,13 +5,13 @@ const BACKEND_URL =
 
 export async function GET() {
   try {
-    console.log('🌐 Fetching public courts...');
+    // console.log('🌐 Fetching public courts...');
 
     const response = await fetch(`${BACKEND_URL}/api/public/courts`, {
       cache: 'no-store',
     });
 
-    console.log('Backend status:', response.status);
+    // console.log('Backend status:', response.status);
 
     if (!response.ok) {
       // Log backend text for debugging, but return a clean JSON error
@@ -23,11 +23,11 @@ export async function GET() {
     }
 
     const courts = await response.json();
-    console.log('✅ Public courts:', Array.isArray(courts) ? courts.length : 0);
+    // console.log('✅ Public courts:', Array.isArray(courts) ? courts.length : 0);
 
     return NextResponse.json(courts);
   } catch (error) {
-    console.error('❌ Public courts proxy error:', error);
+    // console.error('❌ Public courts proxy error:', error);
     // For safety on the landing page, return an empty array instead of HTML
     return NextResponse.json([], { status: 200 });
   }

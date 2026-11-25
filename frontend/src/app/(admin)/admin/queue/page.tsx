@@ -3,33 +3,29 @@ import { useState, useEffect, useCallback } from 'react';
 import { sileo } from 'sileo';
 import { getPlayers, getQueue, getHistory, getSplittableItems, createMatch, updateMatch, deleteMatch, proofreadMatch } from '@/lib/api';
 import { OfflineUnavailableError } from '@/lib/api';
+import { useCapabilityState } from '@/lib/entitlements';
 import type { Player, Match, MatchType, Level, CatalogItem } from '@/lib/api';
 import { useSocketEvent } from '@/hooks/useSocketEvent';
 import { useConnectivity } from '@/lib/connectivity';
+import { Button } from '@/app/components/ui/Button';
+import { LevelMark } from '@/app/components/ui/LevelMark';
+import { StatusDot } from '@/app/components/ui/StatusDot';
+import { AdminHeader } from '@/app/components/ui/AdminHeader';
 
 const LEVEL_ORDER: Record<Level, number> = { A:0, B:1, C:2, D:3 };
-const LEVEL_COLOR: Record<Level, string>  = { A:'#d97706', B:'#16a34a', C:'#0891b2', D:'#7c3aed' };
 const MATCH_LABELS: Record<MatchType, string> = { MD:'Mens Doubles', WD:'Womens Doubles', XD:'Mixed Doubles' };
 
 interface GeneratedMatch { team1: Player[]; team2: Player[]; matchType: MatchType; }
 interface EditingSlot    { side: 'team1'|'team2'; index: number; }
 
-// ── Randomizer ────────────────────────────────────────────────────────────────
-
+// ── Randomizer ──────────────────────────────────────────────
 export type MatchMode = 'balanced' | 'solid';
 export type MatchTypePreference = 'auto' | 'MD' | 'WD' | 'XD';
 
-// ── Scoring helpers ───────────────────────────────────────────────────────────
-
 /**
  * Score a team pairing. Lower = better (more balanced).
- *
- * BALANCED scoring philosophy:
- *   - The two teams should be as close in total level as possible → heaviest weight
- *   - Within each team, having similar levels is preferred but NOT enforced
- *     so A+D vs B+C is allowed — both teams are level-sum 3, perfectly balanced
- *   - Match count fairness (who's played least) is secondary
- *   - A small random jitter introduces variety so the same match isn't always generated
+ * Between-team level balance is heaviest, match-count fairness is secondary,
+ * and a small random jitter keeps repeated generates varied.
  */
 function scoreCombo(t1: Player[], t2: Player[]): number {
   const t1LevelSum  = LEVEL_ORDER[t1[0].level] + LEVEL_ORDER[t1[1].level];
@@ -63,13 +59,7 @@ function pickMatchType(
   return possible[Math.floor(Math.random() * possible.length)];
 }
 
-/**
- * BALANCED match:
- * Finds the combo where the two teams' total level sums are as close as possible.
- * All pairings (A+D vs B+C, B+C vs B+C, A+B vs C+D, etc.) are valid candidates —
- * the score simply picks whichever produces the most even match.
- * Small random jitter ensures variety across repeated generates.
- */
+/** BALANCED: the two teams' total level sums are as close as possible (A+D vs B+C is fine). */
 function generateBalancedMatch(
   players: Player[],
   preference: MatchTypePreference = 'auto'
@@ -112,11 +102,7 @@ function generateBalancedMatch(
   return best ?? null;
 }
 
-/**
- * SOLID match — same-level players grouped together.
- * A+A vs A+A is the ideal; falls back to adjacent levels when unavailable.
- * Examples: all-B, all-C, A+A vs B+B, B+B vs C+C, etc.
- */
+/** SOLID: same-level players grouped together (A+A vs A+A ideal, falls back to adjacent levels). */
 function generateSolidMatch(
   players: Player[],
   preference: MatchTypePreference = 'auto'
@@ -176,21 +162,9 @@ function generateMatch(
 }
 
 // ── Small components ──────────────────────────────────────────────────────────
-const Btn = ({ v='ghost', children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement> & { v?:'primary'|'ghost'|'danger'|'gold' }) => {
-  const map = {
-    primary: { bg:'#f0fdf4', border:'#bbf7d0', color:'#15803d' },
-    ghost:   { bg:'#fff',    border:'#e5e7eb', color:'#6b7280' },
-    danger:  { bg:'#fef2f2', border:'#fecaca', color:'#dc2626' },
-    gold:    { bg:'#fffbeb', border:'#fde68a', color:'#92400e' },
-  };
-  const s = map[v];
-  return <button {...props} style={{ background:s.bg, border:`1px solid ${s.border}`, color:s.color, padding:'0.4rem 0.85rem', borderRadius:'6px', fontSize:'0.78rem', fontWeight:500, cursor:'pointer', fontFamily:"'Inter',sans-serif", transition:'all 0.12s', ...props.style }}>{children}</button>;
-};
-
-function LevelBadge({ level }: { level: string }) {
-  const color = LEVEL_COLOR[level as Level] ?? '#6b7280';
-  return <span style={{ background:`${color}18`, color, fontFamily:'monospace', fontSize:'0.65rem', fontWeight:700, padding:'0.15rem 0.4rem', borderRadius:'4px' }}>{level}</span>;
-}
+const Chip = ({ on, onClick, children }: { on: boolean; onClick: () => void; children: React.ReactNode }) => (
+  <button type="button" aria-pressed={on} className={`filter-btn${on ? ' active' : ''}`} onClick={onClick}>{children}</button>
+);
 
 // ── Player pill (in generated match) ─────────────────────────────────────────
 function PlayerPill({ p, side, index, editingSlot, onEdit }: {
@@ -199,16 +173,16 @@ function PlayerPill({ p, side, index, editingSlot, onEdit }: {
 }) {
   const active = editingSlot?.side === side && editingSlot?.index === index;
   return (
-    <div style={{ display:'flex', alignItems:'center', gap:'0.35rem', padding:'0.45rem 0.6rem', background: active ? '#f0fdf4' : '#fafafa', border:`1px solid ${active ? '#bbf7d0' : '#e5e7eb'}`, borderRadius:'6px', transition:'all 0.12s', minWidth:0 }}>
-      <LevelBadge level={p.level} />
-      <span style={{ flex:1, fontSize:'0.78rem', fontWeight:500, color:'#374151', minWidth:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{p.name}</span>
-      <span style={{ fontSize:'0.62rem', color:'#9ca3af', flexShrink:0 }}>{p.matchCount}x</span>
-      <Btn v="ghost" style={{ padding:'0.15rem 0.4rem', fontSize:'0.65rem', flexShrink:0 }} onClick={() => onEdit({ side, index })}>swap</Btn>
+    <div className={`flex items-center gap-2 pl-3 pr-1 min-h-[44px] rounded-md border bg-[#FBF9F3] min-w-0 transition-colors ${active ? 'border-[#0E2420] shadow-[inset_3px_0_0_#E3A92B]' : 'border-[#C9C3B3]'}`}>
+      <LevelMark level={p.level} />
+      <span className="flex-1 text-sm font-bold min-w-0 truncate">{p.name}</span>
+      <span className="ad-mono ad-muted text-xs shrink-0">{p.matchCount}x</span>
+      <Button v="ghost" size="sm" onClick={() => onEdit({ side, index })}>Swap</Button>
     </div>
   );
 }
 
-// ── Match card (queue/history) ────────────────────────────────────────────────
+// ── Match card (active queue) ────────────────────────────────────────────────
 function MatchCard({ match, index, showActions, onUpdate }: {
   match:Match; index:number; showActions:boolean; onUpdate:()=>void;
 }) {
@@ -232,42 +206,40 @@ function MatchCard({ match, index, showActions, onUpdate }: {
       sileo.error({ title: 'Could not remove match', description: error instanceof Error ? error.message : 'Please try again.' });
     }
   };
+  const team = (list: Player[]) => (
+    <div className="flex flex-col gap-0.5">
+      {list.map(p => (
+        <div key={p._id} className="flex items-center gap-2">
+          <LevelMark level={p.level} />
+          <span className="text-sm font-bold">{p.name}</span>
+        </div>
+      ))}
+    </div>
+  );
   return (
-    <div style={{ background:'#fff', border:`1px solid ${match.status==='playing'?'#fde68a':'#e5e7eb'}`, borderRadius:'8px', padding:'1rem', transition:'border-color 0.15s' }}>
-      <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', marginBottom:'0.75rem', flexWrap:'wrap' }}>
-        <span style={{ fontFamily:'monospace', fontSize:'0.65rem', color:'#9ca3af' }}>#{String(index+1).padStart(2,'0')}</span>
-        <span style={{ fontSize:'0.7rem', fontWeight:600, background:'#f3f4f6', color:'#374151', padding:'0.15rem 0.5rem', borderRadius:'3px' }}>Court {match.court}</span>
-        <span style={{ fontSize:'0.7rem', color:'#6b7280' }}>{MATCH_LABELS[match.matchType]}</span>
-        <span style={{ marginLeft:'auto', fontSize:'0.68rem', fontWeight:600, color: match.status==='playing'?'#d97706': match.status==='done'?'#9ca3af':'#16a34a', textTransform:'uppercase', letterSpacing:'0.06em' }}>
-          {match.status}
+    <div className={`py-4 border-b border-[#E1DBCB] ${match.status === 'playing' ? 'shadow-[inset_3px_0_0_#E3A92B] pl-3' : ''}`}>
+      <div className="flex items-center gap-2 mb-2 flex-wrap">
+        <span className="ad-mono ad-muted text-xs">#{String(index+1).padStart(2,'0')}</span>
+        <b className="text-sm">Court {match.court}</b>
+        <span className="ad-muted text-sm">{MATCH_LABELS[match.matchType]}</span>
+        <span className="ml-auto">
+          <StatusDot tone={match.status === 'playing' ? 'wait' : match.status === 'done' ? 'off' : 'ok'}>
+            {match.status === 'playing' ? 'Playing' : match.status === 'done' ? 'Done' : 'Queued'}
+          </StatusDot>
         </span>
       </div>
 
-      <div style={{ display:'grid', gridTemplateColumns:'1fr auto 1fr', gap:'0.4rem', alignItems:'center' }}>
-        <div style={{ display:'flex', flexDirection:'column', gap:'3px' }}>
-          {match.team1.map(p => (
-            <div key={p._id} style={{ display:'flex', alignItems:'center', gap:'0.35rem' }}>
-              <LevelBadge level={p.level} />
-              <span style={{ fontSize:'0.8rem', color:'#374151', fontWeight:500 }}>{p.name}</span>
-            </div>
-          ))}
-        </div>
-        <span style={{ fontFamily:'monospace', fontSize:'0.65rem', color:'#d1d5db', padding:'0 0.4rem' }}>vs</span>
-        <div style={{ display:'flex', flexDirection:'column', gap:'3px' }}>
-          {match.team2.map(p => (
-            <div key={p._id} style={{ display:'flex', alignItems:'center', gap:'0.35rem' }}>
-              <LevelBadge level={p.level} />
-              <span style={{ fontSize:'0.8rem', color:'#374151', fontWeight:500 }}>{p.name}</span>
-            </div>
-          ))}
-        </div>
+      <div className="grid items-center gap-2" style={{ gridTemplateColumns: '1fr auto 1fr' }}>
+        {team(match.team1)}
+        <span className="ad-mono ad-muted text-xs">vs</span>
+        {team(match.team2)}
       </div>
 
       {showActions && (
-        <div style={{ display:'flex', gap:'6px', marginTop:'0.75rem', paddingTop:'0.75rem', borderTop:'1px solid #f3f4f6' }}>
-          {match.status === 'queued'  && <Btn v="gold"    onClick={() => updateStatus('playing')} disabled={offline} title={offlineTitle}>Mark Playing</Btn>}
-          {match.status === 'playing' && <Btn v="primary" onClick={() => updateStatus('done')} disabled={offline} title={offlineTitle}>Mark Done</Btn>}
-          <Btn v="danger" onClick={remove} disabled={offline} title={offlineTitle}>Remove</Btn>
+        <div className="flex gap-2 mt-3 flex-wrap items-center">
+          {match.status === 'queued'  && <Button v="primary" className="flex-1 sm:flex-none" onClick={() => updateStatus('playing')} disabled={offline} title={offlineTitle}>Start playing</Button>}
+          {match.status === 'playing' && <Button v="primary" className="flex-1 sm:flex-none" onClick={() => updateStatus('done')} disabled={offline} title={offlineTitle}>Done playing</Button>}
+          <Button v="danger" className="flex-1 sm:flex-none" onClick={remove} disabled={offline} title={offlineTitle}>Remove…</Button>
         </div>
       )}
     </div>
@@ -293,18 +265,24 @@ export default function QueuePage() {
   const [matchTypePref,setMatchTypePref]= useState<MatchTypePreference>('auto');
   const [proofread,    setProofread]    = useState<{ verdict: 'fair' | 'review'; explanation: string; aiUsed: boolean } | null>(null);
   const [proofreadBusy,setProofreadBusy]= useState(false);
+  const [histCourt,    setHistCourt]    = useState<'all' | number>('all');
+  const [histQuery,    setHistQuery]    = useState('');
+  const [histLimit,    setHistLimit]    = useState(10);
   const { status } = useConnectivity();
   const offline = status !== 'online';
   const offlineTitle = offline ? 'Reconnect to make changes' : undefined;
+  const { status: capabilityStatus, capabilities } = useCapabilityState();
+  const canSplitItems = capabilityStatus === 'known' && capabilities?.modules.item_tabs === true;
+
 
   const loadAll = useCallback(async () => {
     setLoading(true);
     setLoadError('');
     try {
-      const [p,q,h,s] = await Promise.all([getPlayers(),getQueue(),getHistory(),getSplittableItems()]);
-      setPlayers(p); setQueueList(q); setHistoryList(h); setShuttles(s);
+      const [p, q, h] = await Promise.all([getPlayers(), getQueue(), getHistory()]);
+      setPlayers(p); setQueueList(q); setHistoryList(h);
     } catch (error) {
-      setPlayers([]); setQueueList([]); setHistoryList([]); setShuttles([]);
+      setPlayers([]); setQueueList([]); setHistoryList([]);
       setLoadError(error instanceof OfflineUnavailableError
         ? 'Not cached yet. Open this page once while online.'
         : 'Could not load queue data.');
@@ -313,6 +291,20 @@ export default function QueuePage() {
       setLoading(false);
     }
   }, []);
+
+  // Optional shuttlecock list. A 403 on lower tiers is expected, so it stays quiet.
+  const loadShuttles = useCallback(async () => {
+    if (!canSplitItems) { setShuttles([]); setShuttlecockId(''); return; }
+    try {
+      setShuttles(await getSplittableItems());
+    } catch (error) {
+      setShuttles([]);
+      const code = (error as { status?: number } | null)?.status;
+      const msg = error instanceof Error ? error.message : '';
+      if (code !== 403 && !/not enabled/i.test(msg)) console.error('Could not load splittable items.', error);
+    }
+  }, [canSplitItems]);
+
 
   useEffect(() => { loadAll(); }, [loadAll]);
   useSocketEvent('queue:updated', useCallback(() => { loadAll(); }, [loadAll]));
@@ -349,7 +341,9 @@ export default function QueuePage() {
         team2: edited.team2.map(p=>p._id),
         matchType: edited.matchType,
         court: selectedCourt,
-        shuttlecockId: shuttlecockId || undefined,
+        shuttlecockId: canSplitItems 
+        ? shuttlecockId || undefined
+        : undefined,
       });
       setGenerated(null); setEdited(null); setShuttlecockId('');
       await loadAll();
@@ -391,213 +385,145 @@ export default function QueuePage() {
 
   // ── Panels ─────────────────────────────────────────────────────────────────
 
-  const RandomizerPanel = () => (
-    <div style={{ display:'flex', flexDirection:'column', gap:'0.85rem' }}>
+  const modeChips = (
+    <div className="flex gap-2 flex-wrap">
+      {(['balanced','solid'] as MatchMode[]).map(mode => (
+        <Chip key={mode} on={matchMode === mode} onClick={() => setMatchMode(mode)}>{mode === 'balanced' ? 'Balanced' : 'Solid'}</Chip>
+      ))}
+    </div>
+  );
+  const typeChips = (
+    <div className="flex gap-2 flex-wrap">
+      {(['auto','MD','WD','XD'] as MatchTypePreference[]).map(t => (
+        <Chip key={t} on={matchTypePref === t} onClick={() => setMatchTypePref(t)}>{t === 'auto' ? 'Auto' : t}</Chip>
+      ))}
+    </div>
+  );
+
+  const RandomizerPanel = ({ s }: { s: string }) => (
+    <div className="flex flex-col gap-8">
       {!generated ? (
-        <div style={{ background:'#fff', border:'1px dashed #e5e7eb', borderRadius:'8px', padding:'2rem', textAlign:'center', display:'flex', flexDirection:'column', alignItems:'center', gap:'0.85rem' }}>
-          <p style={{ fontSize:'0.65rem', fontWeight:600, letterSpacing:'0.1em', textTransform:'uppercase', color:'#9ca3af' }}>Randomizer</p>
-
-          {/* Mode toggle */}
-          <div style={{ display:'flex', gap:'2px', background:'#f3f4f6', padding:'3px', borderRadius:'8px' }}>
-            {(['balanced','solid'] as MatchMode[]).map(mode => (
-              <button key={mode} onClick={() => setMatchMode(mode)} style={{
-                padding:'0.35rem 0.85rem', borderRadius:'6px', fontSize:'0.75rem', fontWeight:600,
-                border:'none', cursor:'pointer', transition:'all 0.15s',
-                background: matchMode === mode ? '#fff' : 'transparent',
-                color: matchMode === mode ? (mode === 'solid' ? '#92400e' : '#15803d') : '#9ca3af',
-                boxShadow: matchMode === mode ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
-              }}>
-                {mode === 'balanced' ? '⚖ Balanced' : '🔥 Solid'}
-              </button>
-            ))}
-          </div>
-
-          <p style={{ fontSize:'0.78rem', color:'#9ca3af', maxWidth:'220px', lineHeight:1.6 }}>
+        <div>
+          <h2 className="text-[17px] font-bold mb-3">Randomizer</h2>
+          {modeChips}
+          <p className="ad-muted text-sm my-3 max-w-xs">
             {matchMode === 'balanced'
               ? 'Teams are level-balanced. Any pairing is valid if teams are even.'
               : 'Same-level players grouped. A vs A, B vs B, etc.'}
           </p>
-
-          {/* Match type preference */}
-          <div style={{ width:'100%' }}>
-            <p style={{ fontSize:'0.62rem', fontWeight:600, letterSpacing:'0.1em', textTransform:'uppercase', color:'#d1d5db', marginBottom:'0.4rem', textAlign:'center' }}>Match Type</p>
-            <div style={{ display:'flex', gap:'4px', justifyContent:'center' }}>
-              {(['auto','MD','WD','XD'] as MatchTypePreference[]).map(t => (
-                <button key={t} onClick={() => setMatchTypePref(t)} style={{
-                  padding:'0.3rem 0.7rem', borderRadius:'5px', fontSize:'0.72rem', fontWeight:600,
-                  border:`1px solid ${matchTypePref === t ? '#bbf7d0' : '#e5e7eb'}`,
-                  background: matchTypePref === t ? '#f0fdf4' : '#fff',
-                  color: matchTypePref === t ? '#15803d' : '#9ca3af',
-                  cursor:'pointer', transition:'all 0.12s',
-                }}>
-                  {t === 'auto' ? 'Auto' : t}
-                </button>
-              ))}
-            </div>
-          </div>
-          <Btn v="primary" onClick={handleGenerate} disabled={!canGenerate} style={{ opacity: canGenerate ? 1 : 0.4 }}>
+          <p className="ad-label">Match type</p>
+          <div className="mb-5">{typeChips}</div>
+          <Button v="primary" onClick={handleGenerate} disabled={!canGenerate}>
             {available.length < 4
               ? `Need ${4 - available.length} more`
               : !canGenerate
                 ? 'Need 2 men + 2 women, or 4 of one gender'
-                : 'Generate Match'}
-          </Btn>
+                : 'Generate match'}
+          </Button>
         </div>
       ) : edited && (
-        <div style={{ background:'#fff', border:'1px solid #e5e7eb', borderRadius:'8px', padding:'1rem', display:'flex', flexDirection:'column', gap:'0.85rem' }}>
-          {/* Match type label + mode indicator */}
-          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:'0.35rem' }}>
-            <span style={{ fontSize:'0.7rem', fontWeight:600, letterSpacing:'0.08em', textTransform:'uppercase', color:'#9ca3af' }}>{MATCH_LABELS[edited.matchType]}</span>
-            <div style={{ display:'flex', alignItems:'center', gap:'0.5rem' }}>
-              <span style={{ fontFamily:'monospace', fontSize:'0.65rem', color: matchMode === 'solid' ? '#d97706' : '#16a34a' }}>
-                {matchMode === 'solid' ? '🔥 solid' : '⚖ balanced'}
-              </span>
-              <button onClick={() => {
+        <div className="flex flex-col gap-5">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <h2 className="text-[17px] font-bold">{MATCH_LABELS[edited.matchType]}</h2>
+            <div className="flex items-center gap-2">
+              <span className="ad-mono ad-muted text-xs">{matchMode === 'solid' ? 'solid' : 'balanced'}</span>
+              <button type="button" className="text-xs underline ad-muted min-h-[44px] px-1" onClick={() => {
                 const next: MatchMode = matchMode === 'balanced' ? 'solid' : 'balanced';
                 setMatchMode(next);
                 setTimeout(() => { setGenerated(null); setEdited(null); setTimeout(handleGenerate, 80); }, 80);
-              }} style={{ fontSize:'0.65rem', color:'#9ca3af', background:'none', border:'none', cursor:'pointer', textDecoration:'underline', padding:0 }}>
-                switch
-              </button>
+              }}>switch</button>
             </div>
           </div>
 
-          {/* Match type + mode controls — visible after generate so next set can be adjusted */}
-          <div style={{ display:'flex', gap:'6px', alignItems:'center', flexWrap:'wrap' }}>
-            {/* Match type buttons */}
-            <div style={{ display:'flex', gap:'3px', background:'#f9fafb', padding:'2px', borderRadius:'6px' }}>
-              {(['auto','MD','WD','XD'] as MatchTypePreference[]).map(t => (
-                <button key={t} onClick={() => setMatchTypePref(t)} style={{
-                  padding:'0.2rem 0.55rem', borderRadius:'4px', fontSize:'0.68rem', fontWeight:600,
-                  border:'none', cursor:'pointer', transition:'all 0.12s',
-                  background: matchTypePref === t ? '#fff' : 'transparent',
-                  color: matchTypePref === t ? '#15803d' : '#9ca3af',
-                  boxShadow: matchTypePref === t ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
-                }}>
-                  {t === 'auto' ? 'Auto' : t}
-                </button>
-              ))}
-            </div>
-            {/* Balanced / Solid toggle */}
-            <div style={{ display:'flex', gap:'2px', background:'#f9fafb', padding:'2px', borderRadius:'6px' }}>
-              {(['balanced','solid'] as MatchMode[]).map(mode => (
-                <button key={mode} onClick={() => setMatchMode(mode)} style={{
-                  padding:'0.2rem 0.55rem', borderRadius:'4px', fontSize:'0.68rem', fontWeight:600,
-                  border:'none', cursor:'pointer', transition:'all 0.12s',
-                  background: matchMode === mode ? '#fff' : 'transparent',
-                  color: matchMode === mode ? (mode === 'solid' ? '#92400e' : '#15803d') : '#9ca3af',
-                  boxShadow: matchMode === mode ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
-                }}>
-                  {mode === 'balanced' ? '⚖' : '🔥'}
-                </button>
-              ))}
-            </div>
-          </div>
+          {/* Controls stay visible so the next set can be adjusted */}
+          <div className="flex flex-col gap-2">{typeChips}{modeChips}</div>
 
-          {/* Teams — responsive: side-by-side on desktop, stacked on mobile */}
-          <style>{`
-            .teams-grid { display: grid; grid-template-columns: 1fr 20px 1fr; gap: 0.4rem; align-items: start; }
-            @media (max-width: 480px) {
-              .teams-grid { grid-template-columns: 1fr; }
-              .teams-vs    { display: none !important; }
-              .teams-b-label::before { content: 'vs  '; color: #d1d5db; }
-            }
-          `}</style>
-          <div className="teams-grid">
-            <div style={{ display:'flex', flexDirection:'column', gap:'5px', minWidth:0 }}>
-              <span style={{ fontSize:'0.62rem', fontWeight:600, letterSpacing:'0.1em', textTransform:'uppercase', color:'#d1d5db', marginBottom:'1px' }}>Team A</span>
+          {/* Teams: side by side on wide, stacked with a "vs" on narrow */}
+          <div className="grid gap-2 grid-cols-1 min-[481px]:grid-cols-[1fr_24px_1fr] items-start">
+            <div className="flex flex-col gap-1.5 min-w-0">
+              <span className="ad-eyebrow">Team A</span>
               {edited.team1.map((p,i) => <PlayerPill key={p._id} p={p} side="team1" index={i} editingSlot={editingSlot} onEdit={setEditingSlot} />)}
             </div>
-            <div className="teams-vs" style={{ display:'flex', alignItems:'center', justifyContent:'center', paddingTop:'1.4rem' }}>
-              <span style={{ fontFamily:'monospace', fontSize:'0.65rem', color:'#d1d5db' }}>vs</span>
-            </div>
-            <div style={{ display:'flex', flexDirection:'column', gap:'5px', minWidth:0 }}>
-              <span className="teams-b-label" style={{ fontSize:'0.62rem', fontWeight:600, letterSpacing:'0.1em', textTransform:'uppercase', color:'#d1d5db', marginBottom:'1px' }}>Team B</span>
+            <span className="ad-mono ad-muted text-xs text-center pt-6 max-[480px]:pt-0">vs</span>
+            <div className="flex flex-col gap-1.5 min-w-0">
+              <span className="ad-eyebrow">Team B</span>
               {edited.team2.map((p,i) => <PlayerPill key={p._id} p={p} side="team2" index={i} editingSlot={editingSlot} onEdit={setEditingSlot} />)}
             </div>
           </div>
 
           {/* Swap picker */}
           {editingSlot && swapCandidates.length > 0 && (
-            <div style={{ background:'#f9fafb', border:'1px solid #e5e7eb', borderRadius:'6px', padding:'0.65rem' }}>
-              <p style={{ fontSize:'0.65rem', fontWeight:600, letterSpacing:'0.1em', textTransform:'uppercase', color:'#9ca3af', marginBottom:'0.5rem' }}>Select replacement</p>
-              <div style={{ display:'flex', flexDirection:'column', gap:'3px', maxHeight:'160px', overflowY:'auto' }}>
+            <div className="border-t-2 border-[#0E2420] pt-3">
+              <p className="ad-label">Select a replacement</p>
+              <div className="flex flex-col gap-1 max-h-44 overflow-y-auto">
                 {swapCandidates.map(p => (
-                  <button key={p._id} onClick={() => handleSwap(p)} style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.4rem 0.6rem', background:'#fff', border:'1px solid #e5e7eb', borderRadius:'5px', cursor:'pointer', textAlign:'left', transition:'border-color 0.1s', fontFamily:"'Inter',sans-serif" }}
-                    onMouseOver={e => (e.currentTarget.style.borderColor='#bbf7d0')}
-                    onMouseOut={e => (e.currentTarget.style.borderColor='#e5e7eb')}>
-                    <LevelBadge level={p.level} />
-                    <span style={{ flex:1, fontSize:'0.8rem', color:'#374151' }}>{p.name}</span>
-                    <span style={{ fontSize:'0.65rem', color:'#9ca3af' }}>{p.gender==='Male'?'M':'F'} {p.matchCount}x</span>
+                  <button key={p._id} type="button" onClick={() => handleSwap(p)}
+                    className="flex items-center gap-2 px-3 min-h-[44px] rounded-md border border-[#C9C3B3] bg-[#FBF9F3] text-left hover:border-[#0E2420] transition-colors">
+                    <LevelMark level={p.level} />
+                    <span className="flex-1 text-sm">{p.name}</span>
+                    <span className="ad-mono ad-muted text-xs">{p.gender==='Male'?'M':'F'} {p.matchCount}x</span>
                   </button>
                 ))}
               </div>
-              <Btn v="ghost" style={{ marginTop:'0.4rem', fontSize:'0.7rem' }} onClick={() => setEditingSlot(null)}>Cancel</Btn>
+              <Button v="ghost" size="sm" className="mt-2" onClick={() => setEditingSlot(null)}>Cancel swap</Button>
             </div>
           )}
 
           {/* Court selector */}
           <div>
-            <p style={{ fontSize:'0.65rem', fontWeight:600, letterSpacing:'0.1em', textTransform:'uppercase', color:'#9ca3af', marginBottom:'0.4rem' }}>Court</p>
-            <div style={{ display:'flex', gap:'5px' }}>
+            <p className="ad-label">Court</p>
+            <div className="flex gap-2">
               {[1,2,3,4].map(c => (
-                <button key={c} onClick={() => setSelectedCourt(c)} style={{
-                  flex:1, padding:'0.45rem', borderRadius:'6px', cursor:'pointer', fontFamily:'monospace', fontSize:'0.8rem', transition:'all 0.12s',
-                  border:`1px solid ${selectedCourt===c?'#bbf7d0':usedCourts.has(c)?'#fecaca':'#e5e7eb'}`,
-                  background: selectedCourt===c?'#f0fdf4':usedCourts.has(c)?'#fef2f2':'#fff',
-                  color: selectedCourt===c?'#15803d':usedCourts.has(c)?'#dc2626':'#374151',
-                  fontWeight: selectedCourt===c?600:400,
-                }}>{c}</button>
+                <button key={c} type="button" aria-pressed={selectedCourt === c}
+                  title={usedCourts.has(c) ? 'A match is already on this court' : undefined}
+                  onClick={() => setSelectedCourt(c)}
+                  className={`filter-btn flex-1 ad-mono${selectedCourt === c ? ' active' : ''} ${usedCourts.has(c) && selectedCourt !== c ? '!text-[#B8431F] !border-[#B8431F]' : ''}`}>
+                  {c}
+                </button>
               ))}
             </div>
+            {usedCourts.has(selectedCourt) && <p className="ad-error">A match is already on court {selectedCourt}.</p>}
           </div>
 
           {/* Shuttlecock picker */}
-          <div>
-            <p style={{ fontSize:'0.65rem', fontWeight:600, letterSpacing:'0.1em', textTransform:'uppercase', color:'#9ca3af', marginBottom:'0.4rem' }}>
-              Shuttlecock <span style={{ color:'#d1d5db', fontWeight:400 }}>(optional — auto-splits fee)</span>
-            </p>
-            <select value={shuttlecockId} onChange={e => setShuttlecockId(e.target.value)} style={{ width:'100%', background:'#fff', border:'1px solid #e5e7eb', borderRadius:'6px', padding:'0.45rem 0.65rem', fontSize:'0.82rem', color: shuttlecockId ? '#111827' : '#9ca3af', outline:'none', fontFamily:"'Inter',sans-serif" }}>
-              <option value="">None — skip split</option>
-              {shuttles.map(s => (
-                <option key={s._id} value={s._id}>{s.name} — ₱{s.price} (÷4 = ₱{(s.price/4).toFixed(2)}/player)</option>
-              ))}
-            </select>
-            {shuttlecockId && (
-              <p style={{ fontSize:'0.72rem', color:'#16a34a', marginTop:'0.3rem' }}>
-                ✓ Will auto-add to each player's billing tab
-              </p>
+          {canSplitItems && (
+            <div>
+              <label htmlFor={`q-shuttle-${s}`} className="ad-label">Shuttlecock (optional, splits the fee)</label>
+              <select id={`q-shuttle-${s}`} value={shuttlecockId} onChange={e => setShuttlecockId(e.target.value)} className="ad-input">
+                <option value="">None — skip split</option>
+                {shuttles.map(s => (
+                  <option key={s._id} value={s._id}>{s.name} — ₱{s.price} (÷4 = ₱{(s.price/4).toFixed(2)}/player)</option>
+                ))}
+              </select>
+              {shuttlecockId && <p className="text-sm mt-1.5 text-[#1F8A7A]">Will be added to each player’s billing tab.</p>}
+            </div>
             )}
-          </div>
 
-          {/* Submit */}
-          <div style={{ display:'flex', gap:'6px', paddingTop:'0.25rem' }}>
-            <Btn v="ghost" style={{ flex:1 }} onClick={() => { setGenerated(null); setEdited(null); setTimeout(handleGenerate, 80); }}>Re-generate</Btn>
-            <Btn v="gold"  style={{ flex:1 }} onClick={handleSubmit} disabled={submitting || offline} title={offlineTitle}>
-              {submitting ? 'Submitting...' : 'Submit to Queue'}
-            </Btn>
-          </div>
+            <div className="flex gap-2">
+              <Button v="ghost" className="flex-1" onClick={() => { setGenerated(null); setEdited(null); setTimeout(handleGenerate, 80); }}>Re-generate</Button>
+              <Button v="primary" className="flex-1" onClick={handleSubmit} loading={submitting} disabled={offline} title={offlineTitle}>
+                {submitting ? 'Submitting...' : 'Submit to queue'}
+              </Button>
+            </div>
 
-          <div style={{ border:'1px solid #e5e7eb', borderRadius:'8px', padding:'0.75rem', background:'#fcfcfc' }}>
-            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'0.45rem' }}>
-              <span style={{ fontSize:'0.65rem', fontWeight:600, letterSpacing:'0.1em', textTransform:'uppercase', color:'#9ca3af' }}>
-                AI Match Proofread
-              </span>
-              <Btn v="ghost" onClick={runProofread} disabled={proofreadBusy || offline} title={offlineTitle} style={{ padding:'0.2rem 0.5rem', fontSize:'0.68rem' }}>
-                {proofreadBusy ? 'Checking...' : 'Check Fairness'}
-              </Btn>
+
+          {/* AI proofread */}
+          <div className="border-t border-[#C9C3B3] pt-3">
+            <div className="flex items-center justify-between mb-2 gap-2">
+              <span className="ad-eyebrow">AI match proofread</span>
+              <Button v="ghost" size="sm" onClick={runProofread} loading={proofreadBusy} disabled={offline} title={offlineTitle}>
+                {proofreadBusy ? 'Checking...' : 'Check fairness'}
+              </Button>
             </div>
             {!proofread ? (
-              <p style={{ fontSize:'0.75rem', color:'#9ca3af' }}>Run proofread to get a fairness explanation for this generated match.</p>
+              <p className="ad-muted text-sm">Run the proofread to get a fairness explanation for this match.</p>
             ) : (
               <div>
-                <p style={{ fontSize:'0.72rem', fontWeight:600, color: proofread.verdict === 'fair' ? '#16a34a' : '#d97706', marginBottom:'0.3rem' }}>
-                  Verdict: {proofread.verdict === 'fair' ? 'Fair' : 'Needs Review'}
-                </p>
-                <p style={{ fontSize:'0.76rem', color:'#4b5563', lineHeight:1.45 }}>{proofread.explanation}</p>
-                <p style={{ fontSize:'0.65rem', color:'#9ca3af', marginTop:'0.35rem' }}>
-                  {proofread.aiUsed ? 'AI-assisted review' : 'Heuristic fallback review'}
-                </p>
+                <p className="mb-1"><StatusDot tone={proofread.verdict === 'fair' ? 'ok' : 'wait'}>
+                  <b>{proofread.verdict === 'fair' ? 'Fair' : 'Needs review'}</b>
+                </StatusDot></p>
+                <p className="text-sm">{proofread.explanation}</p>
+                <p className="ad-muted text-xs mt-1">{proofread.aiUsed ? 'AI-assisted review' : 'Heuristic fallback review'}</p>
               </div>
             )}
           </div>
@@ -605,29 +531,28 @@ export default function QueuePage() {
       )}
 
       {/* Available players */}
-      <div style={{ background:'#fff', border:'1px solid #e5e7eb', borderRadius:'8px', padding:'0.85rem' }}>
-        <p style={{ fontSize:'0.65rem', fontWeight:600, letterSpacing:'0.1em', textTransform:'uppercase', color:'#9ca3af', marginBottom:'0.6rem' }}>Available · {loadError ? '—' : available.length}</p>
-        <div style={{ display:'flex', flexDirection:'column', gap:'2px', maxHeight:'200px', overflowY:'auto' }}>
+      <div>
+        <h2 className="text-[17px] font-bold mb-2">Available · {loadError ? '—' : available.length}</h2>
+        <div className="flex flex-col max-h-[240px] overflow-y-auto">
           {available.length === 0
-            ? <p style={{ fontSize:'0.78rem', color:'#9ca3af', textAlign:'center', padding:'0.75rem' }}>All players in active matches</p>
+            ? <p className="ad-muted text-sm py-3">All players are in active matches.</p>
             : (() => {
                 const maxCount = Math.max(...available.map(p => p.matchCount), 1);
                 const minCount = Math.min(...available.map(p => p.matchCount));
                 return available.map(p => {
-                  // Fairness bar: green = played least, red = played most
+                  // Fairness bar: teal = played least, red = played most
                   const pct = maxCount > minCount ? ((p.matchCount - minCount) / (maxCount - minCount)) * 100 : 0;
-                  const barColor = pct < 33 ? '#16a34a' : pct < 66 ? '#d97706' : '#ef4444';
+                  const barColor = pct < 33 ? '#1F8A7A' : pct < 66 ? '#B8821A' : '#C4401F';
                   return (
-                    <div key={p._id} style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.3rem 0.4rem' }}>
-                      <LevelBadge level={p.level} />
-                      <div style={{ flex:1, minWidth:0 }}>
-                        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:'0.25rem' }}>
-                          <span style={{ fontSize:'0.8rem', color:'#374151', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{p.name}</span>
-                          <span style={{ fontSize:'0.62rem', color:'#9ca3af', fontFamily:'monospace', flexShrink:0 }}>{p.matchCount}x</span>
+                    <div key={p._id} className="flex items-center gap-2.5 py-2 border-b border-[#E1DBCB]">
+                      <LevelMark level={p.level} />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-sm font-medium truncate">{p.name}</span>
+                          <span className="ad-mono ad-muted text-xs shrink-0">{p.matchCount}x</span>
                         </div>
-                        {/* Fairness bar */}
-                        <div style={{ height:'2px', background:'#f3f4f6', borderRadius:'2px', marginTop:'2px', overflow:'hidden' }}>
-                          <div style={{ height:'100%', width:`${Math.max(4, pct)}%`, background: barColor, borderRadius:'2px', transition:'width 0.3s' }} />
+                        <div className="h-[3px] bg-[#E1DBCB] rounded mt-1 overflow-hidden">
+                          <div className="h-full rounded" style={{ width: `${Math.max(4, pct)}%`, background: barColor }} />
                         </div>
                       </div>
                     </div>
@@ -641,75 +566,108 @@ export default function QueuePage() {
   );
 
   const QueuePanel = () => (
-    <div style={{ display:'flex', flexDirection:'column', gap:'0.6rem' }}>
-      <p style={{ fontSize:'0.65rem', fontWeight:600, letterSpacing:'0.1em', textTransform:'uppercase', color:'#9ca3af' }}>Active · {loadError ? '—' : queueList.length}</p>
-      {loading ? <p style={{ color:'#9ca3af', fontSize:'0.82rem', padding:'2rem', textAlign:'center' }}>Loading...</p>
-        : loadError ? <p style={{ color:'#92400e', fontSize:'0.82rem', padding:'2rem', textAlign:'center' }}>{loadError}</p>
-        : queueList.length === 0 ? <p style={{ color:'#9ca3af', fontSize:'0.82rem', padding:'2rem', textAlign:'center', background:'#fff', border:'1px dashed #e5e7eb', borderRadius:'8px' }}>No active matches.</p>
+    <div>
+      <h2 className="text-[17px] font-bold mb-1">Active · {loadError ? '—' : queueList.length}</h2>
+      {loading ? <p className="ad-muted text-sm py-8 text-center">Loading...</p>
+        : loadError ? <p className="text-amber-800 text-sm py-8 text-center">{loadError}</p>
+        : queueList.length === 0 ? (
+          <div className="py-6">
+            <p className="font-bold">No matches on court.</p>
+            <p className="ad-muted text-sm">Generate a match from the available players.</p>
+          </div>
+        )
         : queueList.map((m,i) => <MatchCard key={m._id} match={m} index={i} showActions onUpdate={loadAll} />)}
     </div>
   );
 
-  const HistoryPanel = () => (
-    <div style={{ display:'flex', flexDirection:'column', gap:'0.6rem' }}>
-      <p style={{ fontSize:'0.65rem', fontWeight:600, letterSpacing:'0.1em', textTransform:'uppercase', color:'#9ca3af' }}>Completed · {loadError ? '—' : historyList.length}</p>
-      {loading ? <p style={{ color:'#9ca3af', fontSize:'0.82rem', padding:'2rem', textAlign:'center' }}>Loading...</p>
-        : loadError ? <p style={{ color:'#92400e', fontSize:'0.82rem', padding:'2rem', textAlign:'center' }}>{loadError}</p>
-        : historyList.length === 0 ? <p style={{ color:'#9ca3af', fontSize:'0.82rem', padding:'2rem', textAlign:'center', background:'#fff', border:'1px dashed #e5e7eb', borderRadius:'8px' }}>No completed matches yet.</p>
-        : historyList.map((m,i) => (
-            <div key={m._id} style={{ opacity:0.7 }}>
-              <MatchCard match={m} index={historyList.length-1-i} showActions={false} onUpdate={loadAll} />
-              <p style={{ fontSize:'0.65rem', color:'#9ca3af', marginTop:'3px', paddingLeft:'0.25rem', fontFamily:'monospace' }}>
-                {new Date(m.updatedAt).toLocaleString()}
-              </p>
+  // Completed: compact rows, newest first, filter by court / player, show 10 at a time
+  const numbered = historyList.map((m, i) => ({ m, n: historyList.length - i }));
+  const q = histQuery.trim().toLowerCase();
+  const filteredHistory = numbered.filter(({ m }) =>
+    (histCourt === 'all' || m.court === histCourt) &&
+    (!q || [...m.team1, ...m.team2].some(p => p.name.toLowerCase().includes(q)))
+  );
+  const shownHistory = filteredHistory.slice(0, histLimit);
+  const timeOf = (m: Match) => new Date(m.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const names = (list: Player[]) => list.map(p => p.name).join(' · ');
+
+  const HistoryPanel = ({ s }: { s: string }) => (
+    <div>
+      <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
+        <h2 className="text-[17px] font-bold">Completed · {loadError ? '—' : historyList.length}</h2>
+        <div className="flex gap-2 flex-wrap">
+          <Chip on={histCourt === 'all'} onClick={() => { setHistCourt('all'); setHistLimit(10); }}>All</Chip>
+          {[1,2,3,4].map(c => <Chip key={c} on={histCourt === c} onClick={() => { setHistCourt(c); setHistLimit(10); }}>C{c}</Chip>)}
+        </div>
+      </div>
+      <div className="max-w-xs mb-3">
+        <label htmlFor={`q-find-${s}`} className="ad-label">Find a player</label>
+        <input id={`q-find-${s}`} className="ad-input" placeholder="Name" value={histQuery}
+          onChange={e => { setHistQuery(e.target.value); setHistLimit(10); }} />
+      </div>
+      {loading ? <p className="ad-muted text-sm py-8 text-center">Loading...</p>
+        : loadError ? <p className="text-amber-800 text-sm py-8 text-center">{loadError}</p>
+        : historyList.length === 0 ? <p className="ad-muted text-sm py-6">No completed matches yet.</p>
+        : filteredHistory.length === 0 ? <p className="ad-muted text-sm py-6">No matches for these filters.</p>
+        : (
+          <>
+            <div className="hidden sm:block">
+              <div className="grid gap-3 border-b-2 border-[#0E2420] py-2" style={{ gridTemplateColumns: '46px 84px 70px 44px 1fr 1fr' }}>
+                {['#', 'Ended', 'Court', 'Type', 'Team A', 'Team B'].map(h => <span key={h} className="ad-eyebrow">{h}</span>)}
+              </div>
+              {shownHistory.map(({ m, n }) => (
+                <div key={m._id} className="grid gap-3 items-center py-2 border-b border-[#E1DBCB] text-sm" style={{ gridTemplateColumns: '46px 84px 70px 44px 1fr 1fr' }}>
+                  <span className="ad-mono ad-muted text-xs">#{String(n).padStart(2,'0')}</span>
+                  <span className="ad-mono text-xs">{timeOf(m)}</span>
+                  <span>Court {m.court}</span>
+                  <span className="ad-mono text-xs">{m.matchType}</span>
+                  <span className="truncate" title={names(m.team1)}>{names(m.team1)}</span>
+                  <span className="truncate" title={names(m.team2)}>{names(m.team2)}</span>
+                </div>
+              ))}
             </div>
-          ))
-      }
+            <div className="sm:hidden">
+              {shownHistory.map(({ m, n }) => (
+                <div key={m._id} className="py-2.5 border-b border-[#E1DBCB]">
+                  <p className="ad-mono ad-muted text-xs mb-0.5">#{String(n).padStart(2,'0')} · {timeOf(m)} · Court {m.court} · {m.matchType}</p>
+                  <p className="text-sm">{names(m.team1)} <span className="ad-muted">vs</span> {names(m.team2)}</p>
+                </div>
+              ))}
+            </div>
+            {filteredHistory.length > shownHistory.length && (
+              <Button v="ghost" className="mt-3" onClick={() => setHistLimit(l => l + 10)}>
+                Show {Math.min(10, filteredHistory.length - shownHistory.length)} more
+              </Button>
+            )}
+          </>
+        )}
     </div>
   );
 
   return (
-    <div className="queue-root" style={{ fontFamily:"'Inter',sans-serif" }}>
-      <style>{`
-        .queue-desktop { display: grid; }
-        .queue-mob-tabs { display: none; }
-        .queue-mob-content { display: none; }
-        @media (max-width: 900px) {
-          .queue-desktop { display: none !important; }
-          .queue-mob-tabs { display: flex !important; }
-          .queue-mob-content { display: block !important; }
-        }
-        .mob-tab { flex:1; padding:0.55rem; background:transparent; border:none; border-bottom:2px solid transparent; font-size:0.78rem; font-weight:500; cursor:pointer; font-family:'Inter',sans-serif; color:#6b7280; transition:all 0.12s; }
-        .mob-tab.active { color:#111827; border-bottom-color:#111827; }
-        /* Prevent horizontal swipe-back gesture in fullscreen */
-        .queue-root { touch-action: pan-y; overscroll-behavior-x: none; }
-      `}</style>
+    <div className="w-full">
+      <AdminHeader title="Queue" />
+      {loadError && <p role="status" className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">{loadError}</p>}
 
-      <div style={{ marginBottom:'1.5rem', paddingBottom:'1.25rem', borderBottom:'1px solid #f3f4f6' }}>
-        <p style={{ fontSize:'0.72rem', fontWeight:500, letterSpacing:'0.05em', textTransform:'uppercase', color:'#9ca3af', marginBottom:'0.35rem' }}>Management</p>
-        <h1 style={{ fontSize:'1.5rem', fontWeight:700, color:'#111827', letterSpacing:'-0.02em' }}>Queue System</h1>
-      </div>
-      {loadError && <p role="status" style={{ marginBottom:'1rem', padding:'0.75rem 1rem', border:'1px solid #fde68a', borderRadius:'8px', background:'#fffbeb', color:'#92400e', fontSize:'0.82rem' }}>{loadError}</p>}
-
-      {/* Desktop 3-col */}
-      <div className="queue-desktop" style={{ gridTemplateColumns:'300px 1fr 1fr', gap:'1.25rem', alignItems:'start' }}>
-        <RandomizerPanel />
-        <QueuePanel />
-        <HistoryPanel />
+      {/* Desktop: controls on the left, active + completed on the right */}
+      <div className="hidden min-[901px]:grid gap-10 items-start" style={{ gridTemplateColumns: '300px minmax(0,1fr)' }}>
+        <RandomizerPanel s="d" />
+        <div className="flex flex-col gap-10 min-w-0">
+          <QueuePanel />
+          <HistoryPanel s="d" />
+        </div>
       </div>
 
       {/* Mobile tabs */}
-      <div className="queue-mob-tabs" style={{ borderBottom:'1px solid #e5e7eb', marginBottom:'1.25rem' }}>
-        {(['randomizer','queue','history'] as const).map(t => (
-          <button key={t} className={`mob-tab${mobileTab===t?' active':''}`} onClick={() => setMobileTab(t)}>
-            {t.charAt(0).toUpperCase()+t.slice(1)}
-          </button>
-        ))}
-      </div>
-      <div className="queue-mob-content">
-        {mobileTab==='randomizer' && <RandomizerPanel />}
+      <div className="min-[901px]:hidden">
+        <div className="flex gap-2 mb-5 flex-wrap">
+          {(['randomizer','queue','history'] as const).map(t => (
+            <Chip key={t} on={mobileTab === t} onClick={() => setMobileTab(t)}>{t.charAt(0).toUpperCase()+t.slice(1)}</Chip>
+          ))}
+        </div>
+        {mobileTab==='randomizer' && <RandomizerPanel s="m" />}
         {mobileTab==='queue'      && <QueuePanel />}
-        {mobileTab==='history'    && <HistoryPanel />}
+        {mobileTab==='history'    && <HistoryPanel s="m" />}
       </div>
     </div>
   );

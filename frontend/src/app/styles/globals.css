@@ -100,6 +100,14 @@ body {
   --pub-bg: var(--teal-deep);
   --pub-bg2: var(--teal-mid);
   --pub-muted: var(--line-dim);
+
+  /* color tokens for ad-eyebrow, ad-input, ad-label*/
+  --ad-pine: #0E2420; --ad-pine-2: #19352F; --ad-pine-3: #2A4A43;
+  --ad-paper: #F4F0E6; --ad-ink: #0E2420; --ad-muted: #5B6B66;
+  --ad-line: #C9C3B3; --ad-line-soft: #E1DBCB; --ad-field: #FBF9F3;
+  --ad-gold: #E3A92B; --ad-teal: #1F8A7A; --ad-coral: #B8431F;
+  --ad-ease: cubic-bezier(.77, 0, .175, 1); --ad-out: cubic-bezier(.23, 1, .32, 1);
+  --ad-mono: var(--font-jetbrains-mono), 'JetBrains Mono', monospace;
 }
 
 .public-root {
@@ -1091,3 +1099,201 @@ input[type="date"].public-input { color-scheme: dark; }
 .type-proto .tl-item h4 { font-size: 1.375rem; }
 .type-proto .tl-item p { font-size: 1rem; }
 
+/* ══════════════════════════════════════════
+   ADMIN SHELL  (append to the END of app/globals.css)
+   New ad-* classes. Old admin-* / sidebar-* / mobile-topbar rules
+   become unused by the layout; delete them later (see CHANGES).
+   Only .filter-btn is restyled, and only inside .ad-app.
+══════════════════════════════════════════ */
+.ad-app {
+  --ad-pine: #0E2420; --ad-pine-2: #19352F; --ad-pine-3: #2A4A43;
+  --ad-paper: #F4F0E6; --ad-ink: #0E2420; --ad-muted: #5B6B66;
+  --ad-line: #C9C3B3; --ad-line-soft: #E1DBCB; --ad-field: #FBF9F3;
+  --ad-gold: #E3A92B; --ad-teal: #1F8A7A; --ad-coral: #B8431F;
+  --ad-ease: cubic-bezier(.77, 0, .175, 1);
+  --ad-out: cubic-bezier(.23, 1, .32, 1);
+  --ad-mono: var(--font-jetbrains-mono), 'JetBrains Mono', monospace;
+  position: relative;
+  display: flex;
+  height: 100dvh;
+  overflow: hidden;
+  background: var(--ad-pine);
+  color: var(--ad-ink);
+  font-family: var(--font-manrope), 'Manrope', sans-serif;
+}
+
+/* Pine layer (behind the shell) */
+.ad-side {
+  position: fixed; left: 0; top: 0; bottom: 0; width: 256px; z-index: 1;
+  display: flex; flex-direction: column; padding-bottom: 16px; color: #F5F1E8;
+}
+.ad-brand { display: flex; align-items: center; min-height: 88px; padding: 0 20px; }
+.ad-brand a { display: flex; align-items: center; gap: 12px; min-width: 0; color: inherit; text-decoration: none; }
+.ad-logo {
+  width: 32px; height: 32px; flex: none; overflow: hidden; border-radius: 6px;
+  display: grid; place-items: center; background: var(--ad-gold); color: var(--ad-ink);
+  font: 700 13px var(--ad-mono);
+  box-shadow: 0 2px 0 #B8821A, 0 6px 12px rgba(0, 0, 0, .3);
+}
+.ad-logo img { width: 100%; height: 100%; object-fit: cover; }
+.ad-brandname { font-weight: 700; font-size: 14px; line-height: 1.25; max-width: 150px; overflow-wrap: anywhere; white-space: normal; }
+.ad-brandtag { display: block; margin-top: 2px; font: 600 11px var(--ad-mono); letter-spacing: .06em; color: var(--ad-gold); }
+
+.ad-lbl { opacity: 0; white-space: nowrap; transition: opacity .2s ease; }
+.ad-side:hover .ad-lbl, .ad-side:focus-within .ad-lbl { opacity: 1; transition-delay: .1s; }
+
+.ad-nav { position: relative; display: flex; flex-direction: column; gap: 2px; margin-top: 8px; }
+.ad-mk {
+  position: absolute; left: 8px; top: 0; width: 248px; height: 44px;
+  background: var(--ad-paper); border-radius: 12px 0 0 12px;
+  transform: translateY(calc(var(--i, 0) * 46px));
+  transition: transform .4s var(--ad-ease);
+}
+.ad-nav.no-active .ad-mk { opacity: 0; }
+.ad-link {
+  position: relative; z-index: 1; display: flex; align-items: center; gap: 14px;
+  height: 44px; padding: 0 26px; color: #AABAB3; text-decoration: none;
+  font-size: 14px; font-weight: 500; transition: color .15s ease;
+}
+.ad-link:hover { color: #F5F1E8; }
+.ad-link.active, .ad-link.active:hover { color: var(--ad-ink); font-weight: 700; }
+.ad-link svg { flex: none; }
+
+/* Profile button + menu */
+.ad-profile { position: relative; margin-top: auto; padding: 0 8px; }
+.ad-profile-btn {
+  display: flex; width: 100%; align-items: center; gap: 12px; min-height: 44px;
+  padding: 8px 12px; border: 0; border-radius: 6px; background: none; color: inherit;
+  font: inherit; text-align: left; cursor: pointer;
+}
+.ad-profile-btn[aria-expanded="true"] { background: var(--ad-pine-2); }
+.ad-avatar {
+  width: 32px; height: 32px; flex: none; overflow: hidden; border-radius: 50%;
+  display: grid; place-items: center; background: var(--ad-pine-3); color: #F5F1E8;
+  font: 600 12px var(--ad-mono);
+}
+.ad-profile-meta { min-width: 0; }
+.ad-profile-meta b, .ad-profile-meta small { display: block; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ad-profile-meta b { font-size: 13px; }
+.ad-profile-meta small { font-size: 12px; color: #AABAB3; }
+.ad-pop {
+  position: absolute; z-index: 6; min-width: 220px; padding: 6px; border-radius: 10px;
+  background: var(--ad-pine-2); color: #F5F1E8; border: 1px solid var(--ad-pine-3);
+  box-shadow: 0 -14px 32px rgba(0, 0, 0, .4), 0 2px 6px rgba(0, 0, 0, .3);
+}
+.ad-profile .ad-pop { left: 8px; right: 8px; bottom: calc(100% + 6px); animation: ad-up .26s var(--ad-out); }
+.ad-who { display: block; padding: 10px 12px; margin-bottom: 4px; border-bottom: 1px solid var(--ad-pine-3); }
+.ad-who b { display: block; font-size: 14px; }
+.ad-who span { display: block; font-size: 12px; color: #AABAB3; overflow: hidden; text-overflow: ellipsis; }
+.ad-pop-item {
+  display: flex; align-items: center; width: 100%; min-height: 44px; padding: 0 12px;
+  border: 0; border-radius: 6px; background: none; color: inherit; font: inherit; font-size: 14px;
+  text-align: left; text-decoration: none; cursor: pointer;
+}
+.ad-pop-item:hover { background: var(--ad-pine-3); }
+.ad-pop-item.danger { color: #F4A58F; }
+
+/* The shell (paper card above the pine layer) */
+.ad-shell {
+  position: relative; z-index: 2; flex: 1; min-width: 0;
+  margin: 12px 0 12px 72px; height: calc(100dvh - 24px);
+  overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain;
+  background: var(--ad-paper); border-radius: 24px 0 0 24px;
+  box-shadow: -12px 0 32px rgba(0, 0, 0, .38), 0 0 0 1px rgba(245, 241, 232, .05), inset 0 1px 0 rgba(255, 255, 255, .7);
+  transition: transform .4s var(--ad-ease);
+}
+.ad-side:hover ~ .ad-shell, .ad-side:focus-within ~ .ad-shell { transform: translateX(184px); }
+.ad-page { padding: clamp(1rem, 3vw, 2rem); animation: ad-in .38s var(--ad-out) backwards; }
+
+/* Mobile-only parts hidden on desktop */
+.ad-appbar, .ad-navtog, .ad-scrim { display: none; }
+
+/* Shared admin primitives (use these on every page) */
+.ad-eyebrow { font: 600 12px var(--ad-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--ad-muted); }
+.ad-h1 { margin: .25rem 0 0; font-family: var(--font-anton), 'Anton', sans-serif; font-weight: 400; letter-spacing: .01em; line-height: 1; text-transform: uppercase; font-size: clamp(2rem, 4vw, 2.75rem); }
+.ad-label { display: block; margin-bottom: 6px; font: 600 12px var(--ad-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--ad-muted); }
+.ad-input {
+  width: 100%; min-height: 44px; box-sizing: border-box; padding: 10px 12px;
+  border: 1px solid var(--ad-line); border-radius: 6px; background: var(--ad-field);
+  color: var(--ad-ink); font: inherit; font-size: 15px; box-shadow: inset 0 1px 2px rgba(14, 36, 32, .1);
+}
+.ad-input::placeholder { color: #8A9A94; }
+.ad-input.is-invalid { border-color: var(--ad-coral); }
+.ad-error { margin-top: 6px; font-size: 13px; color: var(--ad-coral); }
+.ad-mono { font-family: var(--ad-mono); font-variant-numeric: tabular-nums; }
+.ad-muted { color: var(--ad-muted); }
+.ad-app input:focus-visible, .ad-app select:focus-visible, .ad-app textarea:focus-visible {
+  outline: 2px solid var(--ad-ink) !important; outline-offset: 2px; border-color: var(--ad-ink) !important;
+}
+.ad-app :focus-visible { outline: 2px solid var(--ad-ink); outline-offset: 2px; }
+.ad-side :focus-visible { outline-color: var(--ad-gold); }
+
+/* Existing .filter-btn, restyled inside the admin only */
+.ad-app .filter-btn {
+  min-height: 44px; padding: 0 14px; border: 1px solid var(--ad-line); border-radius: 6px;
+  background: var(--ad-field); color: var(--ad-ink); letter-spacing: 0;
+  font: 500 14px var(--font-manrope), 'Manrope', sans-serif;
+  box-shadow: 0 1px 0 rgba(14, 36, 32, .1), 0 2px 6px rgba(14, 36, 32, .06);
+  transition: transform .12s ease, color .15s ease, border-color .15s ease;
+}
+.ad-app .filter-btn:hover { border-color: var(--ad-ink); color: var(--ad-ink); }
+.ad-app .filter-btn:active { transform: scale(.97); }
+.ad-app .filter-btn.active { background: var(--ad-ink); border-color: var(--ad-ink); color: #F5F1E8; }
+
+@keyframes ad-up { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+@keyframes ad-down { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: none; } }
+@keyframes ad-in { from { opacity: 0; transform: translateX(24px); } to { opacity: 1; transform: none; } }
+
+/* ── Phones and small tablets (<= 900px): nav moves to the bottom ── */
+@media (max-width: 900px) {
+  .ad-app { flex-direction: column; }
+  .ad-side {
+    top: auto; width: auto; height: 96px; left: 0; right: 0; bottom: 0;
+    flex-direction: row; align-items: center; gap: 4px; padding: 0 12px;
+  }
+  .ad-brand, .ad-side .ad-profile { display: none; }
+  .ad-nav { flex: 1; flex-direction: row; align-items: center; height: 100%; margin: 0; gap: 4px; overflow-x: auto; scrollbar-width: none; }
+  .ad-nav::-webkit-scrollbar { display: none; }
+  .ad-mk { top: 0; left: 0; width: 68px; height: 88px; border-radius: 0 0 14px 14px; transform: translateX(calc(var(--i, 0) * 72px)); }
+  .ad-link { flex: none; flex-direction: column; justify-content: center; gap: 4px; width: 68px; height: 80px; padding: 0; font-size: 12px; }
+  .ad-lbl { opacity: 1; }
+  .ad-shell {
+    margin: 0; height: 100dvh; border-radius: 0; box-shadow: none;
+    transition: transform .4s var(--ad-ease), border-radius .4s var(--ad-ease), box-shadow .4s ease;
+  }
+  .ad-side:hover ~ .ad-shell, .ad-side:focus-within ~ .ad-shell { transform: none; }
+  .ad-app[data-nav-open="true"] .ad-shell { transform: translateY(-96px); border-radius: 0 0 24px 24px; box-shadow: 0 14px 30px rgba(0, 0, 0, .4); }
+  .ad-page { padding-top: calc(64px + 1rem); padding-bottom: 5.5rem; }
+
+  .ad-appbar {
+    display: flex; position: fixed; top: 0; left: 0; right: 0; z-index: 4; height: 64px;
+    align-items: center; justify-content: space-between; gap: 12px; padding: 0 16px; background: var(--ad-paper);
+  }
+  .ad-appbar-id { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .ad-logo-sm { width: 28px; height: 28px; font-size: 12px; }
+  .ad-appbar-text { min-width: 0; }
+  .ad-appbar-text b { display: block; font-size: 14px; line-height: 1.2; overflow-wrap: anywhere; }
+  .ad-appbar-text small { display: block; font: 600 11px var(--ad-mono); color: var(--ad-muted); }
+  .ad-appbar-actions { display: flex; align-items: center; gap: 4px; flex: none; }
+  .ad-iconbtn { width: 44px; height: 44px; display: grid; place-items: center; border: 0; border-radius: 8px; background: none; color: var(--ad-muted); cursor: pointer; }
+  .ad-appbar .ad-profile { margin: 0; padding: 0; }
+  .ad-appbar .ad-profile-btn { width: 44px; height: 44px; padding: 0; justify-content: center; border-radius: 50%; }
+  .ad-appbar .ad-avatar { width: 44px; height: 44px; background: var(--ad-pine); box-shadow: 0 4px 12px rgba(14, 36, 32, .35); }
+  .ad-appbar .ad-pop { left: auto; right: 0; top: calc(100% + 8px); bottom: auto; width: 250px; animation: ad-down .26s var(--ad-out); }
+
+  .ad-navtog {
+    display: grid; position: fixed; right: 16px; bottom: 16px; z-index: 5; width: 48px; height: 48px;
+    place-items: center; border: 0; border-radius: 50%; background: var(--ad-pine); color: #F5F1E8; cursor: pointer;
+    box-shadow: 0 6px 16px rgba(14, 36, 32, .4), 0 0 0 1px rgba(245, 241, 232, .12);
+    transition: transform .4s var(--ad-ease);
+  }
+  .ad-app[data-nav-open="true"] .ad-navtog { transform: translateY(-96px); }
+  .ad-scrim { display: block; position: fixed; inset: 0; z-index: 3; border: 0; background: transparent; cursor: default; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ad-shell, .ad-mk, .ad-lbl, .ad-navtog { transition: none; }
+  .ad-page, .ad-pop { animation: none !important; }
+  .ad-app .filter-btn { transition: none; }
+  .ad-app .filter-btn:active { transform: none; }
+}
