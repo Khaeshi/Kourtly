@@ -51,7 +51,7 @@ export async function tenantMiddleware(req, res, next) {
     return res.status(400).json({ error: 'Invalid court ID.' });
   }
 
-  const court = await Court.findById(courtId).select('isActive subscription').lean();
+  const court = await Court.findById(courtId).select('isActive subscription settings.timezone').lean();
   if (!court || !court.isActive) {
     return res.status(403).json({ error: 'Court not found or inactive.' });
   }

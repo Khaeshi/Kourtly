@@ -85,7 +85,9 @@ function projectMatch(value: unknown): unknown {
 
 function projectBillingItems(value: unknown): unknown {
   if (!Array.isArray(value)) return [];
-  return value.map(item => project(item, ['_id', 'item', 'name', 'price', 'quantity', 'addedAt']));
+  return value.map(item => project(item, [
+    '_id', 'item', 'name', 'price', 'quantity', 'addedAt', 'chargeGroupId',
+  ]));
 }
 
 function projectTab(value: unknown): unknown {
@@ -211,6 +213,8 @@ export function sanitizeSnapshot(path: string, value: unknown): unknown | undefi
     }
     return value.map(row => project(row, [
       '_id', 'name', 'price', 'category', 'isActive', 'isSplittable',
+      'trackStock', 'stockOnHand', 'lowStockThreshold', 'note',
+      'soldToday', 'leftNow', 'isLowStock',
     ]));
   }
   if (pathname === '/tabs/history') return projectPaginated(value, projectTab);

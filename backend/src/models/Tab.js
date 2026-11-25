@@ -5,6 +5,7 @@ const TabItemSchema = new mongoose.Schema({
   name:     { type: String, required: true },
   price:    { type: Number, required: true },
   quantity: { type: Number, default: 1 },
+  chargeGroupId: { type: mongoose.Schema.Types.ObjectId, default: null },
   addedAt:  { type: Date, default: Date.now },
 });
 
@@ -19,5 +20,6 @@ const TabSchema = new mongoose.Schema({
 
 TabSchema.index({ courtId: 1, player: 1, status: 1 });
 TabSchema.index({ courtId: 1, status: 1, updatedAt: -1 });
+TabSchema.index({ courtId: 1, 'items.chargeGroupId': 1 });
 
 export default mongoose.models.Tab || mongoose.model('Tab', TabSchema);

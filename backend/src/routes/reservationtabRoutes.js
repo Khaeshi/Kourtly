@@ -1,8 +1,13 @@
 import express from 'express';
+import mongoose from 'mongoose';
 import ReservationTab from '../models/ReservationTab.js';
 import Reservation    from '../models/Reservation.js';
 import { emitCourtEvent } from '../lib/emitCourtEvent.js';
 import { assertReservationTransition } from '../lib/reservationStateMachine.js';
+import {
+  emitBillingStockUpdates,
+  recordBillingStockMovement,
+} from '../services/billingStock.js';
 
 const router = express.Router();
 
@@ -134,24 +139,44 @@ router.get('/history', async (req, res) => {
  * Add an item to a reservation tab.
  */
 router.post('/:id/items', async (req, res) => {
+  const session = await mongoose.startSession();
+  const stockChanges = [];
+  let tab;
   try {
     const { itemId, name, price, quantity = 1 } = req.body;
     const lineTotal = price * quantity;
 
-    const tab = await ReservationTab.findOneAndUpdate(
-      {_id: req.params.id, courtId: req.courtId },
-      {
-        $push: { items: { item: itemId, name, price, quantity, addedAt: new Date() } },
-        $inc:  { total: lineTotal },
-      },
-      { new: true }
-    );
+    await session.withTransaction(async () => {
+      stockChanges.length = 0;
+      tab = await ReservationTab.findOne({
+        _id: req.params.id, courtId: req.courtId,
+      }).session(session);
+      if (!tab) {
+        const error = new Error('Tab not found');
+        error.status = 404;
+        throw error;
+      }
 
-    if (!tab) return res.status(404).json({ error: 'Tab not found' });
+      tab.items.push({ item: itemId, name, price, quantity, addedAt: new Date() });
+      tab.total += lineTotal;
+      const line = tab.items[tab.items.length - 1];
+      await tab.save({ session });
+      const change = await recordBillingStockMovement({
+        req, session, itemId, type: 'sale', quantity, unitPrice: price,
+        note: 'Reservation tab charge', tabType: 'reservation',
+        tabId: tab._id, tabLineId: line._id,
+      });
+      if (change) stockChanges.push(change);
+    });
+
+    tab = await ReservationTab.findOne({ _id: req.params.id, courtId: req.courtId });
     emitCourtEvent(req, 'billing:tab_updated', { action: 'reservation_item_added', tabId: tab._id });
+    await emitBillingStockUpdates(req, stockChanges);
     res.json(tab);
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    res.status(err.status ?? 400).json({ error: err.message });
+  } finally {
+    await session.endSession();
   }
 });
 
@@ -160,28 +185,51 @@ router.post('/:id/items', async (req, res) => {
  * Remove an item from a reservation tab by index.
  */
 router.delete('/:id/items/:itemIndex', async (req, res) => {
+  const session = await mongoose.startSession();
+  const stockChanges = [];
+  let removed;
   try {
-    const tab = await ReservationTab.findOne({ _id: req.params.id, courtId: req.courtId });
-    if (!tab) return res.status(404).json({ error: 'Tab not found' });
+    await session.withTransaction(async () => {
+      stockChanges.length = 0;
+      const tab = await ReservationTab.findOne({
+        _id: req.params.id, courtId: req.courtId,
+      }).session(session);
+      if (!tab) {
+        const error = new Error('Tab not found');
+        error.status = 404;
+        throw error;
+      }
+      const idx = Number(req.params.itemIndex);
+      removed = tab.items[idx];
+      if (!removed) {
+        const error = new Error('Item not found');
+        error.status = 404;
+        throw error;
+      }
+      tab.items.splice(idx, 1);
+      tab.total -= removed.price * removed.quantity;
+      await tab.save({ session });
+      const change = await recordBillingStockMovement({
+        req, session, itemId: removed.item, type: 'void',
+        quantity: removed.quantity, unitPrice: removed.price,
+        note: 'Reservation tab line removed', tabType: 'reservation',
+        tabId: tab._id, tabLineId: removed._id,
+      });
+      if (change) stockChanges.push(change);
+    });
 
-    const idx     = Number(req.params.itemIndex);
-    const removed = tab.items[idx];
-    if (!removed) return res.status(404).json({ error: 'Item not found' });
-
-    await ReservationTab.findOneAndUpdate(
-      { _id: req.params.id, courtId: req.courtId },
-      { $unset: { [`items.${idx}`]: 1 } }
-    );
-    const updated = await ReservationTab.findOneAndUpdate(
-      { _id: req.params.id, courtId: req.courtId },
-      { $pull: { items: null }, $inc: { total: -(removed.price * removed.quantity) } },
-      { new: true }
-    );
-
-    emitCourtEvent(req, 'billing:tab_updated', { action: 'reservation_item_removed', tabId: updated?._id });
+    const updated = await ReservationTab.findOne({
+      _id: req.params.id, courtId: req.courtId,
+    });
+    emitCourtEvent(req, 'billing:tab_updated', {
+      action: 'reservation_item_removed', tabId: updated?._id,
+    });
+    await emitBillingStockUpdates(req, stockChanges);
     res.json(updated);
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    res.status(err.status ?? 400).json({ error: err.message });
+  } finally {
+    await session.endSession();
   }
 });
 
@@ -285,17 +333,37 @@ router.put('/:id/collect-balance', async (req, res) => {
  * Discard a reservation tab (clears items, keeps record).
  */
 router.delete('/:id', async (req, res) => {
+  const session = await mongoose.startSession();
+  const stockChanges = [];
   try {
-    const tab = await ReservationTab.findOneAndUpdate(
-      {_id: req.params.id, courtId: req.courtId},
-      { items: [], total: 0 },
-      { new: true }
-    );
+    let tab;
+    await session.withTransaction(async () => {
+      stockChanges.length = 0;
+      tab = await ReservationTab.findOne({
+        _id: req.params.id, courtId: req.courtId,
+      }).session(session);
+      if (!tab) return;
+      for (const line of tab.items) {
+        const change = await recordBillingStockMovement({
+          req, session, itemId: line.item, type: 'void',
+          quantity: line.quantity, unitPrice: line.price,
+          note: 'Reservation tab cleared', tabType: 'reservation',
+          tabId: tab._id, tabLineId: line._id,
+        });
+        if (change) stockChanges.push(change);
+      }
+      tab.items = [];
+      tab.total = 0;
+      await tab.save({ session });
+    });
     if (!tab) return res.status(404).json({ error: 'Tab not found' });
     emitCourtEvent(req, 'billing:tab_updated', { action: 'reservation_tab_cleared', tabId: tab._id });
+    await emitBillingStockUpdates(req, stockChanges);
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.status ?? 500).json({ error: err.message });
+  } finally {
+    await session.endSession();
   }
 });
 

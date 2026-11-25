@@ -7,6 +7,10 @@ const ItemSchema = new mongoose.Schema({
   category:     { type: String, default: 'general' },
   isActive:     { type: Boolean, default: true },
   isSplittable: { type: Boolean, default: false },
+  trackStock:   { type: Boolean, default: false },
+  stockOnHand:  { type: Number, default: 0 },
+  lowStockThreshold: { type: Number, default: 0, min: 0 },
+  note:         { type: String, default: '' },
 }, { timestamps: true });
 
 ItemSchema.index({ courtId: 1, category: 1 });

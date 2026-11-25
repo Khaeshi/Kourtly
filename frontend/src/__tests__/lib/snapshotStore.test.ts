@@ -197,6 +197,70 @@ describe('snapshotStore', () => {
     expect(sanitizeSnapshot('/payout-transfers', [{ accountNumber: 'private' }])).toBeUndefined();
   });
 
+  test('preserves inventory fields in existing item snapshots and drops unknown fields', () => {
+    expect(sanitizeSnapshot('/items', [{
+      _id: 'item-1',
+      name: 'Water',
+      price: 30,
+      category: 'drinks',
+      isActive: true,
+      isSplittable: false,
+      trackStock: true,
+      stockOnHand: 12,
+      lowStockThreshold: 3,
+      note: 'Keep chilled',
+      soldToday: 2,
+      leftNow: 12,
+      isLowStock: false,
+      privateField: 'drop',
+    }])).toEqual([{
+      _id: 'item-1',
+      name: 'Water',
+      price: 30,
+      category: 'drinks',
+      isActive: true,
+      isSplittable: false,
+      trackStock: true,
+      stockOnHand: 12,
+      lowStockThreshold: 3,
+      note: 'Keep chilled',
+      soldToday: 2,
+      leftNow: 12,
+      isLowStock: false,
+    }]);
+  });
+
+  test('preserves split group ids in billing tab snapshots', () => {
+    expect(sanitizeSnapshot('/tabs/open', [{
+      _id: 'tab-1',
+      total: 25,
+      status: 'open',
+      player: { _id: 'player-1', name: 'Player One', level: 'B' },
+      items: [{
+        _id: 'line-1',
+        item: 'item-1',
+        name: 'Shuttlecock (split ÷4)',
+        price: 25,
+        quantity: 1,
+        chargeGroupId: 'split-group-1',
+        privateField: 'drop',
+      }],
+    }])).toEqual([{
+      _id: 'tab-1',
+      total: 25,
+      status: 'open',
+      player: { _id: 'player-1', name: 'Player One', level: 'B' },
+      items: [{
+        _id: 'line-1',
+        item: 'item-1',
+        name: 'Shuttlecock (split ÷4)',
+        price: 25,
+        quantity: 1,
+        chargeGroupId: 'split-group-1',
+      }],
+    }]);
+  });
+
   test('filters reservations locally by date, status and court', () => {
     const rows = [
       { date: '2026-10-05', status: 'confirmed', court: 1 },
